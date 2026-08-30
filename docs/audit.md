@@ -50,14 +50,14 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/event.ts` | `src/OpenCode.Schema/Event.cs` | [x] Ported |
 | `packages/schema/src/file-diff.ts` | `src/OpenCode.Schema/FileDiff.cs` | [x] Ported |
 | `packages/schema/src/filesystem-v1.ts` | `src/OpenCode.Schema/filesystem-v1.cs` | [ ] Pending |
-| `packages/schema/src/filesystem.ts` | `src/OpenCode.Schema/filesystem.cs` | [ ] Pending |
+| `packages/schema/src/filesystem.ts` | `src/OpenCode.Schema/FileSystem.cs` | [x] Ported |
 | `packages/schema/src/form.ts` | `src/OpenCode.Schema/Form.cs` | [x] Ported |
 | `packages/schema/src/ide-event.ts` | `src/OpenCode.Schema/ide-event.cs` | [ ] Pending |
 | `packages/schema/src/identifier.ts` | `src/OpenCode.Schema/Identifier.cs` | [x] Ported |
 | `packages/schema/src/index.ts` | `src/OpenCode.Schema/index.cs` | [ ] Pending |
 | `packages/schema/src/installation-event.ts` | `src/OpenCode.Schema/installation-event.cs` | [ ] Pending |
-| `packages/schema/src/instruction-entry.ts` | `src/OpenCode.Schema/instruction-entry.cs` | [ ] Pending |
-| `packages/schema/src/instruction.ts` | `src/OpenCode.Schema/instruction.cs` | [ ] Pending |
+| `packages/schema/src/instruction-entry.ts` | `src/OpenCode.Schema/Instruction.cs (InstructionEntry)` | [x] Ported |
+| `packages/schema/src/instruction.ts` | `src/OpenCode.Schema/Instruction.cs` | [x] Ported |
 | `packages/schema/src/integration-id.ts` | `src/OpenCode.Schema/integration-id.cs` | [ ] Pending |
 | `packages/schema/src/integration.ts` | `src/OpenCode.Schema/integration.cs` | [ ] Pending |
 | `packages/schema/src/legacy-event.ts` | `src/OpenCode.Schema/legacy-event.cs` | [ ] Pending |
@@ -83,7 +83,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/pty.ts` | `src/OpenCode.Schema/Pty.cs` | [x] Ported |
 | `packages/schema/src/question-v1.ts` | `src/OpenCode.Schema/question-v1.cs` | [ ] Pending |
 | `packages/schema/src/question.ts` | `src/OpenCode.Schema/Question.cs` | [x] Ported |
-| `packages/schema/src/reference.ts` | `src/OpenCode.Schema/reference.cs` | [ ] Pending |
+| `packages/schema/src/reference.ts` | `src/OpenCode.Schema/Reference.cs` | [x] Ported |
 | `packages/schema/src/schema.ts` | `src/OpenCode.Schema/schema.cs` | [ ] Pending |
 | `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/server-event.cs` | [ ] Pending |
 | `packages/schema/src/session-compaction-event.ts` | `src/OpenCode.Schema/session-compaction-event.cs` | [ ] Pending |

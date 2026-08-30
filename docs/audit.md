@@ -6,8 +6,8 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 
 | Package | Role | File Count | Port Status |
 | :--- | :--- | :--- | :--- |
-| `schema` | Data contracts & IDs | 98 | In Progress (10 / 98) |
-| `protocol` | API routes & events | 45 | Queued |
+| `schema` | Data contracts & IDs | 98 | In Progress (55 / 98) |
+| `protocol` | API routes & events | 45 | In Progress (5 / 45) |
 | `server` | Kestrel Minimal APIs | 75 | Queued |
 | `client` | HTTP & SSE client | 42 | Queued |
 | `sdk` | Embedded host & SDK | 23 | In Progress |

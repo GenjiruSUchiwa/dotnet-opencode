@@ -61,15 +61,15 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/integration-id.ts` | `src/OpenCode.Schema/Integration.cs (IntegrationId)` | [x] Ported |
 | `packages/schema/src/integration.ts` | `src/OpenCode.Schema/Integration.cs` | [x] Ported |
 | `packages/schema/src/legacy-event.ts` | `src/OpenCode.Schema/legacy-event.cs` | [ ] Pending |
-| `packages/schema/src/llm.ts` | `src/OpenCode.Schema/llm.cs` | [ ] Pending |
+| `packages/schema/src/llm.ts` | `src/OpenCode.Schema/Llm.cs` | [x] Ported |
 | `packages/schema/src/location.ts` | `src/OpenCode.Schema/Location.cs` | [x] Ported |
 | `packages/schema/src/lsp-event.ts` | `src/OpenCode.Schema/lsp-event.cs` | [ ] Pending |
-| `packages/schema/src/mcp-event.ts` | `src/OpenCode.Schema/mcp-event.cs` | [ ] Pending |
+| `packages/schema/src/mcp-event.ts` | `src/OpenCode.Schema/ServerEvent.cs (McpStatusChanged)` | [x] Ported |
 | `packages/schema/src/mcp.ts` | `src/OpenCode.Schema/Mcp.cs` | [x] Ported |
 | `packages/schema/src/model.ts` | `src/OpenCode.Schema/Model.cs` | [x] Ported |
 | `packages/schema/src/models-dev.ts` | `src/OpenCode.Schema/models-dev.cs` | [ ] Pending |
 | `packages/schema/src/money.ts` | `src/OpenCode.Schema/Money.cs` | [x] Ported |
-| `packages/schema/src/permission-saved.ts` | `src/OpenCode.Schema/permission-saved.cs` | [ ] Pending |
+| `packages/schema/src/permission-saved.ts` | `src/OpenCode.Schema/PermissionSaved.cs` | [x] Ported |
 | `packages/schema/src/permission-v1.ts` | `src/OpenCode.Schema/permission-v1.cs` | [ ] Pending |
 | `packages/schema/src/permission.ts` | `src/OpenCode.Schema/Permission.cs` | [x] Ported |
 | `packages/schema/src/persistent-pty.ts` | `src/OpenCode.Schema/persistent-pty.cs` | [ ] Pending |
@@ -85,10 +85,10 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/question.ts` | `src/OpenCode.Schema/Question.cs` | [x] Ported |
 | `packages/schema/src/reference.ts` | `src/OpenCode.Schema/Reference.cs` | [x] Ported |
 | `packages/schema/src/schema.ts` | `src/OpenCode.Schema/schema.cs` | [ ] Pending |
-| `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/server-event.cs` | [ ] Pending |
+| `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/ServerEvent.cs` | [x] Ported |
 | `packages/schema/src/session-compaction-event.ts` | `src/OpenCode.Schema/session-compaction-event.cs` | [ ] Pending |
 | `packages/schema/src/session-error.ts` | `src/OpenCode.Schema/SessionError.cs` | [x] Ported |
-| `packages/schema/src/session-event.ts` | `src/OpenCode.Schema/session-event.cs` | [ ] Pending |
+| `packages/schema/src/session-event.ts` | `src/OpenCode.Schema/SessionEvent.cs` | [x] Ported |
 | `packages/schema/src/session-fork.ts` | `src/OpenCode.Schema/SessionFork.cs` | [x] Ported |
 | `packages/schema/src/session-id.ts` | `src/OpenCode.Schema/Identifiers.cs (SessionId)` | [x] Ported |
 | `packages/schema/src/session-inbox.ts` | `src/OpenCode.Schema/SessionInbox.cs` | [x] Ported |

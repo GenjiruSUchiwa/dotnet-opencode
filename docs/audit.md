@@ -24,7 +24,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/agent.ts` | `src/OpenCode.Schema/Agent.cs` | [x] Ported |
 | `packages/schema/src/catalog.ts` | `src/OpenCode.Schema/catalog.cs` | [ ] Pending |
 | `packages/schema/src/command.ts` | `src/OpenCode.Schema/Command.cs` | [x] Ported |
-| `packages/schema/src/config.ts` | `src/OpenCode.Schema/config.cs` | [ ] Pending |
+| `packages/schema/src/config.ts` | `src/OpenCode.Schema/Config.cs` | [x] Ported |
 | `packages/schema/src/config/agent.ts` | `src/OpenCode.Schema/config/agent.cs` | [ ] Pending |
 | `packages/schema/src/config/command.ts` | `src/OpenCode.Schema/config/command.cs` | [ ] Pending |
 | `packages/schema/src/config/compaction.ts` | `src/OpenCode.Schema/config/compaction.cs` | [ ] Pending |
@@ -42,7 +42,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/config/warming.ts` | `src/OpenCode.Schema/config/warming.cs` | [ ] Pending |
 | `packages/schema/src/config/watcher.ts` | `src/OpenCode.Schema/config/watcher.cs` | [ ] Pending |
 | `packages/schema/src/config/websearch.ts` | `src/OpenCode.Schema/config/websearch.cs` | [ ] Pending |
-| `packages/schema/src/connection.ts` | `src/OpenCode.Schema/connection.cs` | [ ] Pending |
+| `packages/schema/src/connection.ts` | `src/OpenCode.Schema/Connection.cs` | [x] Ported |
 | `packages/schema/src/credential.ts` | `src/OpenCode.Schema/Credential.cs` | [x] Ported |
 | `packages/schema/src/durable-event-manifest.ts` | `src/OpenCode.Schema/durable-event-manifest.cs` | [ ] Pending |
 | `packages/schema/src/event-log.ts` | `src/OpenCode.Schema/event-log.cs` | [ ] Pending |
@@ -58,8 +58,8 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/installation-event.ts` | `src/OpenCode.Schema/installation-event.cs` | [ ] Pending |
 | `packages/schema/src/instruction-entry.ts` | `src/OpenCode.Schema/Instruction.cs (InstructionEntry)` | [x] Ported |
 | `packages/schema/src/instruction.ts` | `src/OpenCode.Schema/Instruction.cs` | [x] Ported |
-| `packages/schema/src/integration-id.ts` | `src/OpenCode.Schema/integration-id.cs` | [ ] Pending |
-| `packages/schema/src/integration.ts` | `src/OpenCode.Schema/integration.cs` | [ ] Pending |
+| `packages/schema/src/integration-id.ts` | `src/OpenCode.Schema/Integration.cs (IntegrationId)` | [x] Ported |
+| `packages/schema/src/integration.ts` | `src/OpenCode.Schema/Integration.cs` | [x] Ported |
 | `packages/schema/src/legacy-event.ts` | `src/OpenCode.Schema/legacy-event.cs` | [ ] Pending |
 | `packages/schema/src/llm.ts` | `src/OpenCode.Schema/llm.cs` | [ ] Pending |
 | `packages/schema/src/location.ts` | `src/OpenCode.Schema/Location.cs` | [x] Ported |

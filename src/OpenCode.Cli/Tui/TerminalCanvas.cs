@@ -36,17 +36,25 @@ public sealed class TerminalCanvas
         public bool Bold;
     }
 
-    private readonly int _width;
-    private readonly int _height;
-    private readonly Cell[,] _buffer;
+    private int _width;
+    private int _height;
+    private Cell[,] _buffer;
 
     public int Width => _width;
     public int Height => _height;
 
     public TerminalCanvas(int width, int height)
     {
-        _width = Math.Max(80, width);
-        _height = Math.Max(24, height);
+        _width = Math.Max(40, width);
+        _height = Math.Max(12, height);
+        _buffer = new Cell[_height, _width];
+        Clear(RgbColor.Black);
+    }
+
+    public void Resize(int width, int height)
+    {
+        _width = Math.Max(40, width);
+        _height = Math.Max(12, height);
         _buffer = new Cell[_height, _width];
         Clear(RgbColor.Black);
     }
@@ -80,10 +88,14 @@ public sealed class TerminalCanvas
         };
     }
 
-    public void DrawString(int x, int y, string text, RgbColor fg, RgbColor? bg = null, bool bold = false)
+    public void DrawString(int x, int y, string text, RgbColor fg, RgbColor? bg = null, bool bold = false, int? maxWidth = null)
     {
-        for (int i = 0; i < text.Length; i++)
+        if (y < 0 || y >= _height) return;
+
+        int limit = maxWidth.HasValue ? Math.Min(text.Length, maxWidth.Value) : text.Length;
+        for (int i = 0; i < limit; i++)
         {
+            if (x + i >= _width) break;
             DrawChar(x + i, y, text[i], fg, bg, bold);
         }
     }
@@ -105,7 +117,7 @@ public sealed class TerminalCanvas
 
     public void Flush()
     {
-        var sb = new StringBuilder(_width * _height * 20);
+        var sb = new StringBuilder(_width * _height * 15);
         // Hide cursor and position at (1,1)
         sb.Append("\x1b[?25l\x1b[H");
 

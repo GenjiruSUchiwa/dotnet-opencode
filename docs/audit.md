@@ -48,7 +48,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/event-log.ts` | `src/OpenCode.Schema/event-log.cs` | [ ] Pending |
 | `packages/schema/src/event-manifest.ts` | `src/OpenCode.Schema/event-manifest.cs` | [ ] Pending |
 | `packages/schema/src/event.ts` | `src/OpenCode.Schema/Event.cs` | [x] Ported |
-| `packages/schema/src/file-diff.ts` | `src/OpenCode.Schema/file-diff.cs` | [ ] Pending |
+| `packages/schema/src/file-diff.ts` | `src/OpenCode.Schema/FileDiff.cs` | [x] Ported |
 | `packages/schema/src/filesystem-v1.ts` | `src/OpenCode.Schema/filesystem-v1.cs` | [ ] Pending |
 | `packages/schema/src/filesystem.ts` | `src/OpenCode.Schema/filesystem.cs` | [ ] Pending |
 | `packages/schema/src/form.ts` | `src/OpenCode.Schema/form.cs` | [ ] Pending |
@@ -62,7 +62,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/integration.ts` | `src/OpenCode.Schema/integration.cs` | [ ] Pending |
 | `packages/schema/src/legacy-event.ts` | `src/OpenCode.Schema/legacy-event.cs` | [ ] Pending |
 | `packages/schema/src/llm.ts` | `src/OpenCode.Schema/llm.cs` | [ ] Pending |
-| `packages/schema/src/location.ts` | `src/OpenCode.Schema/location.cs` | [ ] Pending |
+| `packages/schema/src/location.ts` | `src/OpenCode.Schema/Location.cs` | [x] Ported |
 | `packages/schema/src/lsp-event.ts` | `src/OpenCode.Schema/lsp-event.cs` | [ ] Pending |
 | `packages/schema/src/mcp-event.ts` | `src/OpenCode.Schema/mcp-event.cs` | [ ] Pending |
 | `packages/schema/src/mcp.ts` | `src/OpenCode.Schema/mcp.cs` | [ ] Pending |
@@ -80,7 +80,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/prompt.ts` | `src/OpenCode.Schema/Prompt.cs` | [x] Ported |
 | `packages/schema/src/provider.ts` | `src/OpenCode.Schema/Provider.cs` | [x] Ported |
 | `packages/schema/src/pty-ticket.ts` | `src/OpenCode.Schema/pty-ticket.cs` | [ ] Pending |
-| `packages/schema/src/pty.ts` | `src/OpenCode.Schema/pty.cs` | [ ] Pending |
+| `packages/schema/src/pty.ts` | `src/OpenCode.Schema/Pty.cs` | [x] Ported |
 | `packages/schema/src/question-v1.ts` | `src/OpenCode.Schema/question-v1.cs` | [ ] Pending |
 | `packages/schema/src/question.ts` | `src/OpenCode.Schema/question.cs` | [ ] Pending |
 | `packages/schema/src/reference.ts` | `src/OpenCode.Schema/reference.cs` | [ ] Pending |
@@ -100,7 +100,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/session-transfer.ts` | `src/OpenCode.Schema/session-transfer.cs` | [ ] Pending |
 | `packages/schema/src/session-v1.ts` | `src/OpenCode.Schema/session-v1.cs` | [ ] Pending |
 | `packages/schema/src/session.ts` | `src/OpenCode.Schema/Session.cs` | [x] Ported |
-| `packages/schema/src/shell.ts` | `src/OpenCode.Schema/shell.cs` | [ ] Pending |
+| `packages/schema/src/shell.ts` | `src/OpenCode.Schema/Shell.cs` | [x] Ported |
 | `packages/schema/src/skill.ts` | `src/OpenCode.Schema/skill.cs` | [ ] Pending |
 | `packages/schema/src/snapshot.ts` | `src/OpenCode.Schema/snapshot.cs` | [ ] Pending |
 | `packages/schema/src/token-usage.ts` | `src/OpenCode.Schema/TokenUsage.cs` | [x] Ported |
@@ -112,10 +112,10 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/v1/question.ts` | `src/OpenCode.Schema/v1/question.cs` | [ ] Pending |
 | `packages/schema/src/v1/session.ts` | `src/OpenCode.Schema/v1/session.cs` | [ ] Pending |
 | `packages/schema/src/vcs-event.ts` | `src/OpenCode.Schema/vcs-event.cs` | [ ] Pending |
-| `packages/schema/src/vcs.ts` | `src/OpenCode.Schema/vcs.cs` | [ ] Pending |
+| `packages/schema/src/vcs.ts` | `src/OpenCode.Schema/Vcs.cs` | [x] Ported |
 | `packages/schema/src/websearch.ts` | `src/OpenCode.Schema/websearch.cs` | [ ] Pending |
 | `packages/schema/src/workspace-event.ts` | `src/OpenCode.Schema/workspace-event.cs` | [ ] Pending |
-| `packages/schema/src/workspace-id.ts` | `src/OpenCode.Schema/workspace-id.cs` | [ ] Pending |
-| `packages/schema/src/workspace.ts` | `src/OpenCode.Schema/workspace.cs` | [ ] Pending |
+| `packages/schema/src/workspace-id.ts` | `src/OpenCode.Schema/Workspace.cs (WorkspaceId)` | [x] Ported |
+| `packages/schema/src/workspace.ts` | `src/OpenCode.Schema/Workspace.cs` | [x] Ported |
 | `packages/schema/src/worktree-event.ts` | `src/OpenCode.Schema/worktree-event.cs` | [ ] Pending |
-| `packages/schema/src/worktree.ts` | `src/OpenCode.Schema/worktree.cs` | [ ] Pending |
+| `packages/schema/src/worktree.ts` | `src/OpenCode.Schema/Worktree.cs` | [x] Ported |

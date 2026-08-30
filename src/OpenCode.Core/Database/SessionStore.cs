@@ -61,7 +61,8 @@ public sealed class SessionStore
                 Cost: new Money(cost),
                 Title: title,
                 Agent: agent,
-                Outcome: outcome
+                Outcome: outcome,
+                Location: new LocationRef(directory)
             ));
         }
 
@@ -115,7 +116,8 @@ public sealed class SessionStore
             Cost: new Money(cost),
             Title: title,
             Agent: agent,
-            Outcome: outcome
+            Outcome: outcome,
+            Location: new LocationRef(directory)
         );
     }
 
@@ -243,9 +245,10 @@ public sealed class SessionStore
         string directory,
         string? title = null,
         ProjectId? projectId = null,
+        SessionId? sessionId = null,
         CancellationToken ct = default)
     {
-        var id = SessionId.Create();
+        var id = sessionId ?? SessionId.Create();
         var prjId = projectId ?? await EnsureProjectAsync(directory, ct);
         var slug = Guid.NewGuid().ToString("N")[..8];
         var now = DateTimeOffset.UtcNow;
@@ -280,7 +283,8 @@ public sealed class SessionStore
             Time: new SessionTime(now, now),
             Tokens: new TokenUsageInfo(),
             Cost: new Money(0),
-            Title: title
+            Title: title,
+            Location: new LocationRef(directory)
         );
     }
 

@@ -45,7 +45,7 @@ public sealed record SessionInfo(
     [property: JsonPropertyName("model")] ModelRef? Model = null,
     [property: JsonPropertyName("outcome")] SessionOutcome? Outcome = null,
     [property: JsonPropertyName("title")] string? Title = null,
-    [property: JsonPropertyName("location")] string? Location = null,
+    [property: JsonPropertyName("location")] LocationRef Location = default!,
     [property: JsonPropertyName("subpath")] string? Subpath = null,
     [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
     [property: JsonPropertyName("revert")] SessionRevert? Revert = null

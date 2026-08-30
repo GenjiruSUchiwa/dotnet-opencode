@@ -138,7 +138,7 @@ public static class SessionEndpoints
             var existing = await store.GetSessionAsync(new SessionId(id), ct);
             if (existing is null) return Results.NotFound();
 
-            var forked = await store.CreateSessionAsync(existing.Directory ?? Directory.GetCurrentDirectory(), $"Fork of {existing.Title}", existing.ProjectId, ct);
+            var forked = await store.CreateSessionAsync(existing.Directory ?? Directory.GetCurrentDirectory(), $"Fork of {existing.Title}", existing.ProjectId, ct: ct);
             return Results.Ok(new { data = forked });
         });
 
@@ -161,7 +161,7 @@ public static class SessionEndpoints
             var directory = request.Location?.Directory ?? request.Directory ?? Directory.GetCurrentDirectory();
             var sessionId = !string.IsNullOrEmpty(request.Id) ? new SessionId(request.Id) : (SessionId?)null;
 
-            var session = await store.CreateSessionAsync(directory, request.Title, ct: ct);
+            var session = await store.CreateSessionAsync(directory, request.Title, sessionId: sessionId, ct: ct);
 
             feedService.PublishRaw(EventTypes.SessionCreated, new
             {

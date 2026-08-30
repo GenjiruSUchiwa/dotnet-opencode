@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text;
+using OpenCode.Cli.Tui;
 using OpenCode.Client;
 using OpenCode.Sdk;
 using OpenCode.Server;
@@ -25,31 +26,6 @@ if (args.Length > 0 && args[0].Equals("serve", StringComparison.OrdinalIgnoreCas
 
     var app = ServerHost.CreateApp(args, port);
     await app.RunAsync();
-    return;
-}
-
-// Subcommand: tui (Ensures 1 and only 1 daemon, launches TUI on separate port 5055)
-if (args.Length > 0 && args[0].Equals("tui", StringComparison.OrdinalIgnoreCase))
-{
-    Console.ForegroundColor = ConsoleColor.Cyan;
-    Console.WriteLine("Ensuring opencode-dotnet background daemon is running...");
-    Console.ResetColor();
-
-    var endpoint = await ServiceDaemon.EnsureAsync(port: ServerHost.DefaultPort);
-    Console.WriteLine($"Connected to daemon at {endpoint.Url}");
-
-    // Launch OpenCode TUI connected to this isolated port
-    var tuiProcess = Process.Start(new ProcessStartInfo
-    {
-        FileName = "opencode2",
-        ArgumentList = { "--server", endpoint.Url },
-        UseShellExecute = false
-    });
-
-    if (tuiProcess is not null)
-    {
-        await tuiProcess.WaitForExitAsync();
-    }
     return;
 }
 
@@ -81,25 +57,22 @@ if (args.Length > 0 && args[0].Equals("stop", StringComparison.OrdinalIgnoreCase
     return;
 }
 
-// Default command: streaming prompt execution via the engine
-var prompt = args.Length > 0
-    ? string.Join(" ", args)
-    : "Introduce yourself, explain what model you are, and summarize quantum entanglement in two exciting sentences!";
-
-Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("================================================================================");
-Console.WriteLine(" opencode-dotnet | Running model: gemini-2.5-flash");
-Console.WriteLine("================================================================================");
-Console.ResetColor();
-Console.WriteLine($"Prompt: \"{prompt}\"\n");
-
-await using var client = await OpenCodeClient.CreateAsync();
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-
-Console.ForegroundColor = ConsoleColor.Green;
-await foreach (var chunk in client.AskAsync(prompt, modelId: "google/gemini-2.5-flash", ct: cts.Token))
+// Subcommand: run <prompt> (Direct headless query)
+if (args.Length > 0 && args[0].Equals("run", StringComparison.OrdinalIgnoreCase))
 {
-    Console.Write(chunk);
+    var runPrompt = string.Join(" ", args.Skip(1));
+    if (string.IsNullOrWhiteSpace(runPrompt)) runPrompt = "Hello from opencode-dotnet!";
+
+    await using var sdk = await OpenCodeClient.CreateAsync();
+    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+
+    await foreach (var chunk in sdk.AskAsync(runPrompt, ct: cts.Token))
+    {
+        Console.Write(chunk);
+    }
+    Console.WriteLine();
+    return;
 }
-Console.ResetColor();
-Console.WriteLine("\n");
+
+// Default / Subcommand: tui (Native C# interactive OpenCode TUI)
+await InteractiveTui.RunAsync();

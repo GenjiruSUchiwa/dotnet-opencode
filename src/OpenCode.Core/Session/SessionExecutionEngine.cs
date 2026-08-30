@@ -21,6 +21,7 @@ public sealed class SessionExecutionEngine
         SessionId sessionId,
         string promptText,
         string? modelId = null,
+        string? variant = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // 1. Record User Message in Database
@@ -34,7 +35,7 @@ public sealed class SessionExecutionEngine
         await _sessionStore.AddMessageAsync(sessionId, userMsg, ct);
 
         // 2. Resolve LLM Provider
-        var (client, resolvedModel) = await _providerResolver.ResolveAsync(modelId, ct);
+        var resolved = await _providerResolver.ResolveAsync(modelId, variant, ct);
 
         // 3. Prepare History and Stream Response
         var messages = new List<LlmChatMessage>
@@ -44,7 +45,7 @@ public sealed class SessionExecutionEngine
         };
 
         var assistantText = new StringBuilder();
-        await foreach (var chunk in client.StreamChatAsync(messages, resolvedModel, ct))
+        await foreach (var chunk in resolved.Client.StreamChatAsync(messages, resolved.ModelId, resolved.GenerationConfig, ct))
         {
             assistantText.Append(chunk);
             yield return chunk;
@@ -57,8 +58,8 @@ public sealed class SessionExecutionEngine
             Id = assistantMsgId,
             CreatedAt = DateTimeOffset.UtcNow,
             Text = assistantText.ToString(),
-            ModelId = resolvedModel,
-            ProviderId = client.ProviderId
+            ModelId = resolved.ModelId,
+            ProviderId = resolved.Client.ProviderId
         };
         await _sessionStore.AddMessageAsync(sessionId, assistantMsg, ct);
     }

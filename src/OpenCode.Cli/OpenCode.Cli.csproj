@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenCode.Sdk\OpenCode.Sdk.csproj" />
+    <ProjectReference Include="..\OpenCode.Core\OpenCode.Core.csproj" />
+    <ProjectReference Include="..\OpenCode.Schema\OpenCode.Schema.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

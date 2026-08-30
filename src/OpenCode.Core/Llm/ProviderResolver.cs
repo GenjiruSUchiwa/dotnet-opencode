@@ -3,7 +3,12 @@ namespace OpenCode.Core.Llm;
 using System.Text.Json;
 using OpenCode.Core.Config;
 using OpenCode.Core.Database;
-using OpenCode.Schema;
+
+public sealed record ResolvedModel(
+    ILlmClient Client,
+    string ModelId,
+    object? GenerationConfig = null
+);
 
 public sealed class ProviderResolver
 {
@@ -16,12 +21,83 @@ public sealed class ProviderResolver
         _credentialStore = credentialStore;
     }
 
-    public async Task<(ILlmClient Client, string ModelId)> ResolveAsync(string? requestedModel = null, CancellationToken ct = default)
+    public async Task<ResolvedModel> ResolveAsync(
+        string? requestedModel = null,
+        string? requestedVariant = null,
+        CancellationToken ct = default)
     {
         var config = ConfigLoader.LoadConfig();
         var auth = ConfigLoader.LoadAuth();
 
-        // 1. Get Google API key if available
+        var modelSpec = requestedModel ?? config.Model ?? "gemini-flash";
+
+        // Support model:variant syntax (e.g. "gemini-flash:high")
+        string? variant = requestedVariant;
+        if (modelSpec.Contains(':') && !modelSpec.Contains("://"))
+        {
+            var parts = modelSpec.Split(':');
+            modelSpec = parts[0];
+            variant ??= parts[1];
+        }
+
+        // 1. Check if user is logged into OpenCode Console (in opencode.db)
+        var opencodeCred = await _credentialStore.GetActiveCredentialAsync("opencode", ct);
+        if (opencodeCred is not null)
+        {
+            using var doc = JsonDocument.Parse(opencodeCred.ValueJson);
+            var token = doc.RootElement.TryGetProperty("access", out var accProp) ? accProp.GetString() : null;
+            var orgId = doc.RootElement.TryGetProperty("metadata", out var metaProp) && metaProp.TryGetProperty("orgID", out var orgProp) ? orgProp.GetString() : null;
+            var server = (doc.RootElement.TryGetProperty("metadata", out var metaServer) && metaServer.TryGetProperty("server", out var servProp) ? servProp.GetString() : null) ?? "https://opencode.ai/console";
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                // Fetch dynamic console providers and models from OpenCode console
+                var consoleConfig = await FetchConsoleConfigAsync(server, token, orgId, ct);
+                if (consoleConfig is not null)
+                {
+                    // Check if model matches any console model (e.g. "gemini-flash" or "console-google/gemini-flash")
+                    foreach (var (providerId, providerData) in consoleConfig)
+                    {
+                        var targetId = modelSpec.StartsWith($"{providerId}/", StringComparison.OrdinalIgnoreCase)
+                            ? modelSpec[(providerId.Length + 1)..]
+                            : modelSpec;
+
+                        if (providerData.Models.TryGetValue(targetId, out var modelData))
+                        {
+                            object? generationConfig = null;
+                            var selectedVariant = variant ?? "high"; // Default to high if specified or available
+
+                            if (modelData.Variants is not null && modelData.Variants.TryGetValue(selectedVariant, out var variantData))
+                            {
+                                generationConfig = variantData.GenerationConfig;
+                            }
+                            else if (selectedVariant == "high")
+                            {
+                                // Builtin standard high thinking config
+                                generationConfig = new
+                                {
+                                    topK = 64,
+                                    topP = 0.95,
+                                    temperature = 1,
+                                    thinkingConfig = new { thinkingLevel = "HIGH", includeThoughts = true }
+                                };
+                            }
+
+                            var client = new GoogleLlmClient(
+                                _http,
+                                apiKey: token,
+                                baseUrl: providerData.BaseUrl,
+                                orgId: orgId
+                            );
+
+                            return new ResolvedModel(client, targetId, generationConfig);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback to direct Google key from auth.json or opencode.db
         string? googleKey = auth.GetValueOrDefault("google")?.Key;
         if (string.IsNullOrEmpty(googleKey))
         {
@@ -36,72 +112,100 @@ public sealed class ProviderResolver
             }
         }
 
-        // 2. Get OpenAI token if available
-        string? openAiToken = auth.GetValueOrDefault("openai")?.Access ?? auth.GetValueOrDefault("openai")?.Key;
-        if (string.IsNullOrEmpty(openAiToken))
-        {
-            var storedOpenAi = await _credentialStore.GetActiveCredentialAsync("openai", ct);
-            if (storedOpenAi is not null)
-            {
-                using var doc = JsonDocument.Parse(storedOpenAi.ValueJson);
-                if (doc.RootElement.TryGetProperty("access", out var accProp))
-                {
-                    openAiToken = accProp.GetString();
-                }
-            }
-        }
-
-        // 3. Get OpenCode proxy token if available
-        string? opencodeToken = null;
-        var storedOpenCode = await _credentialStore.GetActiveCredentialAsync("opencode", ct);
-        if (storedOpenCode is not null)
-        {
-            using var doc = JsonDocument.Parse(storedOpenCode.ValueJson);
-            if (doc.RootElement.TryGetProperty("access", out var accProp))
-            {
-                opencodeToken = accProp.GetString();
-            }
-            else if (doc.RootElement.TryGetProperty("key", out var keyProp))
-            {
-                opencodeToken = keyProp.GetString();
-            }
-        }
-
-        var targetModel = requestedModel ?? config.Model;
-
-        // If target model explicitly points to Google or Gemini
-        if (targetModel is not null && (targetModel.StartsWith("google", StringComparison.OrdinalIgnoreCase) || targetModel.Contains("gemini", StringComparison.OrdinalIgnoreCase)))
-        {
-            if (!string.IsNullOrEmpty(googleKey))
-            {
-                return (new GoogleLlmClient(_http, googleKey), targetModel);
-            }
-        }
-
-        // If target model is specified and is OpenCode
-        if (targetModel is not null && targetModel.StartsWith("opencode", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!string.IsNullOrEmpty(opencodeToken))
-            {
-                var modelName = targetModel["opencode/".Length..];
-                return (new OpenAiLlmClient(_http, opencodeToken, "https://opencode.ai/inference/openai/v1"), modelName);
-            }
-        }
-
-        // Reliable fallback: If Google key is present, it's immediately usable
         if (!string.IsNullOrEmpty(googleKey))
         {
-            return (new GoogleLlmClient(_http, googleKey), "gemini-2.5-flash");
+            return new ResolvedModel(new GoogleLlmClient(_http, googleKey), "gemini-2.5-flash");
         }
 
-        // Fallback: OpenAI
-        if (!string.IsNullOrEmpty(openAiToken))
-        {
-            return (new OpenAiLlmClient(_http, openAiToken, "https://chatgpt.com/backend-api/codex"), "gpt-4o");
-        }
-
-        throw new InvalidOperationException(
-            "No active AI provider credentials found in ~/.local/share/opencode/auth.json or opencode.db."
-        );
+        throw new InvalidOperationException("No suitable AI provider credentials found.");
     }
+
+    private async Task<Dictionary<string, ConsoleProviderData>?> FetchConsoleConfigAsync(
+        string server,
+        string token,
+        string? orgId,
+        CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{server.TrimEnd('/')}/api/config");
+            req.Headers.UserAgent.ParseAdd("opencode");
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            if (!string.IsNullOrEmpty(orgId))
+            {
+                req.Headers.Add("x-org-id", orgId);
+            }
+
+            using var resp = await _http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("config", out var configProp) ||
+                !configProp.TryGetProperty("provider", out var provProp))
+            {
+                return null;
+            }
+
+            var result = new Dictionary<string, ConsoleProviderData>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prov in provProp.EnumerateObject())
+            {
+                var provId = prov.Name;
+                string? baseUrl = null;
+                if (prov.Value.TryGetProperty("api", out var apiProp))
+                {
+                    baseUrl = apiProp.GetString();
+                }
+                else if (prov.Value.TryGetProperty("options", out var optProp) && optProp.TryGetProperty("baseURL", out var optBaseUrl))
+                {
+                    baseUrl = optBaseUrl.GetString();
+                }
+
+                var models = new Dictionary<string, ConsoleModelData>(StringComparer.OrdinalIgnoreCase);
+                if (prov.Value.TryGetProperty("models", out var modelsProp))
+                {
+                    foreach (var m in modelsProp.EnumerateObject())
+                    {
+                        var modelId = m.Name;
+                        var variants = new Dictionary<string, ConsoleVariantData>(StringComparer.OrdinalIgnoreCase);
+
+                        if (m.Value.TryGetProperty("variants", out var varProp))
+                        {
+                            foreach (var v in varProp.EnumerateObject())
+                            {
+                                JsonElement? genConfig = null;
+                                if (v.Value.TryGetProperty("generationConfig", out var gcProp) ||
+                                    v.Value.TryGetProperty("generation_config", out gcProp))
+                                {
+                                    genConfig = gcProp.Clone();
+                                }
+                                else if (v.Value.TryGetProperty("settings", out var settProp) &&
+                                         (settProp.TryGetProperty("generationConfig", out gcProp) ||
+                                          settProp.TryGetProperty("generation_config", out gcProp)))
+                                {
+                                    genConfig = gcProp.Clone();
+                                }
+
+                                variants[v.Name] = new ConsoleVariantData(genConfig);
+                            }
+                        }
+
+                        models[modelId] = new ConsoleModelData(variants);
+                    }
+                }
+
+                result[provId] = new ConsoleProviderData(baseUrl, models);
+            }
+
+            return result;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed record ConsoleProviderData(string? BaseUrl, Dictionary<string, ConsoleModelData> Models);
+    private sealed record ConsoleModelData(Dictionary<string, ConsoleVariantData> Variants);
+    private sealed record ConsoleVariantData(JsonElement? GenerationConfig);
 }

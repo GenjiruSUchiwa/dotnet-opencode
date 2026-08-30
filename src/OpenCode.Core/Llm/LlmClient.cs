@@ -12,6 +12,7 @@ public interface ILlmClient
     IAsyncEnumerable<string> StreamChatAsync(
         IReadOnlyList<LlmChatMessage> messages,
         string modelId,
+        object? generationConfig = null,
         CancellationToken ct = default);
 }
 
@@ -19,32 +20,56 @@ public sealed class GoogleLlmClient : ILlmClient
 {
     private readonly HttpClient _http;
     private readonly string _apiKey;
+    private readonly string? _baseUrl;
+    private readonly string? _orgId;
+    private readonly IReadOnlyDictionary<string, string>? _extraHeaders;
 
     public string ProviderId => "google";
 
-    public GoogleLlmClient(HttpClient http, string apiKey)
+    public GoogleLlmClient(
+        HttpClient http,
+        string apiKey,
+        string? baseUrl = null,
+        string? orgId = null,
+        IReadOnlyDictionary<string, string>? extraHeaders = null)
     {
         _http = http;
         _apiKey = apiKey;
+        _baseUrl = baseUrl;
+        _orgId = orgId;
+        _extraHeaders = extraHeaders;
     }
 
     public async IAsyncEnumerable<string> StreamChatAsync(
         IReadOnlyList<LlmChatMessage> messages,
         string modelId,
+        object? generationConfig = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Strip provider prefix if present (e.g. "google/gemini-2.5-flash" -> "gemini-2.5-flash")
         var normalizedModel = modelId.StartsWith("google/", StringComparison.OrdinalIgnoreCase)
             ? modelId["google/".Length..]
             : modelId;
 
-        // Default to a current fast Gemini model if not specified or alias
+        if (normalizedModel.StartsWith("console-google/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedModel = normalizedModel["console-google/".Length..];
+        }
+
         if (normalizedModel is "default" or "gemini-flash-latest" or "")
         {
             normalizedModel = "gemini-2.5-flash";
         }
 
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{normalizedModel}:streamGenerateContent?alt=sse&key={_apiKey}";
+        // Determine request URL based on whether this is a custom gateway or Google direct
+        string url;
+        if (!string.IsNullOrEmpty(_baseUrl))
+        {
+            url = $"{_baseUrl.TrimEnd('/')}/models/{normalizedModel}:streamGenerateContent?alt=sse";
+        }
+        else
+        {
+            url = $"https://generativelanguage.googleapis.com/v1beta/models/{normalizedModel}:streamGenerateContent?alt=sse&key={_apiKey}";
+        }
 
         var contents = messages.Select(m => new
         {
@@ -52,11 +77,42 @@ public sealed class GoogleLlmClient : ILlmClient
             parts = new[] { new { text = m.Content } }
         }).ToArray();
 
-        var bodyJson = JsonSerializer.Serialize(new { contents });
+        object bodyPayload;
+        if (generationConfig is not null)
+        {
+            bodyPayload = new { contents, generationConfig };
+        }
+        else
+        {
+            bodyPayload = new { contents };
+        }
+
+        var bodyJson = JsonSerializer.Serialize(bodyPayload);
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(bodyJson, Encoding.UTF8, "application/json")
         };
+
+        // Always identify as opencode to avoid Cloudflare bot blocking
+        request.Headers.UserAgent.ParseAdd("opencode");
+
+        if (!string.IsNullOrEmpty(_baseUrl))
+        {
+            request.Headers.Add("x-goog-api-key", _apiKey);
+        }
+
+        if (!string.IsNullOrEmpty(_orgId))
+        {
+            request.Headers.Add("x-org-id", _orgId);
+        }
+
+        if (_extraHeaders is not null)
+        {
+            foreach (var (k, v) in _extraHeaders)
+            {
+                request.Headers.TryAddWithoutValidation(k, v);
+            }
+        }
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
@@ -81,10 +137,16 @@ public sealed class GoogleLlmClient : ILlmClient
                         content.TryGetProperty("parts", out var parts) &&
                         parts.GetArrayLength() > 0)
                     {
-                        var text = parts[0].GetProperty("text").GetString();
-                        if (!string.IsNullOrEmpty(text))
+                        foreach (var part in parts.EnumerateArray())
                         {
-                            yield return text;
+                            if (part.TryGetProperty("text", out var textProp))
+                            {
+                                var text = textProp.GetString();
+                                if (!string.IsNullOrEmpty(text))
+                                {
+                                    yield return text;
+                                }
+                            }
                         }
                     }
                 }
@@ -111,6 +173,7 @@ public sealed class OpenAiLlmClient : ILlmClient
     public async IAsyncEnumerable<string> StreamChatAsync(
         IReadOnlyList<LlmChatMessage> messages,
         string modelId,
+        object? generationConfig = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var normalizedModel = modelId.StartsWith("openai/", StringComparison.OrdinalIgnoreCase)
@@ -136,6 +199,7 @@ public sealed class OpenAiLlmClient : ILlmClient
         {
             Content = new StringContent(bodyJson, Encoding.UTF8, "application/json")
         };
+        request.Headers.UserAgent.ParseAdd("opencode");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _token);
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);

@@ -19,7 +19,7 @@ public readonly record struct SessionId : IEquatable<SessionId>, IComparable<Ses
         Value = value;
     }
 
-    public static SessionId Create() => new($"{Prefix}{AscendingId.Generate()}");
+    public static SessionId Create() => new($"{Prefix}{Identifier.Ascending()}");
     public static SessionId FromExisting(string value) => new(value);
 
     public int CompareTo(SessionId other) => string.CompareOrdinal(Value, other.Value);
@@ -50,7 +50,7 @@ public readonly record struct ProjectId : IEquatable<ProjectId>
         Value = value;
     }
 
-    public static ProjectId Create() => new($"{Prefix}{AscendingId.Generate()}");
+    public static ProjectId Create() => new($"{Prefix}{Identifier.Ascending()}");
     public static ProjectId FromExisting(string value) => new(value);
 
     public override string ToString() => Value;
@@ -79,7 +79,7 @@ public readonly record struct MessageId : IEquatable<MessageId>
         Value = value;
     }
 
-    public static MessageId Create() => new($"{Prefix}{AscendingId.Generate()}");
+    public static MessageId Create() => new($"{Prefix}{Identifier.Ascending()}");
     public static MessageId FromExisting(string value) => new(value);
 
     public override string ToString() => Value;

@@ -42,9 +42,10 @@ public sealed class OpenCodeClient : IAsyncDisposable
         SessionId sessionId,
         string promptText,
         string? modelId = null,
+        string? variant = null,
         CancellationToken ct = default)
     {
-        return _engine.PromptAsync(sessionId, promptText, modelId, ct);
+        return _engine.PromptAsync(sessionId, promptText, modelId, variant, ct);
     }
 
     /// <summary>
@@ -53,13 +54,14 @@ public sealed class OpenCodeClient : IAsyncDisposable
     public async IAsyncEnumerable<string> AskAsync(
         string promptText,
         string? modelId = null,
+        string? variant = null,
         string? directory = null,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var dir = directory ?? Directory.GetCurrentDirectory();
         var session = await _sessionStore.CreateSessionAsync(dir, title: promptText[..Math.Min(promptText.Length, 40)], ct: ct);
 
-        await foreach (var chunk in _engine.PromptAsync(session.Id, promptText, modelId, ct))
+        await foreach (var chunk in _engine.PromptAsync(session.Id, promptText, modelId, variant, ct))
         {
             yield return chunk;
         }

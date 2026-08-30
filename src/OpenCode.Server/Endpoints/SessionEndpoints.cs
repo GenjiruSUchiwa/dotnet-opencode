@@ -1,5 +1,6 @@
 namespace OpenCode.Server.Endpoints;
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenCode.Core.Database;
@@ -66,6 +67,11 @@ public static class SessionEndpoints
             return session is not null ? Results.Ok(new { data = session }) : Results.NotFound();
         });
 
+        app.MapGet("/api/session/{id}/inbox", (string id) =>
+        {
+            return Results.Ok(new { data = Array.Empty<object>() });
+        });
+
         app.MapGet("/api/session/{id}/message", async (
             string id,
             SessionStore store,
@@ -73,7 +79,11 @@ public static class SessionEndpoints
             CancellationToken ct) =>
         {
             var messages = await store.ListMessagesAsync(new SessionId(id), limit ?? 100, ct);
-            return Results.Ok(new { data = messages, cursor = (string?)null });
+            return Results.Ok(new
+            {
+                data = messages,
+                cursor = new { previous = (string?)null, next = (string?)null }
+            });
         });
 
         app.MapDelete("/api/session/{id}", async (
@@ -168,6 +178,7 @@ public static class SessionEndpoints
                 sessionID = session.Id.Value,
                 title = session.Title,
                 directory = session.Directory,
+                location = session.Location,
                 agent = request.Agent,
                 model = request.Model
             });
@@ -179,7 +190,7 @@ public static class SessionEndpoints
             string id,
             PromptApiRequest input,
             SessionStore store,
-            SessionExecutionEngine engine,
+            ProviderResolver resolver,
             IEventFeedService feedService,
             CancellationToken ct) =>
         {
@@ -201,7 +212,7 @@ public static class SessionEndpoints
                 }
             };
 
-            feedService.PublishRaw(EventTypes.SessionInboxEnqueued, inboxUser);
+            feedService.PublishRaw("session.inbox.enqueued", inboxUser);
 
             // Run execution asynchronously in background so prompt admission returns immediately
             _ = Task.Run(async () =>
@@ -217,23 +228,79 @@ public static class SessionEndpoints
                     };
                     await store.AddMessageAsync(sessionId, userMsg, CancellationToken.None);
 
-                    feedService.PublishRaw(EventTypes.SessionInboxDelivered, new
+                    feedService.PublishRaw("session.inbox.delivered", new
                     {
                         sessionID = sessionId.Value,
                         id = msgId.Value
                     });
 
-                    // 2. Stream assistant completion
+                    // 2. Resolve Model and Start Assistant Step
+                    var assistantMsgId = MessageId.Create();
                     var modelToUse = input.Model ?? "gemini-3.7-flash";
                     var variantToUse = input.Variant ?? "high";
+                    var resolved = await resolver.ResolveAsync(modelToUse, variantToUse, CancellationToken.None);
 
-                    var chunks = new List<string>();
-                    await foreach (var chunk in engine.PromptAsync(sessionId, input.Text, modelToUse, variantToUse, CancellationToken.None))
+                    var modelRef = resolved.ModelId.Contains('/')
+                        ? ModelRef.Parse(resolved.ModelId)
+                        : new ModelRef(resolved.Client.ProviderId, resolved.ModelId);
+
+                    feedService.PublishRaw("session.step.started", new
                     {
-                        chunks.Add(chunk);
+                        sessionID = sessionId.Value,
+                        assistantMessageID = assistantMsgId.Value,
+                        agent = "build",
+                        model = modelRef
+                    });
+
+                    feedService.PublishRaw("session.text.started", new
+                    {
+                        sessionID = sessionId.Value,
+                        assistantMessageID = assistantMsgId.Value
+                    });
+
+                    var assistantText = new StringBuilder();
+                    var messages = new List<LlmChatMessage>
+                    {
+                        new("system", "You are an AI engineering agent inside opencode-dotnet. Help the user accomplish their goals."),
+                        new("user", input.Text)
+                    };
+
+                    await foreach (var chunk in resolved.Client.StreamChatAsync(messages, resolved.ModelId, resolved.GenerationConfig, CancellationToken.None))
+                    {
+                        assistantText.Append(chunk);
+                        feedService.PublishRaw("session.text.delta", new
+                        {
+                            sessionID = sessionId.Value,
+                            assistantMessageID = assistantMsgId.Value,
+                            delta = chunk
+                        });
                     }
 
-                    feedService.PublishRaw(EventTypes.SessionIdle, new
+                    var fullText = assistantText.ToString();
+                    feedService.PublishRaw("session.text.ended", new
+                    {
+                        sessionID = sessionId.Value,
+                        assistantMessageID = assistantMsgId.Value,
+                        text = fullText
+                    });
+
+                    feedService.PublishRaw("session.step.streamed", new
+                    {
+                        sessionID = sessionId.Value,
+                        assistantMessageID = assistantMsgId.Value
+                    });
+
+                    // Record assistant message to SQLite
+                    var assistantMsg = new AssistantMessage
+                    {
+                        Id = assistantMsgId,
+                        Time = new MessageTime(DateTimeOffset.UtcNow),
+                        Model = modelRef,
+                        Content = [new AssistantTextContent(fullText)]
+                    };
+                    await store.AddMessageAsync(sessionId, assistantMsg, CancellationToken.None);
+
+                    feedService.PublishRaw("session.idle", new
                     {
                         sessionID = sessionId.Value,
                         outcome = "succeeded"
@@ -241,7 +308,7 @@ public static class SessionEndpoints
                 }
                 catch (Exception ex)
                 {
-                    feedService.PublishRaw(EventTypes.SessionIdle, new
+                    feedService.PublishRaw("session.idle", new
                     {
                         sessionID = sessionId.Value,
                         outcome = "failed",

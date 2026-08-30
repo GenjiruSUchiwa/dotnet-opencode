@@ -160,21 +160,24 @@ public sealed class SessionStore
         cmd.Parameters.AddWithValue("@sessionId", sessionId.Value);
         cmd.Parameters.AddWithValue("@type", message switch
         {
-            UserPromptMessage => "user",
+            UserMessage => "user",
             AssistantMessage => "assistant",
-            ToolCallMessage => "tool-call",
-            ToolResultMessage => "tool-result",
+            ShellMessage => "shell",
             _ => "unknown"
         });
         cmd.Parameters.AddWithValue("@seq", nextSeq);
 
-        var nowMs = message.CreatedAt.ToUnixTimeMilliseconds();
+        var nowMs = message.Time.Created.ToUnixTimeMilliseconds();
         cmd.Parameters.AddWithValue("@now", nowMs);
 
         var dataJson = message switch
         {
-            UserPromptMessage u => JsonSerializer.Serialize(new { text = u.Text, time = new { created = nowMs } }),
-            AssistantMessage a => JsonSerializer.Serialize(new { text = a.Text, modelId = a.ModelId, providerId = a.ProviderId, time = new { created = nowMs } }),
+            UserMessage u => JsonSerializer.Serialize(new { text = u.Text, time = new { created = nowMs } }),
+            AssistantMessage a => JsonSerializer.Serialize(new {
+                model = a.Model,
+                content = a.Content,
+                time = new { created = nowMs }
+            }),
             _ => JsonSerializer.Serialize(message, OpenCodeJsonContext.Default.SessionMessage)
         };
         cmd.Parameters.AddWithValue("@data", dataJson);

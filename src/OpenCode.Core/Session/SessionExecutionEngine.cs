@@ -26,10 +26,11 @@ public sealed class SessionExecutionEngine
     {
         // 1. Record User Message in Database
         var userMsgId = MessageId.Create();
-        var userMsg = new UserPromptMessage
+        var now = DateTimeOffset.UtcNow;
+        var userMsg = new UserMessage
         {
             Id = userMsgId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            Time = new MessageTime(now),
             Text = promptText
         };
         await _sessionStore.AddMessageAsync(sessionId, userMsg, ct);
@@ -53,13 +54,16 @@ public sealed class SessionExecutionEngine
 
         // 4. Record Assistant Message in Database
         var assistantMsgId = MessageId.Create();
+        var modelRef = resolved.ModelId.Contains('/')
+            ? ModelRef.Parse(resolved.ModelId)
+            : new ModelRef(resolved.Client.ProviderId, resolved.ModelId);
+
         var assistantMsg = new AssistantMessage
         {
             Id = assistantMsgId,
-            CreatedAt = DateTimeOffset.UtcNow,
-            Text = assistantText.ToString(),
-            ModelId = resolved.ModelId,
-            ProviderId = resolved.Client.ProviderId
+            Time = new MessageTime(DateTimeOffset.UtcNow),
+            Model = modelRef,
+            Content = [new AssistantTextContent(assistantText.ToString())]
         };
         await _sessionStore.AddMessageAsync(sessionId, assistantMsg, ct);
     }

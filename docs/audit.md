@@ -25,23 +25,23 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/catalog.ts` | `src/OpenCode.Schema/catalog.cs` | [ ] Pending |
 | `packages/schema/src/command.ts` | `src/OpenCode.Schema/Command.cs` | [x] Ported |
 | `packages/schema/src/config.ts` | `src/OpenCode.Schema/Config.cs` | [x] Ported |
-| `packages/schema/src/config/agent.ts` | `src/OpenCode.Schema/config/agent.cs` | [ ] Pending |
-| `packages/schema/src/config/command.ts` | `src/OpenCode.Schema/config/command.cs` | [ ] Pending |
-| `packages/schema/src/config/compaction.ts` | `src/OpenCode.Schema/config/compaction.cs` | [ ] Pending |
-| `packages/schema/src/config/experimental.ts` | `src/OpenCode.Schema/config/experimental.cs` | [ ] Pending |
-| `packages/schema/src/config/formatter.ts` | `src/OpenCode.Schema/config/formatter.cs` | [ ] Pending |
-| `packages/schema/src/config/lsp.ts` | `src/OpenCode.Schema/config/lsp.cs` | [ ] Pending |
-| `packages/schema/src/config/mcp.ts` | `src/OpenCode.Schema/config/mcp.cs` | [ ] Pending |
-| `packages/schema/src/config/media.ts` | `src/OpenCode.Schema/config/media.cs` | [ ] Pending |
-| `packages/schema/src/config/model.ts` | `src/OpenCode.Schema/config/model.cs` | [ ] Pending |
-| `packages/schema/src/config/plugin.ts` | `src/OpenCode.Schema/config/plugin.cs` | [ ] Pending |
-| `packages/schema/src/config/policy.ts` | `src/OpenCode.Schema/config/policy.cs` | [ ] Pending |
-| `packages/schema/src/config/provider.ts` | `src/OpenCode.Schema/config/provider.cs` | [ ] Pending |
-| `packages/schema/src/config/reference.ts` | `src/OpenCode.Schema/config/reference.cs` | [ ] Pending |
-| `packages/schema/src/config/tool-output.ts` | `src/OpenCode.Schema/config/tool-output.cs` | [ ] Pending |
-| `packages/schema/src/config/warming.ts` | `src/OpenCode.Schema/config/warming.cs` | [ ] Pending |
-| `packages/schema/src/config/watcher.ts` | `src/OpenCode.Schema/config/watcher.cs` | [ ] Pending |
-| `packages/schema/src/config/websearch.ts` | `src/OpenCode.Schema/config/websearch.cs` | [ ] Pending |
+| `packages/schema/src/config/agent.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigAgent)` | [x] Ported |
+| `packages/schema/src/config/command.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
+| `packages/schema/src/config/compaction.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigCompaction)` | [x] Ported |
+| `packages/schema/src/config/experimental.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigExperimental)` | [x] Ported |
+| `packages/schema/src/config/formatter.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigFormatter)` | [x] Ported |
+| `packages/schema/src/config/lsp.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigLsp)` | [x] Ported |
+| `packages/schema/src/config/mcp.ts` | `src/OpenCode.Schema/Mcp.cs` | [x] Ported |
+| `packages/schema/src/config/media.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
+| `packages/schema/src/config/model.ts` | `src/OpenCode.Schema/Model.cs` | [x] Ported |
+| `packages/schema/src/config/plugin.ts` | `src/OpenCode.Schema/Plugin.cs` | [x] Ported |
+| `packages/schema/src/config/policy.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigPolicy)` | [x] Ported |
+| `packages/schema/src/config/provider.ts` | `src/OpenCode.Schema/Provider.cs` | [x] Ported |
+| `packages/schema/src/config/reference.ts` | `src/OpenCode.Schema/Reference.cs` | [x] Ported |
+| `packages/schema/src/config/tool-output.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigToolOutput)` | [x] Ported |
+| `packages/schema/src/config/warming.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
+| `packages/schema/src/config/watcher.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigWatcher)` | [x] Ported |
+| `packages/schema/src/config/websearch.ts` | `src/OpenCode.Schema/WebSearch.cs` | [x] Ported |
 | `packages/schema/src/connection.ts` | `src/OpenCode.Schema/Connection.cs` | [x] Ported |
 | `packages/schema/src/credential.ts` | `src/OpenCode.Schema/Credential.cs` | [x] Ported |
 | `packages/schema/src/durable-event-manifest.ts` | `src/OpenCode.Schema/durable-event-manifest.cs` | [ ] Pending |

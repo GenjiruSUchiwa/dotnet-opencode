@@ -72,14 +72,14 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/permission-saved.ts` | `src/OpenCode.Schema/PermissionSaved.cs` | [x] Ported |
 | `packages/schema/src/permission-v1.ts` | `src/OpenCode.Schema/permission-v1.cs` | [ ] Pending |
 | `packages/schema/src/permission.ts` | `src/OpenCode.Schema/Permission.cs` | [x] Ported |
-| `packages/schema/src/persistent-pty.ts` | `src/OpenCode.Schema/persistent-pty.cs` | [ ] Pending |
-| `packages/schema/src/plugin.ts` | `src/OpenCode.Schema/plugin.cs` | [ ] Pending |
+| `packages/schema/src/persistent-pty.ts` | `src/OpenCode.Schema/PersistentPty.cs` | [x] Ported |
+| `packages/schema/src/plugin.ts` | `src/OpenCode.Schema/Plugin.cs` | [x] Ported |
 | `packages/schema/src/project-id.ts` | `src/OpenCode.Schema/Identifiers.cs (ProjectId)` | [x] Ported |
 | `packages/schema/src/project.ts` | `src/OpenCode.Schema/Project.cs` | [x] Ported |
 | `packages/schema/src/prompt-input.ts` | `src/OpenCode.Schema/prompt-input.cs` | [ ] Pending |
 | `packages/schema/src/prompt.ts` | `src/OpenCode.Schema/Prompt.cs` | [x] Ported |
 | `packages/schema/src/provider.ts` | `src/OpenCode.Schema/Provider.cs` | [x] Ported |
-| `packages/schema/src/pty-ticket.ts` | `src/OpenCode.Schema/pty-ticket.cs` | [ ] Pending |
+| `packages/schema/src/pty-ticket.ts` | `src/OpenCode.Schema/PtyTicket.cs` | [x] Ported |
 | `packages/schema/src/pty.ts` | `src/OpenCode.Schema/Pty.cs` | [x] Ported |
 | `packages/schema/src/question-v1.ts` | `src/OpenCode.Schema/question-v1.cs` | [ ] Pending |
 | `packages/schema/src/question.ts` | `src/OpenCode.Schema/Question.cs` | [x] Ported |
@@ -113,7 +113,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/v1/session.ts` | `src/OpenCode.Schema/v1/session.cs` | [ ] Pending |
 | `packages/schema/src/vcs-event.ts` | `src/OpenCode.Schema/vcs-event.cs` | [ ] Pending |
 | `packages/schema/src/vcs.ts` | `src/OpenCode.Schema/Vcs.cs` | [x] Ported |
-| `packages/schema/src/websearch.ts` | `src/OpenCode.Schema/websearch.cs` | [ ] Pending |
+| `packages/schema/src/websearch.ts` | `src/OpenCode.Schema/WebSearch.cs` | [x] Ported |
 | `packages/schema/src/workspace-event.ts` | `src/OpenCode.Schema/workspace-event.cs` | [ ] Pending |
 | `packages/schema/src/workspace-id.ts` | `src/OpenCode.Schema/Workspace.cs (WorkspaceId)` | [x] Ported |
 | `packages/schema/src/workspace.ts` | `src/OpenCode.Schema/Workspace.cs` | [x] Ported |

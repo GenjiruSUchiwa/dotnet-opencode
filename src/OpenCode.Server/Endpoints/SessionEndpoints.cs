@@ -6,6 +6,12 @@ using OpenCode.Protocol.Groups;
 using OpenCode.Schema;
 using OpenCode.Server.Services;
 
+public sealed record PromptRequest(
+    string Text,
+    string? Model = null,
+    string? Variant = null
+);
+
 public static class SessionEndpoints
 {
     public static void MapSessionEndpoints(this IEndpointRouteBuilder app)
@@ -17,6 +23,25 @@ public static class SessionEndpoints
         {
             var sessions = await store.ListSessionsAsync(limit ?? 50, ct);
             return Results.Ok(sessions);
+        });
+
+        app.MapGet("/api/session/{id}", async (
+            string id,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            var session = await store.GetSessionAsync(new SessionId(id), ct);
+            return session is not null ? Results.Ok(new { data = session }) : Results.NotFound();
+        });
+
+        app.MapGet("/api/session/{id}/message", async (
+            string id,
+            SessionStore store,
+            int? limit,
+            CancellationToken ct) =>
+        {
+            var messages = await store.ListMessagesAsync(new SessionId(id), limit ?? 100, ct);
+            return Results.Ok(new { data = messages, cursor = (string?)null });
         });
 
         app.MapPost("/api/session", async (
@@ -40,7 +65,7 @@ public static class SessionEndpoints
 
         app.MapPost("/api/session/{id}/prompt", async (
             string id,
-            PromptInput input,
+            PromptRequest input,
             SessionExecutionEngine engine,
             IEventFeedService feedService,
             CancellationToken ct) =>
@@ -54,7 +79,10 @@ public static class SessionEndpoints
             });
 
             var chunks = new List<string>();
-            await foreach (var chunk in engine.PromptAsync(sessionId, input.Text, ct: ct))
+            var modelToUse = input.Model ?? "gemini-flash";
+            var variantToUse = input.Variant ?? "high";
+
+            await foreach (var chunk in engine.PromptAsync(sessionId, input.Text, modelToUse, variantToUse, ct: ct))
             {
                 chunks.Add(chunk);
             }

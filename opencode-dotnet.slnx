@@ -6,6 +6,7 @@
     <Project Path="src/OpenCode.Schema/OpenCode.Schema.csproj" />
     <Project Path="src/OpenCode.Sdk/OpenCode.Sdk.csproj" />
     <Project Path="src/OpenCode.Server/OpenCode.Server.csproj" />
+    <Project Path="src/OpenTui.Native/OpenTui.Native.csproj" />
   </Folder>
   <Folder Name="/test/">
     <Project Path="test/OpenCode.Sdk.Tests/OpenCode.Sdk.Tests.csproj" />

@@ -68,6 +68,106 @@ public sealed class SessionStore
         return list;
     }
 
+    public async Task<SessionInfo?> GetSessionAsync(SessionId id, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, project_id, slug, directory, time_created, time_updated, time_idle,
+                   title, agent, cost, tokens_input, tokens_output, idle_outcome
+            FROM session_v2
+            WHERE id = @id
+            LIMIT 1
+        """;
+        cmd.Parameters.AddWithValue("@id", id.Value);
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct)) return null;
+
+        var sid = new SessionId(reader.GetString(0));
+        var projectId = new ProjectId(reader.GetString(1));
+        var slug = reader.GetString(2);
+        var directory = reader.GetString(3);
+        var timeCreated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4));
+        var timeUpdated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(5));
+        DateTimeOffset? timeIdle = reader.IsDBNull(6) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(6));
+
+        var title = reader.IsDBNull(7) ? null : reader.GetString(7);
+        var agent = reader.IsDBNull(8) ? null : reader.GetString(8);
+        var cost = reader.IsDBNull(9) ? 0.0 : reader.GetDouble(9);
+        var tokensIn = reader.IsDBNull(10) ? 0 : reader.GetInt64(10);
+        var tokensOut = reader.IsDBNull(11) ? 0 : reader.GetInt64(11);
+
+        SessionOutcome? outcome = null;
+        if (!reader.IsDBNull(12))
+        {
+            Enum.TryParse<SessionOutcome>(reader.GetString(12), true, out var parsed);
+            outcome = parsed;
+        }
+
+        return new SessionInfo(
+            Id: sid,
+            ProjectId: projectId,
+            Slug: slug,
+            Directory: directory,
+            Time: new SessionTime(timeCreated, timeUpdated, timeIdle),
+            Tokens: new TokenUsageInfo(Input: tokensIn, Output: tokensOut),
+            Cost: new Money(cost),
+            Title: title,
+            Agent: agent,
+            Outcome: outcome
+        );
+    }
+
+    public async Task<IReadOnlyList<JsonElement>> ListMessagesAsync(SessionId sessionId, int limit = 100, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, type, seq, time_created, time_updated, data
+            FROM session_message
+            WHERE session_id = @sessionId
+            ORDER BY seq ASC
+            LIMIT @limit
+        """;
+        cmd.Parameters.AddWithValue("@sessionId", sessionId.Value);
+        cmd.Parameters.AddWithValue("@limit", limit);
+
+        var list = new List<JsonElement>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var msgId = reader.GetString(0);
+            var type = reader.GetString(1);
+            var seq = reader.GetInt64(2);
+            var created = reader.GetInt64(3);
+            var updated = reader.GetInt64(4);
+            var dataJson = reader.GetString(5);
+
+            using var doc = JsonDocument.Parse(dataJson);
+            var dict = new Dictionary<string, object?>
+            {
+                ["id"] = msgId,
+                ["type"] = type,
+                ["seq"] = seq,
+                ["time"] = new { created, completed = updated }
+            };
+
+            foreach (var prop in doc.RootElement.EnumerateObject())
+            {
+                if (prop.Name != "time")
+                {
+                    dict[prop.Name] = prop.Value.Clone();
+                }
+            }
+
+            var mergedJson = JsonSerializer.Serialize(dict);
+            list.Add(JsonDocument.Parse(mergedJson).RootElement.Clone());
+        }
+
+        return list;
+    }
+
     public async Task<ProjectId> EnsureProjectAsync(string directory, CancellationToken ct = default)
     {
         var normalizedDir = Path.GetFullPath(directory).Replace('\\', '/');

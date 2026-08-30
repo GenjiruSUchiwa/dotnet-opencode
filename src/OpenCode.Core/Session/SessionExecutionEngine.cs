@@ -4,17 +4,25 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using OpenCode.Core.Database;
 using OpenCode.Core.Llm;
+using OpenCode.Core.Tools;
 using OpenCode.Schema;
 
 public sealed class SessionExecutionEngine
 {
     private readonly SessionStore _sessionStore;
     private readonly ProviderResolver _providerResolver;
+    private readonly ToolRegistry _tools;
 
-    public SessionExecutionEngine(SessionStore sessionStore, ProviderResolver providerResolver)
+    public ToolRegistry Tools => _tools;
+
+    public SessionExecutionEngine(
+        SessionStore sessionStore,
+        ProviderResolver providerResolver,
+        ToolRegistry tools)
     {
         _sessionStore = sessionStore;
         _providerResolver = providerResolver;
+        _tools = tools;
     }
 
     public async IAsyncEnumerable<string> PromptAsync(
@@ -41,7 +49,7 @@ public sealed class SessionExecutionEngine
         // 3. Prepare History and Stream Response
         var messages = new List<LlmChatMessage>
         {
-            new("system", "You are an AI engineering agent inside opencode-dotnet."),
+            new("system", "You are an AI engineering agent inside opencode-dotnet. Use provided tools when needed to inspect, read, and edit files."),
             new("user", promptText)
         };
 

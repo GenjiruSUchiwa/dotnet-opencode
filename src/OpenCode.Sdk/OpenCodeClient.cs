@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using OpenCode.Core.Database;
 using OpenCode.Core.Llm;
 using OpenCode.Core.Session;
+using OpenCode.Core.Tools;
 using OpenCode.Schema;
 
 public sealed class OpenCodeClient : IAsyncDisposable
@@ -26,7 +27,8 @@ public sealed class OpenCodeClient : IAsyncDisposable
         _credentialStore = new CredentialStore(_database);
         _sessionStore = new SessionStore(_database);
         _providerResolver = new ProviderResolver(_http, _credentialStore);
-        _engine = new SessionExecutionEngine(_sessionStore, _providerResolver);
+        var tools = new ToolRegistry(_http);
+        _engine = new SessionExecutionEngine(_sessionStore, _providerResolver, tools);
     }
 
     public static Task<OpenCodeClient> CreateAsync(string? dbPath = null)

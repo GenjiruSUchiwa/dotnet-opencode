@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\OpenCode.Schema\OpenCode.Schema.csproj" />
     <ProjectReference Include="..\..\src\OpenCode.Server\OpenCode.Server.csproj" />
     <ProjectReference Include="..\..\src\OpenTui.Native\OpenTui.Native.csproj" />
+    <ProjectReference Include="..\..\src\OpenCode.Client\OpenCode.Client.csproj" />
   </ItemGroup>
 
 </Project>

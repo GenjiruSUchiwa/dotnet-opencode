@@ -5,6 +5,7 @@
     <ProjectReference Include="..\OpenCode.Core\OpenCode.Core.csproj" />
     <ProjectReference Include="..\OpenCode.Schema\OpenCode.Schema.csproj" />
     <ProjectReference Include="..\OpenCode.Server\OpenCode.Server.csproj" />
+    <ProjectReference Include="..\OpenCode.Client\OpenCode.Client.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -20,8 +20,13 @@ public static class HealthEndpoints
         app.MapGet("/api/server", () =>
         {
             return Results.Ok(new ServerInfoResponse(
-                Urls: ["http://127.0.0.1:5050"]
+                Urls: ["http://127.0.0.1:5055"]
             ));
+        });
+
+        app.MapGet("/api/experimental/migration/v1", () =>
+        {
+            return Results.Ok(new { status = "completed" });
         });
     }
 }

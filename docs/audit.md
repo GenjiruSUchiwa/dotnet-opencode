@@ -9,9 +9,9 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `schema` | Data contracts & IDs | 98 | In Progress (55 / 98) |
 | `protocol` | API routes & events | 45 | In Progress (15 / 45) |
 | `server` | Kestrel Minimal APIs | 75 | In Progress (15 / 75) |
-| `client` | HTTP & SSE client | 42 | Queued |
+| `client` | HTTP & SSE client | 42 | In Progress (5 / 42) |
 | `sdk` | Embedded host & SDK | 23 | In Progress |
-| `core` | Domain execution engine | 693 | In Progress |
+| `core` | Domain execution engine | 693 | In Progress (30 / 693) |
 | `cli` | CLI commands & supervisor | 144 | In Progress |
 | `tui` | Terminal User Interface | 374 | Queued |
 | `app` / `ui` / `desktop` | Electron & Web UIs | 1,340 | Future Phase |

@@ -4,6 +4,7 @@
     <ProjectReference Include="..\OpenCode.Sdk\OpenCode.Sdk.csproj" />
     <ProjectReference Include="..\OpenCode.Core\OpenCode.Core.csproj" />
     <ProjectReference Include="..\OpenCode.Schema\OpenCode.Schema.csproj" />
+    <ProjectReference Include="..\OpenCode.Server\OpenCode.Server.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -12,5 +13,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
 </Project>

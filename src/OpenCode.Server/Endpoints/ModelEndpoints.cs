@@ -10,15 +10,15 @@ public static class ModelEndpoints
         app.MapGet("/api/model", async (ProviderResolver resolver, CancellationToken ct) =>
         {
             var cwd = Directory.GetCurrentDirectory();
-            var resolved = await resolver.ResolveAsync("gemini-flash", "high", ct);
+            var resolved = await resolver.ResolveAsync("gemini-3.7-flash", "high", ct);
 
             var models = new[]
             {
                 new ModelInfo(
-                    Id: "gemini-flash",
-                    ModelId: "gemini-flash",
-                    ProviderId: "console-google",
-                    Name: "gemini-flash (Gemini 3.7 Flash)",
+                    Id: "gemini-3.7-flash",
+                    ModelId: "gemini-3.7-flash",
+                    ProviderId: "google",
+                    Name: "Gemini 3.7 Flash",
                     Family: "gemini-flash",
                     Enabled: true
                 ),
@@ -55,10 +55,10 @@ public static class ModelEndpoints
         {
             var cwd = Directory.GetCurrentDirectory();
             var defaultModel = new ModelInfo(
-                Id: "gemini-flash",
-                ModelId: "gemini-flash",
-                ProviderId: "console-google",
-                Name: "gemini-flash (Gemini 3.7 Flash)",
+                Id: "gemini-3.7-flash",
+                ModelId: "gemini-3.7-flash",
+                ProviderId: "google",
+                Name: "Gemini 3.7 Flash",
                 Family: "gemini-flash",
                 Enabled: true
             );

@@ -197,6 +197,48 @@ public sealed class SessionStore
         return newId;
     }
 
+    public async Task DeleteSessionAsync(SessionId id, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM session_v2 WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task UpdateTitleAsync(SessionId id, string title, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE session_v2 SET title = @title, time_updated = @now WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id.Value);
+        cmd.Parameters.AddWithValue("@title", title);
+        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task UpdateAgentAsync(SessionId id, string agent, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE session_v2 SET agent = @agent, time_updated = @now WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id.Value);
+        cmd.Parameters.AddWithValue("@agent", agent);
+        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task UpdateModelAsync(SessionId id, ModelRef model, CancellationToken ct = default)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE session_v2 SET model = @model, time_updated = @now WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id.Value);
+        cmd.Parameters.AddWithValue("@model", JsonSerializer.Serialize(model, OpenCodeJsonContext.Default.ModelRef));
+        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<SessionInfo> CreateSessionAsync(
         string directory,
         string? title = null,

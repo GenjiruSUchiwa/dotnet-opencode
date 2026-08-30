@@ -88,7 +88,7 @@ var prompt = args.Length > 0
 
 Console.ForegroundColor = ConsoleColor.Cyan;
 Console.WriteLine("================================================================================");
-Console.WriteLine(" opencode-dotnet | Running model: gemini-flash (variant: high)");
+Console.WriteLine(" opencode-dotnet | Running model: gemini-2.5-flash");
 Console.WriteLine("================================================================================");
 Console.ResetColor();
 Console.WriteLine($"Prompt: \"{prompt}\"\n");
@@ -97,7 +97,7 @@ await using var client = await OpenCodeClient.CreateAsync();
 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
 
 Console.ForegroundColor = ConsoleColor.Green;
-await foreach (var chunk in client.AskAsync(prompt, modelId: "gemini-flash", variant: "high", ct: cts.Token))
+await foreach (var chunk in client.AskAsync(prompt, modelId: "google/gemini-2.5-flash", ct: cts.Token))
 {
     Console.Write(chunk);
 }

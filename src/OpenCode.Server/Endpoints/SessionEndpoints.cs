@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using OpenCode.Core.Database;
 using OpenCode.Core.Llm;
 using OpenCode.Core.Session;
-using OpenCode.Protocol.Groups;
 using OpenCode.Schema;
 using OpenCode.Server.Services;
 
@@ -26,6 +25,18 @@ public sealed record PromptApiRequest(
     [property: JsonPropertyName("resume")] bool? Resume = true,
     [property: JsonPropertyName("model")] string? Model = null,
     [property: JsonPropertyName("variant")] string? Variant = null
+);
+
+public sealed record SwitchAgentApiRequest(
+    [property: JsonPropertyName("agent")] string Agent
+);
+
+public sealed record SwitchModelApiRequest(
+    [property: JsonPropertyName("model")] ModelRef Model
+);
+
+public sealed record RenameSessionApiRequest(
+    [property: JsonPropertyName("title")] string Title
 );
 
 public static class SessionEndpoints
@@ -63,6 +74,72 @@ public static class SessionEndpoints
         {
             var messages = await store.ListMessagesAsync(new SessionId(id), limit ?? 100, ct);
             return Results.Ok(new { data = messages, cursor = (string?)null });
+        });
+
+        app.MapDelete("/api/session/{id}", async (
+            string id,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            await store.DeleteSessionAsync(new SessionId(id), ct);
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/agent", async (
+            string id,
+            SwitchAgentApiRequest request,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            await store.UpdateAgentAsync(new SessionId(id), request.Agent, ct);
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/model", async (
+            string id,
+            SwitchModelApiRequest request,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            await store.UpdateModelAsync(new SessionId(id), request.Model, ct);
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/rename", async (
+            string id,
+            RenameSessionApiRequest request,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            await store.UpdateTitleAsync(new SessionId(id), request.Title, ct);
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/interrupt", () =>
+        {
+            return Results.Ok(new { interrupted = true });
+        });
+
+        app.MapPost("/api/session/{id}/background", () =>
+        {
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/move", () =>
+        {
+            return Results.NoContent();
+        });
+
+        app.MapPost("/api/session/{id}/fork", async (
+            string id,
+            SessionStore store,
+            CancellationToken ct) =>
+        {
+            var existing = await store.GetSessionAsync(new SessionId(id), ct);
+            if (existing is null) return Results.NotFound();
+
+            var forked = await store.CreateSessionAsync(existing.Directory ?? Directory.GetCurrentDirectory(), $"Fork of {existing.Title}", existing.ProjectId, ct);
+            return Results.Ok(new { data = forked });
         });
 
         app.MapPut("/api/session/{id}/environment", () =>
@@ -147,7 +224,7 @@ public static class SessionEndpoints
                     });
 
                     // 2. Stream assistant completion
-                    var modelToUse = input.Model ?? "gemini-flash";
+                    var modelToUse = input.Model ?? "gemini-3.7-flash";
                     var variantToUse = input.Variant ?? "high";
 
                     var chunks = new List<string>();

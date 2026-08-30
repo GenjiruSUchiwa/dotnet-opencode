@@ -29,9 +29,9 @@ public sealed class ProviderResolver
         var config = ConfigLoader.LoadConfig();
         var auth = ConfigLoader.LoadAuth();
 
-        var modelSpec = requestedModel ?? config.Model ?? "gemini-flash";
+        var modelSpec = requestedModel ?? config.Model ?? "gemini-3.7-flash";
 
-        // Support model:variant syntax (e.g. "gemini-flash:high")
+        // Support model:variant syntax (e.g. "gemini-3.7-flash:high")
         string? variant = requestedVariant;
         if (modelSpec.Contains(':') && !modelSpec.Contains("://"))
         {
@@ -55,7 +55,7 @@ public sealed class ProviderResolver
                 var consoleConfig = await FetchConsoleConfigAsync(server, token, orgId, ct);
                 if (consoleConfig is not null)
                 {
-                    // Check if model matches any console model (e.g. "gemini-flash" or "console-google/gemini-flash")
+                    // Check if model matches any console model
                     foreach (var (providerId, providerData) in consoleConfig)
                     {
                         var targetId = modelSpec.StartsWith($"{providerId}/", StringComparison.OrdinalIgnoreCase)

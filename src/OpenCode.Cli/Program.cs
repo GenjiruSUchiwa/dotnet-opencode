@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Text;
-using OpenCode.Cli.Tui;
 using OpenCode.Client;
 using OpenCode.Sdk;
 using OpenCode.Server;
@@ -74,5 +73,37 @@ if (args.Length > 0 && args[0].Equals("run", StringComparison.OrdinalIgnoreCase)
     return;
 }
 
-// Default / Subcommand: tui (Native C# interactive OpenCode TUI)
-await InteractiveTui.RunAsync();
+// Default / Subcommand: tui (Launch full OpenCode TUI connected to opencode-dotnet daemon)
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("Connecting to opencode-dotnet daemon on port 5055...");
+Console.ResetColor();
+
+var endpoint = await ServiceDaemon.EnsureAsync(port: ServerHost.DefaultPort);
+
+var devDir = @"C:\Repos\sst\kind-nebula";
+ProcessStartInfo tuiStartInfo;
+if (Directory.Exists(devDir))
+{
+    tuiStartInfo = new ProcessStartInfo
+    {
+        FileName = "bun",
+        Arguments = $"run dev --server {endpoint.Url}",
+        WorkingDirectory = devDir,
+        UseShellExecute = false
+    };
+}
+else
+{
+    tuiStartInfo = new ProcessStartInfo
+    {
+        FileName = "opencode2",
+        Arguments = $"--server {endpoint.Url}",
+        UseShellExecute = false
+    };
+}
+
+var tuiProcess = Process.Start(tuiStartInfo);
+if (tuiProcess is not null)
+{
+    await tuiProcess.WaitForExitAsync();
+}

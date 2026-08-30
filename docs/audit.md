@@ -23,7 +23,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | :--- | :--- | :--- |
 | `packages/schema/src/agent.ts` | `src/OpenCode.Schema/Agent.cs` | [x] Ported |
 | `packages/schema/src/catalog.ts` | `src/OpenCode.Schema/catalog.cs` | [ ] Pending |
-| `packages/schema/src/command.ts` | `src/OpenCode.Schema/command.cs` | [ ] Pending |
+| `packages/schema/src/command.ts` | `src/OpenCode.Schema/Command.cs` | [x] Ported |
 | `packages/schema/src/config.ts` | `src/OpenCode.Schema/config.cs` | [ ] Pending |
 | `packages/schema/src/config/agent.ts` | `src/OpenCode.Schema/config/agent.cs` | [ ] Pending |
 | `packages/schema/src/config/command.ts` | `src/OpenCode.Schema/config/command.cs` | [ ] Pending |
@@ -51,7 +51,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/file-diff.ts` | `src/OpenCode.Schema/FileDiff.cs` | [x] Ported |
 | `packages/schema/src/filesystem-v1.ts` | `src/OpenCode.Schema/filesystem-v1.cs` | [ ] Pending |
 | `packages/schema/src/filesystem.ts` | `src/OpenCode.Schema/filesystem.cs` | [ ] Pending |
-| `packages/schema/src/form.ts` | `src/OpenCode.Schema/form.cs` | [ ] Pending |
+| `packages/schema/src/form.ts` | `src/OpenCode.Schema/Form.cs` | [x] Ported |
 | `packages/schema/src/ide-event.ts` | `src/OpenCode.Schema/ide-event.cs` | [ ] Pending |
 | `packages/schema/src/identifier.ts` | `src/OpenCode.Schema/Identifier.cs` | [x] Ported |
 | `packages/schema/src/index.ts` | `src/OpenCode.Schema/index.cs` | [ ] Pending |
@@ -65,7 +65,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/location.ts` | `src/OpenCode.Schema/Location.cs` | [x] Ported |
 | `packages/schema/src/lsp-event.ts` | `src/OpenCode.Schema/lsp-event.cs` | [ ] Pending |
 | `packages/schema/src/mcp-event.ts` | `src/OpenCode.Schema/mcp-event.cs` | [ ] Pending |
-| `packages/schema/src/mcp.ts` | `src/OpenCode.Schema/mcp.cs` | [ ] Pending |
+| `packages/schema/src/mcp.ts` | `src/OpenCode.Schema/Mcp.cs` | [x] Ported |
 | `packages/schema/src/model.ts` | `src/OpenCode.Schema/Model.cs` | [x] Ported |
 | `packages/schema/src/models-dev.ts` | `src/OpenCode.Schema/models-dev.cs` | [ ] Pending |
 | `packages/schema/src/money.ts` | `src/OpenCode.Schema/Money.cs` | [x] Ported |
@@ -82,7 +82,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/pty-ticket.ts` | `src/OpenCode.Schema/pty-ticket.cs` | [ ] Pending |
 | `packages/schema/src/pty.ts` | `src/OpenCode.Schema/Pty.cs` | [x] Ported |
 | `packages/schema/src/question-v1.ts` | `src/OpenCode.Schema/question-v1.cs` | [ ] Pending |
-| `packages/schema/src/question.ts` | `src/OpenCode.Schema/question.cs` | [ ] Pending |
+| `packages/schema/src/question.ts` | `src/OpenCode.Schema/Question.cs` | [x] Ported |
 | `packages/schema/src/reference.ts` | `src/OpenCode.Schema/reference.cs` | [ ] Pending |
 | `packages/schema/src/schema.ts` | `src/OpenCode.Schema/schema.cs` | [ ] Pending |
 | `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/server-event.cs` | [ ] Pending |
@@ -101,7 +101,7 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/session-v1.ts` | `src/OpenCode.Schema/session-v1.cs` | [ ] Pending |
 | `packages/schema/src/session.ts` | `src/OpenCode.Schema/Session.cs` | [x] Ported |
 | `packages/schema/src/shell.ts` | `src/OpenCode.Schema/Shell.cs` | [x] Ported |
-| `packages/schema/src/skill.ts` | `src/OpenCode.Schema/skill.cs` | [ ] Pending |
+| `packages/schema/src/skill.ts` | `src/OpenCode.Schema/Skill.cs` | [x] Ported |
 | `packages/schema/src/snapshot.ts` | `src/OpenCode.Schema/Snapshot.cs` | [x] Ported |
 | `packages/schema/src/token-usage.ts` | `src/OpenCode.Schema/TokenUsage.cs` | [x] Ported |
 | `packages/schema/src/tool.ts` | `src/OpenCode.Schema/Tool.cs` | [x] Ported |

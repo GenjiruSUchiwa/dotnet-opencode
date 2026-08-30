@@ -24,7 +24,7 @@ public sealed record SessionTime(
 
 public sealed record SessionForkInfo(
     [property: JsonPropertyName("sessionID")] SessionId SessionId,
-    [property: JsonPropertyName("boundary")] JsonElement Boundary
+    [property: JsonPropertyName("boundary")] ForkBoundary Boundary
 );
 
 /// <summary>
@@ -47,5 +47,6 @@ public sealed record SessionInfo(
     [property: JsonPropertyName("title")] string? Title = null,
     [property: JsonPropertyName("location")] string? Location = null,
     [property: JsonPropertyName("subpath")] string? Subpath = null,
-    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null
+    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
+    [property: JsonPropertyName("revert")] SessionRevert? Revert = null
 );

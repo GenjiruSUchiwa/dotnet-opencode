@@ -87,22 +87,22 @@ This document tracks the 1:1 faithful port of every file in the OpenCode reposit
 | `packages/schema/src/schema.ts` | `src/OpenCode.Schema/schema.cs` | [ ] Pending |
 | `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/server-event.cs` | [ ] Pending |
 | `packages/schema/src/session-compaction-event.ts` | `src/OpenCode.Schema/session-compaction-event.cs` | [ ] Pending |
-| `packages/schema/src/session-error.ts` | `src/OpenCode.Schema/session-error.cs` | [ ] Pending |
+| `packages/schema/src/session-error.ts` | `src/OpenCode.Schema/SessionError.cs` | [x] Ported |
 | `packages/schema/src/session-event.ts` | `src/OpenCode.Schema/session-event.cs` | [ ] Pending |
-| `packages/schema/src/session-fork.ts` | `src/OpenCode.Schema/session-fork.cs` | [ ] Pending |
+| `packages/schema/src/session-fork.ts` | `src/OpenCode.Schema/SessionFork.cs` | [x] Ported |
 | `packages/schema/src/session-id.ts` | `src/OpenCode.Schema/Identifiers.cs (SessionId)` | [x] Ported |
 | `packages/schema/src/session-inbox.ts` | `src/OpenCode.Schema/SessionInbox.cs` | [x] Ported |
 | `packages/schema/src/session-message.ts` | `src/OpenCode.Schema/SessionMessage.cs` | [x] Ported |
 | `packages/schema/src/session-metadata.ts` | `src/OpenCode.Schema/session-metadata.cs` | [ ] Pending |
-| `packages/schema/src/session-revert.ts` | `src/OpenCode.Schema/session-revert.cs` | [ ] Pending |
-| `packages/schema/src/session-stats.ts` | `src/OpenCode.Schema/session-stats.cs` | [ ] Pending |
+| `packages/schema/src/session-revert.ts` | `src/OpenCode.Schema/SessionRevert.cs` | [x] Ported |
+| `packages/schema/src/session-stats.ts` | `src/OpenCode.Schema/SessionStats.cs` | [x] Ported |
 | `packages/schema/src/session-status-event.ts` | `src/OpenCode.Schema/session-status-event.cs` | [ ] Pending |
-| `packages/schema/src/session-transfer.ts` | `src/OpenCode.Schema/session-transfer.cs` | [ ] Pending |
+| `packages/schema/src/session-transfer.ts` | `src/OpenCode.Schema/SessionTransfer.cs` | [x] Ported |
 | `packages/schema/src/session-v1.ts` | `src/OpenCode.Schema/session-v1.cs` | [ ] Pending |
 | `packages/schema/src/session.ts` | `src/OpenCode.Schema/Session.cs` | [x] Ported |
 | `packages/schema/src/shell.ts` | `src/OpenCode.Schema/Shell.cs` | [x] Ported |
 | `packages/schema/src/skill.ts` | `src/OpenCode.Schema/skill.cs` | [ ] Pending |
-| `packages/schema/src/snapshot.ts` | `src/OpenCode.Schema/snapshot.cs` | [ ] Pending |
+| `packages/schema/src/snapshot.ts` | `src/OpenCode.Schema/Snapshot.cs` | [x] Ported |
 | `packages/schema/src/token-usage.ts` | `src/OpenCode.Schema/TokenUsage.cs` | [x] Ported |
 | `packages/schema/src/tool.ts` | `src/OpenCode.Schema/Tool.cs` | [x] Ported |
 | `packages/schema/src/tui-event.ts` | `src/OpenCode.Schema/tui-event.cs` | [ ] Pending |

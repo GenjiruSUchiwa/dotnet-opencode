@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/OpenCode.Cli/OpenCode.Cli.csproj" />
     <Project Path="src/OpenCode.Core/OpenCode.Core.csproj" />
+    <Project Path="src/OpenCode.Protocol/OpenCode.Protocol.csproj" />
     <Project Path="src/OpenCode.Schema/OpenCode.Schema.csproj" />
     <Project Path="src/OpenCode.Sdk/OpenCode.Sdk.csproj" />
   </Folder>

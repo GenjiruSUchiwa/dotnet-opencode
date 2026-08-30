@@ -29,9 +29,9 @@ public sealed class ProviderResolver
         var config = ConfigLoader.LoadConfig();
         var auth = ConfigLoader.LoadAuth();
 
-        var modelSpec = requestedModel ?? config.Model ?? "gemini-3.7-flash";
+        var modelSpec = requestedModel ?? "gemini-2.5-flash";
 
-        // Support model:variant syntax (e.g. "gemini-3.7-flash:high")
+        // Support model:variant syntax (e.g. "gemini-2.5-flash:high")
         string? variant = requestedVariant;
         if (modelSpec.Contains(':') && !modelSpec.Contains("://"))
         {
@@ -40,64 +40,7 @@ public sealed class ProviderResolver
             variant ??= parts[1];
         }
 
-        // 1. Check if user is logged into OpenCode Console (in opencode.db)
-        var opencodeCred = await _credentialStore.GetActiveCredentialAsync("opencode", ct);
-        if (opencodeCred is not null)
-        {
-            using var doc = JsonDocument.Parse(opencodeCred.ValueJson);
-            var token = doc.RootElement.TryGetProperty("access", out var accProp) ? accProp.GetString() : null;
-            var orgId = doc.RootElement.TryGetProperty("metadata", out var metaProp) && metaProp.TryGetProperty("orgID", out var orgProp) ? orgProp.GetString() : null;
-            var server = (doc.RootElement.TryGetProperty("metadata", out var metaServer) && metaServer.TryGetProperty("server", out var servProp) ? servProp.GetString() : null) ?? "https://opencode.ai/console";
-
-            if (!string.IsNullOrEmpty(token))
-            {
-                // Fetch dynamic console providers and models from OpenCode console
-                var consoleConfig = await FetchConsoleConfigAsync(server, token, orgId, ct);
-                if (consoleConfig is not null)
-                {
-                    // Check if model matches any console model
-                    foreach (var (providerId, providerData) in consoleConfig)
-                    {
-                        var targetId = modelSpec.StartsWith($"{providerId}/", StringComparison.OrdinalIgnoreCase)
-                            ? modelSpec[(providerId.Length + 1)..]
-                            : modelSpec;
-
-                        if (providerData.Models.TryGetValue(targetId, out var modelData))
-                        {
-                            object? generationConfig = null;
-                            var selectedVariant = variant ?? "high"; // Default to high if specified or available
-
-                            if (modelData.Variants is not null && modelData.Variants.TryGetValue(selectedVariant, out var variantData))
-                            {
-                                generationConfig = variantData.GenerationConfig;
-                            }
-                            else if (selectedVariant == "high")
-                            {
-                                // Builtin standard high thinking config
-                                generationConfig = new
-                                {
-                                    topK = 64,
-                                    topP = 0.95,
-                                    temperature = 1,
-                                    thinkingConfig = new { thinkingLevel = "HIGH", includeThoughts = true }
-                                };
-                            }
-
-                            var client = new GoogleLlmClient(
-                                _http,
-                                apiKey: token,
-                                baseUrl: providerData.BaseUrl,
-                                orgId: orgId
-                            );
-
-                            return new ResolvedModel(client, targetId, generationConfig);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Fallback to direct Google key from auth.json or opencode.db
+        // 1. Check if user has direct Google API key in auth.json or opencode.db
         string? googleKey = auth.GetValueOrDefault("google")?.Key;
         if (string.IsNullOrEmpty(googleKey))
         {
@@ -112,6 +55,53 @@ public sealed class ProviderResolver
             }
         }
 
+        if (!string.IsNullOrEmpty(googleKey) && (requestedModel == null || modelSpec.Contains("google") || modelSpec.Contains("gemini")))
+        {
+            var targetModel = modelSpec.Contains("3.7") ? "gemini-2.5-flash" : modelSpec;
+            if (targetModel.StartsWith("google/")) targetModel = targetModel["google/".Length..];
+            return new ResolvedModel(new GoogleLlmClient(_http, googleKey), targetModel);
+        }
+
+        // 2. Check OpenCode Console credentials
+        var opencodeCred = await _credentialStore.GetActiveCredentialAsync("opencode", ct);
+        if (opencodeCred is not null)
+        {
+            using var doc = JsonDocument.Parse(opencodeCred.ValueJson);
+            var token = doc.RootElement.TryGetProperty("access", out var accProp) ? accProp.GetString() : null;
+            var orgId = doc.RootElement.TryGetProperty("metadata", out var metaProp) && metaProp.TryGetProperty("orgID", out var orgProp) ? orgProp.GetString() : null;
+            var server = (doc.RootElement.TryGetProperty("metadata", out var metaServer) && metaServer.TryGetProperty("server", out var servProp) ? servProp.GetString() : null) ?? "https://opencode.ai/console";
+
+            if (!string.IsNullOrEmpty(token))
+            {
+                var consoleConfig = await FetchConsoleConfigAsync(server, token, orgId, ct);
+                if (consoleConfig is not null)
+                {
+                    foreach (var (providerId, providerData) in consoleConfig)
+                    {
+                        var targetId = modelSpec.StartsWith($"{providerId}/", StringComparison.OrdinalIgnoreCase)
+                            ? modelSpec[(providerId.Length + 1)..]
+                            : modelSpec;
+
+                        if (providerData.Models.TryGetValue(targetId, out var modelData))
+                        {
+                            object? generationConfig = null;
+                            if (variant is not null && modelData.Variants is not null && modelData.Variants.TryGetValue(variant, out var variantData))
+                            {
+                                generationConfig = variantData.GenerationConfig;
+                            }
+
+                            ILlmClient client = providerId.Contains("google")
+                                ? new GoogleLlmClient(_http, apiKey: token, baseUrl: providerData.BaseUrl, orgId: orgId)
+                                : new OpenAiLlmClient(_http, token: token, baseUrl: providerData.BaseUrl);
+
+                            return new ResolvedModel(client, targetId, generationConfig);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: If Google is available
         if (!string.IsNullOrEmpty(googleKey))
         {
             return new ResolvedModel(new GoogleLlmClient(_http, googleKey), "gemini-2.5-flash");

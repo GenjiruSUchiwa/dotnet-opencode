@@ -9,19 +9,22 @@ public sealed class TreeSitterGrammarCache : IAsyncDisposable
 {
     private readonly string _directory;
     private readonly HashSet<string> _origins;
-    private readonly HttpClient _http = new(new HttpClientHandler { AllowAutoRedirect = false });
+    private readonly HttpClient _http;
+    private readonly TimeProvider _clock;
     private readonly SemaphoreSlim _gate = new(1);
     private bool _disposed;
     private readonly bool _offline;
 
     /// <param name="allowedOrigins">Exact HTTPS origins, including any authorized redirect/CDN origins.</param>
-    public TreeSitterGrammarCache(string directory, IEnumerable<Uri> allowedOrigins, bool offline = false)
+    public TreeSitterGrammarCache(string directory, IEnumerable<Uri> allowedOrigins, bool offline = false, TimeProvider? clock = null)
     {
         _directory = Path.GetFullPath(directory);
         _offline = offline;
         _origins = allowedOrigins.Select(origin => origin.Scheme == "https" && origin.AbsolutePath == "/" &&
             origin.UserInfo.Length == 0 && origin.Query.Length == 0 && origin.Fragment.Length == 0
             ? origin.GetLeftPart(UriPartial.Authority) : throw new ArgumentException("Allow-list entries must be HTTPS origins.", nameof(allowedOrigins))).ToHashSet(StringComparer.Ordinal);
+        _clock = clock ?? TimeProvider.System;
+        _http = new(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
     internal async Task<byte[]> ReadAsync(TreeSitterGrammarAsset asset, int limit, CancellationToken cancellation)
@@ -88,7 +91,7 @@ public sealed class TreeSitterGrammarCache : IAsyncDisposable
         for (var hop = 0; hop < 6; hop++)
         {
             Authorize(current);
-            using var response = await _http.GetAsync(current, HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+            using var response = await GetHeadersAsync(current, cancellation).ConfigureAwait(false);
             if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308)
             {
                 current = response.Headers.Location is { } location ? new Uri(current, location) : throw new InvalidDataException("Asset redirect has no location.");
@@ -100,6 +103,15 @@ public sealed class TreeSitterGrammarCache : IAsyncDisposable
             return await ReadBounded(stream, limit, cancellation).ConfigureAwait(false);
         }
         throw new InvalidDataException("Too many grammar asset redirects.");
+    }
+
+    private async Task<HttpResponseMessage> GetHeadersAsync(Uri source, CancellationToken cancellation)
+    {
+        // Preserve HttpClient's former 100-second, per-request headers deadline.
+        // Body reads remain caller-cancelled under ResponseHeadersRead semantics.
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(100), _clock);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, timeout.Token);
+        return await _http.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
     }
 
     private static async Task<byte[]> ReadLocal(string path, int limit, CancellationToken cancellation)

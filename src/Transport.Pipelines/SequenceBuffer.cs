@@ -40,6 +40,9 @@ public sealed class SequenceBuffer : IDisposable
     }
     public void Consume(long count)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(count, Length);
+        if (count == 0) return;
         var sequence = Sequence;
         var position = sequence.GetPosition(count);
         _pipe.Reader.AdvanceTo(position, position);
@@ -51,7 +54,10 @@ public sealed class SequenceBuffer : IDisposable
     private void Release()
     {
         if (!_reading) return;
-        _pipe.Reader.AdvanceTo(_sequence.Start, _sequence.End);
+        // This is a synchronous assembler, not a consumer waiting for more data.
+        // Retained bytes must stay readable even if the next producer read is EOF
+        // and Commit(0) publishes no new bytes.
+        _pipe.Reader.AdvanceTo(_sequence.Start, _sequence.Start);
         _reading = false;
     }
     public void Dispose() { Release(); _pipe.Writer.Complete(); _pipe.Reader.Complete(); }

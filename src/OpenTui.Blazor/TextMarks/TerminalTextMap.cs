@@ -22,7 +22,9 @@ public sealed class TerminalTextMap
         while (elements.MoveNext())
         {
             var element = elements.GetTextElement();
-            var size = element == "\n" ? 1 : width(element);
+            // StringInfo groups CRLF into one text element. It still contributes
+            // one newline coordinate before HighlightOffset subtracts newlines.
+            var size = element is "\n" or "\r\n" ? 1 : width(element);
             if (size < 0) throw new ArgumentOutOfRangeException(nameof(width), "Display widths must be nonnegative.");
             display = checked(display + size);
             codepoints += element.EnumerateRunes().Count();

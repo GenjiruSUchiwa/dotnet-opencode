@@ -35,10 +35,11 @@ internal sealed class TreeSitterWasm : IDisposable
     internal static TreeSitterWasm Create(TimeProvider clock)
     {
         var engine = new Engine();
-        var store = new Store(engine);
+        Store? store = null;
         TreeSitterWasm? host = null;
         try
         {
+            store = new Store(engine);
             host = new(engine, store, clock);
             host.DefineCallbacks();
             var bytes = TreeSitterAssets.Read("tree-sitter.wasm");
@@ -50,8 +51,8 @@ internal sealed class TreeSitterWasm : IDisposable
         }
         catch
         {
-            store.Dispose();
-            engine.Dispose();
+            try { store?.Dispose(); }
+            finally { engine.Dispose(); }
             throw;
         }
     }

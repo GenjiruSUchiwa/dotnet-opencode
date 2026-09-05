@@ -26,6 +26,7 @@ public sealed class TextRecordBuffer(long maximumCharacters = long.MaxValue, boo
     public bool TryRead(out TextRecord record, bool completed = false)
     {
         record = null!;
+        if (_scanned / 2 > MaximumCharacters) throw tooLarge?.Invoke() ?? new IOException("Text record limit exceeded.");
         if (_bytes.Length == 0) return false;
         var sequence = _bytes.Sequence;
         if (_skipLf)

@@ -25,7 +25,11 @@ public sealed class CodeHighlightState : IAsyncDisposable
         if (_options.Content == options.Content && _options.Filetype == options.Filetype && ReferenceEquals(_options.Highlighter, options.Highlighter) &&
             _options.Conceal == options.Conceal && _options.DrawUnstyledText == options.DrawUnstyledText && _options.Streaming == options.Streaming &&
             _options.BaseHighlight == options.BaseHighlight && (_options.SyntaxRules ?? []).SequenceEqual(options.SyntaxRules ?? [])) return;
-        _options = options;
+        // CodeRenderable resets its initial-content policy when streaming changes.
+        if (_options.Streaming != options.Streaming) _hadContent = false;
+        if (_options.Filetype != options.Filetype || !ReferenceEquals(_options.Highlighter, options.Highlighter)) HasParser = false;
+        // Keep the pending request's rules stable if the caller reuses a mutable list.
+        _options = options with { SyntaxRules = options.SyntaxRules?.ToArray() };
         _revision++;
         _parse?.Cancel();
         Diagnostic = null;

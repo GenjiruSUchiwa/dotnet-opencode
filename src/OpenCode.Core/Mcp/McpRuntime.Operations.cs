@@ -53,7 +53,7 @@ public sealed partial class McpRuntime
         return UpdateAsync(async token =>
         {
             _overrides[server] = config;
-            await ReconcileAsync(token);
+            await ReconcileAsync(token).ConfigureAwait(true);
         }, ct);
     }
 
@@ -62,7 +62,7 @@ public sealed partial class McpRuntime
         {
             RequireServer(server);
             _overrides[server] = null;
-            await ReconcileAsync(token);
+            await ReconcileAsync(token).ConfigureAwait(true);
         }, ct);
 
     /// <summary>Reconnects even when the definition is disabled. Does not write configuration.</summary>
@@ -70,8 +70,8 @@ public sealed partial class McpRuntime
         UpdateAsync(async token =>
         {
             var entry = RequireServer(server);
-            await StopAsync(server, entry);
-            await StartAsync(server, entry, token, force: true);
+            await StopAsync(server, entry).ConfigureAwait(true);
+            await StartAsync(server, entry, token, force: true).ConfigureAwait(true);
         }, ct);
 
     /// <summary>Stays disabled until explicit connect or an effective definition change.</summary>
@@ -79,24 +79,24 @@ public sealed partial class McpRuntime
         UpdateAsync(async _ =>
         {
             var entry = RequireServer(server);
-            await StopAsync(server, entry);
+            await StopAsync(server, entry).ConfigureAwait(true);
             SetStatus(server, entry, new McpDisabledStatus());
         }, ct);
 
     private async Task<McpObservation> UpdateAsync(Func<CancellationToken, Task> update, CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown.Token);
-        await _gate.WaitAsync(linked.Token);
+        await _gate.WaitAsync(linked.Token).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
             SettledObservation = null;
-            try { await update(linked.Token); }
+            try { await update(linked.Token).ConfigureAwait(true); }
             finally
             {
                 // Cancellation may arrive after a transport has closed. Flush the actual state even
                 // then, so later requests cannot advertise disconnected tools or stale instructions.
-                await FlushAsync();
+                await FlushAsync().ConfigureAwait(true);
             }
             return SettledObservation!;
         }
@@ -113,7 +113,7 @@ public sealed partial class McpRuntime
         }
         foreach (var name in _entries.Keys.Where(name => !servers.ContainsKey(name)).ToArray())
         {
-            await StopAsync(name, _entries[name]);
+            await StopAsync(name, _entries[name]).ConfigureAwait(true);
             _entries.Remove(name);
             PublishStatus(name);
         }
@@ -121,12 +121,12 @@ public sealed partial class McpRuntime
         {
             if (_entries.TryGetValue(item.Key, out var previous) && JsonNode.DeepEquals(
                 JsonSerializer.SerializeToNode(previous.Config), JsonSerializer.SerializeToNode(item.Value))) continue;
-            if (previous is not null) await StopAsync(item.Key, previous);
+            if (previous is not null) await StopAsync(item.Key, previous).ConfigureAwait(true);
             _entries[item.Key] = new Entry(item.Value);
             PublishStatus(item.Key);
         }
         foreach (var item in _entries)
-            if (item.Value.Status is McpPendingStatus) await StartAsync(item.Key, item.Value, ct);
+            if (item.Value.Status is McpPendingStatus) await StartAsync(item.Key, item.Value, ct).ConfigureAwait(true);
     }
 
     private async Task StopAsync(string name, Entry entry)
@@ -141,8 +141,8 @@ public sealed partial class McpRuntime
         entry.Templates = [];
         Interlocked.Exchange(ref entry.CatalogChanged, 0);
         CatalogChanged(name, McpChangeKind.Tools | McpChangeKind.Prompts | McpChangeKind.Resources);
-        try { if (elicitation is not null) await elicitation.DisposeAsync(); }
-        finally { if (client is not null) await client.DisposeAsync(); }
+        try { if (elicitation is not null) await elicitation.DisposeAsync().ConfigureAwait(true); }
+        finally { if (client is not null) await client.DisposeAsync().ConfigureAwait(true); }
     }
 
     private Entry RequireServer(string server) =>
@@ -150,7 +150,7 @@ public sealed partial class McpRuntime
 
     private async Task<(McpClient Client, McpServerConfig Config)> ConnectedAsync(string server, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -170,10 +170,10 @@ public sealed partial class McpRuntime
     {
         try
         {
-            while (await _signals.Reader.WaitToReadAsync(_shutdown.Token))
+            while (await _signals.Reader.WaitToReadAsync(_shutdown.Token).ConfigureAwait(true))
             {
                 while (_signals.Reader.TryRead(out _)) { }
-                try { await UpdateAsync(ApplyChangesAsync, _shutdown.Token); }
+                try { await UpdateAsync(ApplyChangesAsync, _shutdown.Token).ConfigureAwait(true); }
                 catch (Exception error) when (!_shutdown.IsCancellationRequested)
                 {
                     // A registry failure is not a successful empty observation. Leave it unavailable;
@@ -194,7 +194,7 @@ public sealed partial class McpRuntime
             if (entry.Client is not { } client) continue;
             if (client.Completion.IsCompleted)
             {
-                await StopAsync(item.Key, entry);
+                await StopAsync(item.Key, entry).ConfigureAwait(true);
                 SetStatus(item.Key, entry, new McpFailedStatus("Connection closed"));
                 continue;
             }
@@ -204,7 +204,7 @@ public sealed partial class McpRuntime
                 timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Catalog ?? 30_000));
                 try
                 {
-                    entry.Tools = (await client.ListToolsAsync(cancellationToken: timeout.Token)).ToArray();
+                    entry.Tools = (await client.ListToolsAsync(cancellationToken: timeout.Token).ConfigureAwait(true)).ToArray();
                     CatalogChanged(item.Key, McpChangeKind.Tools);
                 }
                 catch (Exception error) when (!ct.IsCancellationRequested)
@@ -217,13 +217,13 @@ public sealed partial class McpRuntime
             }
             if ((changed & McpChangeKind.Prompts) != 0 && client.ServerCapabilities.Prompts is not null)
             {
-                entry.Prompts = await OptionalCatalogAsync(entry, "prompts", async token => await client.ListPromptsAsync(cancellationToken: token), ct);
+                entry.Prompts = await OptionalCatalogAsync(entry, "prompts", async token => await client.ListPromptsAsync(cancellationToken: token).ConfigureAwait(true), ct).ConfigureAwait(true);
                 CatalogChanged(item.Key, McpChangeKind.Prompts);
             }
             if ((changed & McpChangeKind.Resources) != 0 && client.ServerCapabilities.Resources is not null)
             {
-                entry.Resources = await OptionalCatalogAsync(entry, "resources", async token => await client.ListResourcesAsync(cancellationToken: token), ct);
-                entry.Templates = await OptionalCatalogAsync(entry, "resource templates", async token => await client.ListResourceTemplatesAsync(cancellationToken: token), ct);
+                entry.Resources = await OptionalCatalogAsync(entry, "resources", async token => await client.ListResourcesAsync(cancellationToken: token).ConfigureAwait(true), ct).ConfigureAwait(true);
+                entry.Templates = await OptionalCatalogAsync(entry, "resource templates", async token => await client.ListResourceTemplatesAsync(cancellationToken: token).ConfigureAwait(true), ct).ConfigureAwait(true);
                 CatalogChanged(item.Key, McpChangeKind.Resources);
             }
         }
@@ -248,7 +248,8 @@ public sealed partial class McpRuntime
     private async Task FlushAsync()
     {
         _tools = _entries.SelectMany(item => item.Value.Tools.Select(tool => Registration(item.Key, item.Value, tool))).ToArray();
-        await _registry.ReloadAsync();
+        // Once discovery changes are accepted, flush the matching tool catalog before publishing.
+        await _registry.ReloadAsync(CancellationToken.None).ConfigureAwait(true);
         SettledObservation = Snapshot();
         foreach (var item in _catalogChanges) RaiseChanged(new(item.Key, item.Value));
         _catalogChanges.Clear();

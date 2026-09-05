@@ -26,7 +26,7 @@ public sealed class LocalFileMutation : IToolFileMutation
 
     public async Task<IToolFileTransaction> LockAsync(string absolutePath, CancellationToken ct)
     {
-        if (!Path.IsPathFullyQualified(absolutePath)) throw new ArgumentException("Mutation paths must be absolute.");
+        if (!Path.IsPathFullyQualified(absolutePath)) throw new ArgumentException("Mutation paths must be absolute.", nameof(absolutePath));
         ct.ThrowIfCancellationRequested();
         var key = LocalToolPath.Resolve(absolutePath);
         Entry entry;
@@ -35,7 +35,7 @@ public sealed class LocalFileMutation : IToolFileMutation
             if (!Locks.TryGetValue(key, out entry!)) Locks[key] = entry = new Entry();
             entry.Users++;
         }
-        try { await entry.Semaphore.WaitAsync(ct); }
+        try { await entry.Semaphore.WaitAsync(ct).ConfigureAwait(true); }
         catch
         {
             ReleaseReference(key, entry);
@@ -43,7 +43,7 @@ public sealed class LocalFileMutation : IToolFileMutation
         }
         try
         {
-            var plan = _formatter is null ? null : await _formatter.PrepareAsync(absolutePath, ct);
+            var plan = _formatter is null ? null : await _formatter.PrepareAsync(absolutePath, ct).ConfigureAwait(true);
             return new Transaction(absolutePath, key, entry, plan, _maximumBytes);
         }
         catch
@@ -77,7 +77,7 @@ public sealed class LocalFileMutation : IToolFileMutation
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
             if (_read) throw new InvalidOperationException("Mutation snapshot was already read.");
-            _original = await ReadBytesAsync(ct);
+            _original = await ReadBytesAsync(ct).ConfigureAwait(false);
             _read = true;
             if (_original is null) return null;
             var decoded = Encoding.UTF8.GetString(_original);
@@ -91,7 +91,7 @@ public sealed class LocalFileMutation : IToolFileMutation
             ct.ThrowIfCancellationRequested();
             if (!string.Equals(LocalToolPath.Resolve(path), key, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 throw new ToolExecutionException("Mutation target changed while awaiting approval. Read and approve it again.");
-            var current = await ReadBytesAsync(ct);
+            var current = await ReadBytesAsync(ct).ConfigureAwait(true);
             if ((_original is null) != (current is null) || (_original is not null && !_original.AsSpan().SequenceEqual(current)))
                 throw new ToolExecutionException("File changed while awaiting approval. Read and approve it again.");
             var bom = content.StartsWith('\uFEFF') || (_original is { Length: >= 3 } && _original[0] == 0xef && _original[1] == 0xbb && _original[2] == 0xbf);
@@ -102,15 +102,15 @@ public sealed class LocalFileMutation : IToolFileMutation
             _written = true;
             // Once a write starts, settle it and BOM restoration before releasing the transaction lock.
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes((bom ? "\uFEFF" : "") + next), CancellationToken.None);
+            await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes((bom ? "\uFEFF" : "") + next), CancellationToken.None).ConfigureAwait(true);
             if (formatter is not null)
             {
-                var formattedSuccessfully = await formatter.ApplyAsync(CancellationToken.None);
-                var formatted = Encoding.UTF8.GetString(await ReadBytesAsync(CancellationToken.None)
+                var formattedSuccessfully = await formatter.ApplyAsync(CancellationToken.None).ConfigureAwait(true);
+                var formatted = Encoding.UTF8.GetString(await ReadBytesAsync(CancellationToken.None).ConfigureAwait(true)
                     ?? throw new IOException("Formatter removed the mutation target."));
                 next = formatted.TrimStart('\uFEFF');
                 var canonical = (bom ? "\uFEFF" : "") + next;
-                if (formattedSuccessfully && formatted != canonical) await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(canonical), CancellationToken.None);
+                if (formattedSuccessfully && formatted != canonical) await File.WriteAllBytesAsync(path, Encoding.UTF8.GetBytes(canonical), CancellationToken.None).ConfigureAwait(true);
             }
             return next;
         }
@@ -120,10 +120,11 @@ public sealed class LocalFileMutation : IToolFileMutation
             if (Directory.Exists(path)) throw new IOException($"Path is a directory, not a file: {path}");
             try
             {
-                await using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                await using var fileLifetime = file.ConfigureAwait(false);
                 if (file.Length > maximumBytes) throw new ToolExecutionException($"Mutation snapshot exceeds the configured {maximumBytes} byte limit.");
                 return await PipelineBytes.CollectAsync(file, maximumBytes,
-                    () => new ToolExecutionException($"Mutation snapshot exceeds the configured {maximumBytes} byte limit."), ct);
+                    () => new ToolExecutionException($"Mutation snapshot exceeds the configured {maximumBytes} byte limit."), ct).ConfigureAwait(false);
             }
             catch (FileNotFoundException) { return null; }
             catch (DirectoryNotFoundException) { return null; }

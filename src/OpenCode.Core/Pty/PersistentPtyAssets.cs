@@ -45,7 +45,7 @@ public static class PersistentPtyAssets
         var directory = Path.Combine(AppContext.BaseDirectory, "native", "opencode-pty", rid);
         if (pins.RootElement.GetProperty("targets").TryGetProperty(rid, out var target) && Directory.Exists(directory))
         {
-            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0) throw new IOException("Packaged PTY assets cannot be linked directories.");
+            if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != (FileAttributes)0) throw new IOException("Packaged PTY assets cannot be linked directories.");
             var binary = Path.Combine(directory, "opencode-pty");
             Check(binary, target.GetProperty("sha256").GetString()!);
             Check(Path.Combine(directory, "package.json"), target.GetProperty("packageSha256").GetString()!);
@@ -78,9 +78,9 @@ public static class PersistentPtyAssets
 
     private static string Native(string file, bool allowLink = false)
     {
-        if (allowLink && (File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
+        if (allowLink && (File.GetAttributes(file) & FileAttributes.ReparsePoint) != (FileAttributes)0)
             file = File.ResolveLinkTarget(file, true)?.FullName ?? throw new IOException("The explicit native executable link cannot be resolved.");
-        if ((File.GetAttributes(file) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+        if ((File.GetAttributes(file) & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != (FileAttributes)0)
             throw new IOException("Persistent PTY executables must be regular native files, not links or launchers.");
         using var input = File.OpenRead(file);
         Span<byte> magic = stackalloc byte[4];
@@ -88,14 +88,14 @@ public static class PersistentPtyAssets
             || magic.SequenceEqual(new byte[] { 0xcf, 0xfa, 0xed, 0xfe }) || magic.SequenceEqual(new byte[] { 0xfe, 0xed, 0xfa, 0xcf })
             || magic.SequenceEqual(new byte[] { 0xca, 0xfe, 0xba, 0xbe }) || (magic[0] == 'M' && magic[1] == 'Z')))
             throw new NotSupportedException("Persistent PTY resolution requires a native executable, not the npm JavaScript launcher, Bun, Node, or a script shim.");
-        if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) == 0)
+        if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) == (UnixFileMode)0)
             throw new IOException("The packaged persistent PTY file is not executable. Preserve its executable mode when distributing the explicit build output.");
         return file;
     }
 
     private static void Check(string file, string expected)
     {
-        if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0) throw new IOException("Packaged PTY assets cannot be linked files.");
+        if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != (FileAttributes)0) throw new IOException("Packaged PTY assets cannot be linked files.");
         using var input = File.OpenRead(file);
         if (Convert.ToHexStringLower(SHA256.HashData(input)) != expected) throw new IOException("Packaged persistent PTY asset failed its pinned SHA-256 check.");
     }

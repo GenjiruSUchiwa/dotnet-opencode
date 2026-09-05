@@ -27,8 +27,9 @@ public sealed class LocalFormatter : IToolFileFormatter
     public LocalFormatter(string directory, string worktree, string? bin = null, TimeProvider? clock = null)
     {
         _clock = clock ?? TimeProvider.System;
-        if (!Path.IsPathFullyQualified(directory) || !Path.IsPathFullyQualified(worktree) || bin is not null && !Path.IsPathFullyQualified(bin))
-            throw new ArgumentException("Formatter directories must be absolute.");
+        if (!Path.IsPathFullyQualified(directory)) throw new ArgumentException("Formatter directories must be absolute.", nameof(directory));
+        if (!Path.IsPathFullyQualified(worktree)) throw new ArgumentException("Formatter directories must be absolute.", nameof(worktree));
+        if (bin is not null && !Path.IsPathFullyQualified(bin)) throw new ArgumentException("Formatter directories must be absolute.", nameof(bin));
         _directory = directory;
         _worktree = worktree;
         _bin = bin;
@@ -37,7 +38,7 @@ public sealed class LocalFormatter : IToolFileFormatter
     public ValueTask<IToolFileFormatPlan> PrepareAsync(string absolutePath, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (!Path.IsPathFullyQualified(absolutePath)) throw new ArgumentException("Formatter target must be absolute.");
+        if (!Path.IsPathFullyQualified(absolutePath)) throw new ArgumentException("Formatter target must be absolute.", nameof(absolutePath));
         var configured = ConfigLoader.LoadDocument(directory: _directory)["formatter"];
         var signature = configured?.ToJsonString() ?? "null";
         Definition[] matching;
@@ -81,7 +82,7 @@ public sealed class LocalFormatter : IToolFileFormatter
                             {
                                 var remaining = 8192 - output.Length;
                                 if (remaining > 0) output.Append(chunk.Span[..Math.Min(remaining, chunk.Length)]);
-                            }, ct);
+                            }, ct).ConfigureAwait(false);
                             if (tested != 0) continue;
                             if (item.Detector == "air")
                             {
@@ -97,7 +98,7 @@ public sealed class LocalFormatter : IToolFileFormatter
                         var index = argument.IndexOf("$FILE", StringComparison.Ordinal);
                         return index < 0 ? argument : argument[..index] + file + argument[(index + 5)..];
                     }).ToArray();
-                    if (await owner.RunAsync(args, item.Environment, null, ct) == 0) return true;
+                    if (await owner.RunAsync(args, item.Environment, null, ct).ConfigureAwait(false) == 0) return true;
                     Trace.TraceWarning("Formatter {0} exited unsuccessfully for {1}", item.Name, file);
                 }
                 catch (Exception error) when (error is IOException or Win32Exception or TimeoutException)
@@ -118,7 +119,7 @@ public sealed class LocalFormatter : IToolFileFormatter
         foreach (var argument in command.Skip(1)) start.ArgumentList.Add(argument);
         if (environment is not null) foreach (var pair in environment) start.Environment[pair.Key] = pair.Value;
         // Ordinary formatter output is ignored by source. Only help probes need bounded capture.
-        return (await OwnedToolProcess.RunAsync(start, output is null ? null : chunk => { output(chunk); return true; }, 120_000, ct, _clock)).ExitCode;
+        return (await OwnedToolProcess.RunAsync(start, output is null ? null : chunk => { output(chunk); return true; }, 120_000, ct, _clock).ConfigureAwait(false)).ExitCode;
     }
 
     private bool Eligible(Definition item, CancellationToken ct)
@@ -187,7 +188,7 @@ public sealed class LocalFormatter : IToolFileFormatter
             {
                 var file = Path.GetFullPath(Path.Combine(directory.Trim('"'), name + extension));
                 if (!File.Exists(file)) continue;
-                if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) == 0) continue;
+                if (!OperatingSystem.IsWindows() && (File.GetUnixFileMode(file) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) == (UnixFileMode)0) continue;
                 return file;
             }
         return null;

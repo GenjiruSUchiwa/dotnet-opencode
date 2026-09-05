@@ -24,7 +24,9 @@ public sealed record WebSearchSelection(string? ProviderId = null, bool Disabled
 {
     public void Validate()
     {
+#pragma warning disable MA0015 // Preserve the existing ArgumentException contract for cross-property validation; this method has no argument.
         if (Disabled && ProviderId is not null) throw new ArgumentException("A disabled selection cannot also select a provider.");
+#pragma warning restore MA0015
     }
 }
 

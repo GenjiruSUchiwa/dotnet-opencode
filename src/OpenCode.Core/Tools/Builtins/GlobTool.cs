@@ -23,11 +23,11 @@ public sealed class GlobTool(ToolFilePolicy? policy = null, RipgrepProcess? ripg
         if (path is null or "undefined" or "null") path = ".";
         var limit = args.Integer("limit", 100, 1, int.MaxValue - 1);
         if (policy is null || ripgrep is null) throw new NotSupportedException("glob requires Location, permission and ripgrep services.");
-        var target = await policy.ResolveAsync(path, ToolPathKind.Directory, context, ct);
+        var target = await policy.ResolveAsync(path, ToolPathKind.Directory, context, ct).ConfigureAwait(true);
         await policy.AssertAsync(Name, [pattern], ["*"], context,
-            new Dictionary<string, object> { ["root"] = path, ["path"] = path, ["limit"] = limit }, ct);
+            new Dictionary<string, object> { ["root"] = path, ["path"] = path, ["limit"] = limit }, ct).ConfigureAwait(true);
         if (!Directory.Exists(target.Absolute)) throw new ToolExecutionException($"Search path is not a directory: {path}");
-        var rows = await ripgrep.GlobAsync(target.Absolute, pattern, limit + 1, ct);
+        var rows = await ripgrep.GlobAsync(target.Absolute, pattern, limit + 1, ct).ConfigureAwait(true);
         var entries = rows.Take(limit).Select(row => row with
         {
             Path = Path.GetRelativePath(policy.Location.Directory, Path.GetFullPath(row.Path, target.Absolute))

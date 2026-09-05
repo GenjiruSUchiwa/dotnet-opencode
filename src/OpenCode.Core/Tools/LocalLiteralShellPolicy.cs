@@ -10,13 +10,13 @@ public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPer
 {
     public async Task<PreparedToolShell> PrepareAsync(string command, string? workdir, ToolContext context, CancellationToken ct)
     {
-        if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.");
+        if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.", nameof(executable));
         var name = Path.GetFileNameWithoutExtension(executable).ToLowerInvariant();
         var powershell = name is "powershell" or "pwsh";
         if (!powershell && name is not ("bash" or "dash" or "ksh" or "sh" or "zsh"))
             throw new NotSupportedException("Literal shell preparation supports PowerShell and POSIX-compatible shells only.");
         var words = Parse(command, powershell);
-        var target = await location.ResolveAsync(workdir ?? ".", ToolPathKind.Directory, ct);
+        var target = await location.ResolveAsync(workdir ?? ".", ToolPathKind.Directory, ct).ConfigureAwait(true);
         var directories = new List<ToolPath> { target };
         var head = powershell ? words[0].Value.ToLowerInvariant() : words[0].Value;
         var cwdCommand = head is "cd" or "chdir" or "pushd" or "set-location" or "push-location";
@@ -28,20 +28,20 @@ public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPer
                 throw new NotSupportedException("Directory changes require one explicit literal path.");
             if (words[index].Value.StartsWith('~') && words[index].Value != "~" && !words[index].Value.StartsWith("~/", StringComparison.Ordinal) && !words[index].Value.StartsWith("~\\", StringComparison.Ordinal))
                 throw new NotSupportedException("Named-user home expansion requires the full shell scanner.");
-            directories.Add(await location.ResolveAsync(location.ResolvePath(words[index].Value, target.Absolute), ToolPathKind.Directory, ct));
+            directories.Add(await location.ResolveAsync(location.ResolvePath(words[index].Value, target.Absolute), ToolPathKind.Directory, ct).ConfigureAwait(true));
         }
         var external = directories.Select(directory => directory.ExternalDirectory).OfType<ExternalToolDirectory>()
             .DistinctBy(directory => directory.Resource).ToArray();
         if (external.Length > 0)
             await permission.AssertAsync("external_directory", external.Select(directory => directory.Resource).ToArray(),
-                external.Select(directory => directory.Save).ToArray(), context, null, ct);
+                external.Select(directory => directory.Save).ToArray(), context, null, ct).ConfigureAwait(true);
         if (!cwdCommand)
         {
-            await permission.AssertAsync("shell", [command.Trim()], [ShellCommandPrefix.Save(words.Select(word => word.Raw).ToArray())], context, null, ct);
+            await permission.AssertAsync("shell", [command.Trim()], [ShellCommandPrefix.Save(words.Select(word => word.Raw).ToArray())], context, null, ct).ConfigureAwait(true);
         }
         ct.ThrowIfCancellationRequested();
         if (!Directory.Exists(target.Absolute)) throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
-        if ((File.GetAttributes(executable) & FileAttributes.Directory) != 0) throw new IOException("Selected shell is not a file.");
+        if ((File.GetAttributes(executable) & FileAttributes.Directory) != (FileAttributes)0) throw new IOException("Selected shell is not a file.");
         return new(executable, powershell ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command], target.Absolute);
     }
 
@@ -81,7 +81,7 @@ public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPer
                 else value.Append(character);
                 index++;
             }
-            if (quote != '\0') throw new ArgumentException("Unterminated shell quote.");
+            if (quote != '\0') throw new ArgumentException("Unterminated shell quote.", nameof(command));
             words.Add((command[start..index], value.ToString()));
         }
         if (words.Count == 0 || words[0].Value.Length == 0 || words[0].Raw != words[0].Value || words[0].Value.Contains('='))

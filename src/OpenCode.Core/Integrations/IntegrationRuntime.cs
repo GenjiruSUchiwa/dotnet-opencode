@@ -60,7 +60,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
     {
         IntegrationDefinition[] definitions;
         lock (_gate) { ObjectDisposedException.ThrowIf(_closed, this); definitions = _definitions.Values.ToArray(); }
-        var saved = await credentials.ListCredentialsAsync(ct);
+        var saved = await credentials.ListCredentialsAsync(ct).ConfigureAwait(false);
         return definitions.Select(item => Project(item, saved.Where(value => value.IntegrationId == item.Reference.Id.Value)))
             .OrderBy(item => item.Name, StringComparer.Ordinal).ToArray();
     }
@@ -69,7 +69,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
     {
         IntegrationDefinition? definition;
         lock (_gate) { ObjectDisposedException.ThrowIf(_closed, this); definition = _definitions.GetValueOrDefault(id); }
-        return definition is null ? null : Project(definition, await credentials.ListCredentialsForIntegrationAsync(id, ct));
+        return definition is null ? null : Project(definition, await credentials.ListCredentialsForIntegrationAsync(id, ct).ConfigureAwait(false));
     }
 
     public async Task ConnectKeyAsync(string id, IntegrationKeyConnectPayload input, CancellationToken ct = default)
@@ -79,25 +79,25 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
             ?? throw new IntegrationAuthorizationException("This integration has no key method.");
         ValidateAnswer(method.Form, input.Answer, allowUnknown: false);
         var value = new CredentialKey(input.Key, Configuration: input.Answer is { Count: > 0 } ? input.Answer : null);
-        var label = input.Label ?? await UniqueLabelAsync(credentials, id, definition.Reference.Name, ct);
-        var mutation = await credentials.CreateAsync(id, JsonSerializer.SerializeToElement(value, OpenCodeJsonContext.Default.CredentialValue), label, ct);
-        await publish(mutation, CancellationToken.None);
+        var label = input.Label ?? await UniqueLabelAsync(credentials, id, definition.Reference.Name, ct).ConfigureAwait(true);
+        var mutation = await credentials.CreateAsync(id, JsonSerializer.SerializeToElement(value, OpenCodeJsonContext.Default.CredentialValue), label, ct).ConfigureAwait(true);
+        await publish(mutation, CancellationToken.None).ConfigureAwait(true);
     }
 
     /// <summary>Credential methods are channel-global, as in Integration.connection. Missing IDs are source no-ops.</summary>
     public async Task ActivateCredentialAsync(CredentialId id, CancellationToken ct = default) =>
-        await publish(await credentials.ActivateAsync(id.Value, ct), CancellationToken.None);
+        await publish(await credentials.ActivateAsync(id.Value, ct).ConfigureAwait(true), CancellationToken.None).ConfigureAwait(true);
 
     public async Task UpdateCredentialAsync(CredentialId id, string label, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(label);
         // The wire contract accepts any string, including empty. Interactive rename UI applies its
         // own trim/nonempty policy; the public endpoint never accepts a credential value update.
-        await publish(await credentials.UpdateAsync(id.Value, label: label, ct: ct), CancellationToken.None);
+        await publish(await credentials.UpdateAsync(id.Value, label: label, ct: ct).ConfigureAwait(true), CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task RemoveCredentialAsync(CredentialId id, CancellationToken ct = default) =>
-        await publish(await credentials.RemoveAsync(id.Value, ct), CancellationToken.None);
+        await publish(await credentials.RemoveAsync(id.Value, ct).ConfigureAwait(true), CancellationToken.None).ConfigureAwait(true);
 
     public async Task<IntegrationAttempt> ConnectOAuthAsync(string id, IntegrationOAuthConnectPayload input, CancellationToken ct = default)
     {
@@ -108,7 +108,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
         ValidateAnswer(method.Form, input.Answer, allowUnknown: true);
         using var setup = credentials.Clock.CreateLinkedCancellationTokenSource(ct, _shutdown.Token);
         setup.CancelAfter(TimeSpan.FromMinutes(10));
-        var authorization = await begin(input.Answer, input.Label, setup.Token);
+        var authorization = await begin(input.Answer, input.Label, setup.Token).ConfigureAwait(true);
         try
         {
             setup.Token.ThrowIfCancellationRequested();
@@ -130,7 +130,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
             }
             return info;
         }
-        catch { await authorization.DisposeAsync(); throw; }
+        catch { await authorization.DisposeAsync().ConfigureAwait(true); throw; }
     }
 
     public IntegrationAttemptStatus Status(string integration, IntegrationAttemptId attempt)
@@ -155,7 +155,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
             entry.Completing = true;
             worker = entry.Worker = RunAsync(entry, code);
         }
-        await worker.WaitAsync(ct);
+        await worker.WaitAsync(ct).ConfigureAwait(true);
         if (Status(integration, attempt) is IntegrationFailedAttemptStatus) throw new IntegrationAuthorizationException("Authentication failed");
     }
 
@@ -167,9 +167,9 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
             if (!_attempts.TryGetValue(attempt, out entry) || entry.Integration != integration || entry.Status is not IntegrationPendingAttemptStatus || entry.Cancelled) return;
             entry.Cancelled = true;
         }
-        await entry.Cancellation.CancelAsync();
-        if (!entry.Completing) await entry.Authorization.DisposeAsync();
-        await entry.Worker;
+        await entry.Cancellation.CancelAsync().ConfigureAwait(true);
+        if (!entry.Completing) await entry.Authorization.DisposeAsync().ConfigureAwait(true);
+        await entry.Worker.ConfigureAwait(true);
         // Existing provider APIs include persistence. If they returned a committed success despite
         // cancellation, retain complete rather than report that an existing credential was cancelled.
         lock (_gate)
@@ -186,7 +186,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
         await Task.Yield();
         try
         {
-            await entry.Authorization.CompleteAsync(code, entry.Cancellation.Token);
+            await entry.Authorization.CompleteAsync(code, entry.Cancellation.Token).ConfigureAwait(true);
             lock (_gate) entry.Status = new IntegrationCompleteAttemptStatus(entry.Info.Time);
         }
         catch (Exception)
@@ -200,7 +200,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
         }
         finally
         {
-            try { await entry.Authorization.DisposeAsync(); }
+            try { await entry.Authorization.DisposeAsync().ConfigureAwait(true); }
             catch (Exception error)
             {
                 // Persistence outcome is already settled. Do not replace a committed success with
@@ -216,9 +216,9 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30), credentials.Clock);
         try
         {
-            while (await timer.WaitForNextTickAsync(_shutdown.Token))
+            while (await timer.WaitForNextTickAsync(_shutdown.Token).ConfigureAwait(true))
             {
-                await ScrubCommandsAsync();
+                await ScrubCommandsAsync().ConfigureAwait(true);
                 Entry[] expired;
                 lock (_gate)
                 {
@@ -233,9 +233,9 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
                 }
                 foreach (var entry in expired)
                 {
-                    await entry.Cancellation.CancelAsync();
+                    await entry.Cancellation.CancelAsync().ConfigureAwait(true);
                     if (entry.Completing) continue;
-                    await entry.Authorization.DisposeAsync();
+                    await entry.Authorization.DisposeAsync().ConfigureAwait(true);
                     lock (_gate) entry.RemoveAt = credentials.Clock.GetUtcNow().AddMinutes(1);
                 }
             }
@@ -273,7 +273,7 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
 
     public static async Task<string> UniqueLabelAsync(CredentialStore store, string integration, string name, CancellationToken ct)
     {
-        var labels = (await store.ListCredentialsForIntegrationAsync(integration, ct)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
+        var labels = (await store.ListCredentialsForIntegrationAsync(integration, ct).ConfigureAwait(false)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
         return Enumerable.Range(0, labels.Count + 1).Select(index => index == 0 ? name : $"{name} {index + 1}").First(label => !labels.Contains(label));
     }
 
@@ -281,17 +281,17 @@ public sealed partial class IntegrationRuntime(CredentialStore credentials, Func
     {
         Entry[] entries;
         lock (_gate) { if (_closed) return; _closed = true; entries = _attempts.Values.ToArray(); }
-        await _shutdown.CancelAsync();
+        await _shutdown.CancelAsync().ConfigureAwait(true);
         foreach (var entry in entries)
-            if (entry.Status is IntegrationPendingAttemptStatus) await entry.Cancellation.CancelAsync();
+            if (entry.Status is IntegrationPendingAttemptStatus) await entry.Cancellation.CancelAsync().ConfigureAwait(true);
         foreach (var entry in entries)
         {
-            if (!entry.Completing && entry.Status is IntegrationPendingAttemptStatus) await entry.Authorization.DisposeAsync();
-            await entry.Worker;
+            if (!entry.Completing && entry.Status is IntegrationPendingAttemptStatus) await entry.Authorization.DisposeAsync().ConfigureAwait(true);
+            await entry.Worker.ConfigureAwait(true);
             entry.Cancellation.Dispose();
         }
-        if (_scrubber is not null) await _scrubber;
-        await DisposeCommandsAsync();
+        if (_scrubber is not null) await _scrubber.ConfigureAwait(true);
+        await DisposeCommandsAsync().ConfigureAwait(true);
         lock (_gate) { _attempts.Clear(); _definitions.Clear(); }
     }
 }

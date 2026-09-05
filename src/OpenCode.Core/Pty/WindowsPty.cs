@@ -42,20 +42,20 @@ internal sealed class WindowsPty : IAsyncDisposable
         {
             SafeFileHandle? outputRead = null;
             SafeFileHandle? outputWrite = null;
-            SafePseudoConsole? console = null;
+            SafePseudoConsole? createdConsole = null;
             WindowsPty? terminal = null;
             try
             {
                 ConPtyNative.Check(ConPtyNative.CreatePipe(out outputRead, out outputWrite, 0, 0));
-                Marshal.ThrowExceptionForHR(ConPtyNative.CreatePseudoConsole(new() { X = 80, Y = 24 }, inputRead, outputWrite, 0, out console));
-                terminal = new WindowsPty(console, inputWrite, outputRead);
+                Marshal.ThrowExceptionForHR(ConPtyNative.CreatePseudoConsole(new() { X = 80, Y = 24 }, inputRead, outputWrite, 0, out createdConsole));
+                terminal = new WindowsPty(createdConsole, inputWrite, outputRead);
                 terminal.Spawn(command, args, cwd, environment);
                 return terminal;
             }
             catch
             {
                 // The output pump remains active while closing the pseudoconsole.
-                console?.Dispose();
+                createdConsole?.Dispose();
                 inputWrite.Dispose();
                 outputWrite?.Dispose();
                 if (terminal is not null) terminal.reading.GetAwaiter().GetResult();
@@ -128,12 +128,12 @@ internal sealed class WindowsPty : IAsyncDisposable
 
     internal async ValueTask WriteAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
     {
-        await writing.WaitAsync(cancellationToken);
+        await writing.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (Volatile.Read(ref closing) != 0 || Completion.IsCompleted) return;
-            await input.WriteAsync(data, cancellationToken);
-            await input.FlushAsync(cancellationToken);
+            await input.WriteAsync(data, cancellationToken).ConfigureAwait(false);
+            await input.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
         finally { writing.Release(); }
     }
@@ -143,17 +143,17 @@ internal sealed class WindowsPty : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref closing, 1) != 0) return;
-        await Task.Run(console.Dispose);
-        await Completion;
-        await reading;
-        await writing.WaitAsync();
-        try { input.Dispose(); output.Dispose(); process?.Dispose(); }
+        await Task.Run(console.Dispose).ConfigureAwait(false);
+        await Completion.ConfigureAwait(false);
+        await reading.ConfigureAwait(false);
+        await writing.WaitAsync().ConfigureAwait(false);
+        try { await input.DisposeAsync().ConfigureAwait(false); await output.DisposeAsync().ConfigureAwait(false); process?.Dispose(); }
         finally { writing.Release(); }
     }
 
     private static string Quote(string value)
     {
-        if (value.Contains('\0')) throw new ArgumentException("PTY command and arguments cannot contain NUL.");
+        if (value.Contains('\0')) throw new ArgumentException("PTY command and arguments cannot contain NUL.", nameof(value));
         var result = new StringBuilder("\"");
         var slashes = 0;
         foreach (var character in value)

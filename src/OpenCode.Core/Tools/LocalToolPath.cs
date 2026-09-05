@@ -13,8 +13,8 @@ internal static class LocalToolPath
             {
                 current = Path.Combine(current, component);
                 var attributes = File.GetAttributes(current);
-                if ((attributes & FileAttributes.ReparsePoint) == 0) continue;
-                var info = (attributes & FileAttributes.Directory) != 0 ? (FileSystemInfo)new DirectoryInfo(current) : new FileInfo(current);
+                if ((attributes & FileAttributes.ReparsePoint) == (FileAttributes)0) continue;
+                var info = (attributes & FileAttributes.Directory) != (FileAttributes)0 ? (FileSystemInfo)new DirectoryInfo(current) : new FileInfo(current);
                 current = info.ResolveLinkTarget(true)?.FullName ?? throw new IOException($"Unable to resolve link: {current}");
             }
             return current;

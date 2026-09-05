@@ -49,7 +49,7 @@ public sealed class PtyService(string directory, Func<string> resolveShell) : IA
             foreach (var entry in input.Env ?? new Dictionary<string, string>())
             {
                 if (entry.Key.Length == 0 || entry.Key.Contains('=') || entry.Key.Contains('\0') || entry.Value.Contains('\0'))
-                    throw new ArgumentException("Invalid PTY environment entry.");
+                    throw new ArgumentException("Invalid PTY environment entry.", nameof(input));
                 environment[entry.Key] = entry.Value;
             }
             environment["TERM"] = "xterm-256color";
@@ -105,8 +105,8 @@ public sealed class PtyService(string directory, Func<string> resolveShell) : IA
             End(terminal, new());
             Publish("pty.deleted", terminal.Info);
         }
-        await terminal.Process.DisposeAsync();
-        await terminal.Pump;
+        await terminal.Process.DisposeAsync().ConfigureAwait(true);
+        await terminal.Pump.ConfigureAwait(true);
     }
 
     public PtyAttachment Attach(PtyId id, Action<PtyOutput> onData, Action<PtyEnd> onEnd, long? cursor = null)
@@ -152,7 +152,7 @@ public sealed class PtyService(string directory, Func<string> resolveShell) : IA
         try
         {
             var decoder = Encoding.UTF8.GetDecoder();
-            await foreach (var bytes in terminal.Process.Output.ReadAllAsync())
+            await foreach (var bytes in terminal.Process.Output.ReadAllAsync().ConfigureAwait(true))
             {
                 var text = new char[Encoding.UTF8.GetMaxCharCount(bytes.Length)];
                 var count = decoder.GetChars(bytes, text, false);
@@ -161,10 +161,10 @@ public sealed class PtyService(string directory, Func<string> resolveShell) : IA
             var final = new char[2];
             var remaining = decoder.GetChars([], final, true);
             if (remaining > 0) Output(terminal, new(ReadOnlyMemory<byte>.Empty, new string(final, 0, remaining), 0));
-            code = await terminal.Process.Completion;
+            code = await terminal.Process.Completion.ConfigureAwait(true);
         }
         catch (Exception error) { failure = error; }
-        finally { await terminal.Process.DisposeAsync(); }
+        finally { await terminal.Process.DisposeAsync().ConfigureAwait(true); }
         var removals = new List<PtyId>();
         lock (gate)
         {
@@ -260,8 +260,8 @@ public sealed class PtyService(string directory, Func<string> resolveShell) : IA
             terminals.Clear();
             exited.Clear();
         }
-        foreach (var terminal in owned) await terminal.Process.DisposeAsync();
-        await Task.WhenAll(owned.Select(x => x.Pump));
+        foreach (var terminal in owned) await terminal.Process.DisposeAsync().ConfigureAwait(true);
+        await Task.WhenAll(owned.Select(x => x.Pump)).ConfigureAwait(true);
     }
 
     private sealed class Terminal(PtyInfo info, WindowsPty process)

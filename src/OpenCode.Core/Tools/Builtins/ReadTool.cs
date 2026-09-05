@@ -45,20 +45,20 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
         if (limit == 0) limit = 2000;
         if (policy is null || instructions is null)
             throw new NotSupportedException("read requires Location, permission and the Session-owned read-instruction loader.");
-        var target = await policy.ResolveAsync(path, null, context, ct);
-        await policy.AssertAsync(Name, [target.Resource], ["*"], context, null, ct);
+        var target = await policy.ResolveAsync(path, null, context, ct).ConfigureAwait(true);
+        await policy.AssertAsync(Name, [target.Resource], ["*"], context, null, ct).ConfigureAwait(true);
         object output;
         try
         {
             output = await ReadLocalAsync(target, offset, limit,
-                input.TryGetProperty("offset", out _) || input.TryGetProperty("limit", out _), ct);
+                input.TryGetProperty("offset", out _) || input.TryGetProperty("limit", out _), ct).ConfigureAwait(true);
         }
         catch (FileNotFoundException error) { throw new ToolExecutionException($"File not found: {path}", error); }
         catch (DirectoryNotFoundException error) { throw new ToolExecutionException($"File not found: {path}", error); }
         catch (IOException error) { throw new ToolExecutionException($"Unable to read {path}: {error.Message}", error); }
         catch (UnauthorizedAccessException error) { throw new ToolExecutionException($"Unable to read {path}: {error.Message}", error); }
 
-        await instructions.AfterReadAsync(context.SessionId, target, output is ToolReadListPage, ct);
+        await instructions.AfterReadAsync(context.SessionId, target, output is ToolReadListPage, ct).ConfigureAwait(true);
 
         if (output is ToolReadFile { Encoding: "base64" } media)
             return new ToolExecutionResult
@@ -81,7 +81,7 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
         var lines = text.Length == 0 ? [] : (text.EndsWith('\n') ? text[..^1] : text).Split('\n');
         var rendered = new StringBuilder(lines.Length == 0 ? $"Read file {path}, 0 lines" : $"Read file {path}, lines {start}-{(long)start + lines.Length - 1}");
         foreach (var line in lines.Select((value, index) => $"{(long)start + index}: {value}")) rendered.Append('\n').Append(line);
-        if (output is ToolReadTextPage { Next: { } continuation }) rendered.Append($"\n[Output truncated. Continue reading with offset: {continuation}]");
+        if (output is ToolReadTextPage { Next: { } continuation }) rendered.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n[Output truncated. Continue reading with offset: {continuation}]");
         return new(rendered.ToString(), output, new Dictionary<string, object> { ["truncated"] = output is ToolReadTextPage { Truncated: true } });
     }
 
@@ -96,9 +96,9 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
                 ct.ThrowIfCancellationRequested();
                 if (entries.Count == MaximumDirectoryEntries)
                     throw new ToolExecutionException($"Directory exceeds the local {MaximumDirectoryEntries} entry limit. Use glob with a narrower pattern.");
-                var type = (entry.Attributes & FileAttributes.ReparsePoint) != 0 ? "symlink"
-                    : (entry.Attributes & FileAttributes.Directory) != 0 ? "directory" : "file";
-                if ((entry.Attributes & FileAttributes.Device) != 0) continue;
+                var type = (entry.Attributes & FileAttributes.ReparsePoint) != (FileAttributes)0 ? "symlink"
+                    : (entry.Attributes & FileAttributes.Directory) != (FileAttributes)0 ? "directory" : "file";
+                if ((entry.Attributes & FileAttributes.Device) != (FileAttributes)0) continue;
                 entries.Add(new(entry.Name + (type == "directory" ? Path.DirectorySeparatorChar.ToString() : ""), type));
             }
             var selected = entries.OrderBy(entry => entry.Type == "directory" ? 0 : 1)
@@ -106,17 +106,18 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
             var truncated = (long)offset - 1 + selected.Length < entries.Count;
             return new ToolReadListPage(selected, truncated, truncated ? (long)offset + selected.Length : null);
         }
-        await using var stream = new FileStream(target.Absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+        var stream = new FileStream(target.Absolute, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
             4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var streamLifetime = stream.ConfigureAwait(false);
         var size = stream.Length;
         var first = new byte[256 * 1024];
-        var count = await stream.ReadAtLeastAsync(first, first.Length, false, ct);
+        var count = await stream.ReadAtLeastAsync(first, first.Length, false, ct).ConfigureAwait(false);
         var media = MediaMime(first.AsSpan(0, count));
         if (media is not null)
         {
             if (size > MaximumMediaBytes) throw new ToolExecutionException($"Media exceeds {MaximumMediaBytes} byte ingestion limit: {target.Resource}");
             var bytes = await PipelineBytes.CollectAsync(stream, MaximumMediaBytes,
-                () => new ToolExecutionException($"Media exceeds {MaximumMediaBytes} byte ingestion limit: {target.Resource}"), ct, first.AsMemory(0, count));
+                () => new ToolExecutionException($"Media exceeds {MaximumMediaBytes} byte ingestion limit: {target.Resource}"), ct, first.AsMemory(0, count)).ConfigureAwait(false);
             return new ToolReadFile(new Uri(target.Absolute).AbsoluteUri, Path.GetFileName(target.Absolute), Convert.ToBase64String(bytes), "base64", media);
         }
         var mime = TextMime(target.Absolute);
@@ -139,7 +140,7 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
         var hasLine = false;
         var firstCharacter = true;
         var done = false;
-        await foreach (var chunk in PipelineText.ChunksAsync(stream, new UTF8Encoding(false), detectBom: false, cancellationToken: ct))
+        await foreach (var chunk in PipelineText.ChunksAsync(stream, new UTF8Encoding(false), detectBom: false, cancellationToken: ct).ConfigureAwait(false))
         {
             if (done) break;
             for (var index = 0; index < chunk.Length; index++)

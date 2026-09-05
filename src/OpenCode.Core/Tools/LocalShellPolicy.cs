@@ -24,7 +24,7 @@ public sealed class LocalShellPolicy(LocalToolLocation location, IToolPermission
         var shell = Select();
         var powershell = Path.GetFileNameWithoutExtension(shell).ToLowerInvariant() is "powershell" or "pwsh";
         var scanned = new ShellSyntaxScanner(command, powershell, ct).Scan();
-        var target = await location.ResolveAsync(workdir ?? ".", ToolPathKind.Directory, ct);
+        var target = await location.ResolveAsync(workdir ?? ".", ToolPathKind.Directory, ct).ConfigureAwait(true);
         var directories = new List<ToolPath> { target };
         var commands = new List<ScannedShellCommand>();
         foreach (var item in scanned)
@@ -43,7 +43,7 @@ public sealed class LocalShellPolicy(LocalToolLocation location, IToolPermission
             if (path.StartsWith('~') && path != "~" && !path.StartsWith("~/", StringComparison.Ordinal) && !path.StartsWith("~\\", StringComparison.Ordinal))
                 throw new ToolExecutionException("Named-user home expansion is not supported. Supply an explicit path.");
             // Match source resolution against the invocation cwd, not an invented shell interpreter state.
-            directories.Add(await location.ResolveAsync(location.ResolvePath(path, target.Absolute), ToolPathKind.Directory, ct));
+            directories.Add(await location.ResolveAsync(location.ResolvePath(path, target.Absolute), ToolPathKind.Directory, ct).ConfigureAwait(true));
             // Unlike an ordinary cd, a redirect has a separate file side effect and needs shell approval.
             if (item.Redirected) commands.Add(item);
         }
@@ -51,12 +51,12 @@ public sealed class LocalShellPolicy(LocalToolLocation location, IToolPermission
             .DistinctBy(directory => directory.Resource).ToArray();
         if (external.Length > 0)
             await permission.AssertAsync("external_directory", external.Select(directory => directory.Resource).ToArray(),
-                external.Select(directory => directory.Save).ToArray(), context, null, ct);
+                external.Select(directory => directory.Save).ToArray(), context, null, ct).ConfigureAwait(true);
         if (commands.Count > 0)
             await permission.AssertAsync("shell", commands.Select(item => item.Resource).ToArray(),
                 commands.Select(item => item.ExactGrant
                     ? item.Resource.IndexOfAny(['*', '?']) < 0 ? item.Resource : null
-                    : ShellCommandPrefix.Grant(item)).OfType<string>().ToArray(), context, null, ct);
+                    : ShellCommandPrefix.Grant(item)).OfType<string>().ToArray(), context, null, ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         if (!Directory.Exists(target.Absolute)) throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
         if (!File.Exists(shell)) throw new FileNotFoundException("Selected shell no longer exists.", shell);
@@ -67,7 +67,7 @@ public sealed class LocalShellPolicy(LocalToolLocation location, IToolPermission
     {
         if (executable is not null)
         {
-            if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.");
+            if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.", nameof(executable));
             return Require(executable);
         }
         var configured = ConfigLoader.LoadDocument(directory: location.Directory)["shell"]?.GetValue<string>();

@@ -44,7 +44,7 @@ public sealed class JobRuntime : IAsyncDisposable
 
     public async Task<JobInfo?> GetAsync(string id, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try { RequireOpen(); return _jobs.TryGetValue(id, out var entry) ? Snapshot(entry) : null; }
         finally { _gate.Release(); }
     }
@@ -55,7 +55,7 @@ public sealed class JobRuntime : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(input.Run);
         input.Recovery?.Validate();
         if (input.NotificationId is { } notification) _ = MessageId.FromExisting(notification.Value);
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
@@ -77,7 +77,7 @@ public sealed class JobRuntime : IAsyncDisposable
     public async Task<JobWaitResult> WaitAsync(string id, int? timeoutMilliseconds = null, CancellationToken ct = default)
     {
         Entry entry;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
@@ -88,11 +88,11 @@ public sealed class JobRuntime : IAsyncDisposable
         }
         finally { _gate.Release(); }
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _token);
-        if (timeoutMilliseconds is null) return new(await entry.Done.Task.WaitAsync(linked.Token), false);
-        try { return new(await entry.Done.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds.Value), Clock, linked.Token), false); }
+        if (timeoutMilliseconds is null) return new(await entry.Done.Task.WaitAsync(linked.Token).ConfigureAwait(true), false);
+        try { return new(await entry.Done.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMilliseconds.Value), Clock, linked.Token).ConfigureAwait(true), false); }
         catch (TimeoutException)
         {
-            await _gate.WaitAsync(linked.Token);
+            await _gate.WaitAsync(linked.Token).ConfigureAwait(true);
             try { return new(Snapshot(entry), true); }
             finally { _gate.Release(); }
         }
@@ -101,7 +101,7 @@ public sealed class JobRuntime : IAsyncDisposable
     public async Task<JobBlockResult?> BlockAsync(string id, SessionId sessionId, CancellationToken ct = default)
     {
         Entry entry;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
@@ -115,12 +115,13 @@ public sealed class JobRuntime : IAsyncDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _token);
         try
         {
-            var completed = await Task.WhenAny(entry.Done.Task, entry.Backgrounded.Task).WaitAsync(linked.Token);
-            return new(await completed, ReferenceEquals(completed, entry.Backgrounded.Task));
+            var completed = await Task.WhenAny(entry.Done.Task, entry.Backgrounded.Task).WaitAsync(linked.Token).ConfigureAwait(true);
+            return new(await completed.ConfigureAwait(true), ReferenceEquals(completed, entry.Backgrounded.Task));
         }
         finally
         {
-            await _gate.WaitAsync();
+            // Unwind the counted dependency even when the waiting caller was interrupted.
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 // A reused terminal job ID owns a new entry; an old wait cannot decrement its dependencies.
@@ -137,13 +138,13 @@ public sealed class JobRuntime : IAsyncDisposable
 
     public async Task<JobInfo?> BackgroundAsync(string id, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
             if (!_jobs.TryGetValue(id, out var entry) || entry.Info.Status != JobStatus.Running && entry.Recovery is null) return null;
             if (entry.Detached) return Snapshot(entry);
-            var info = await PrepareBackgroundAsync(entry);
+            var info = await PrepareBackgroundAsync(entry).ConfigureAwait(true);
             CommitBackground(entry, info);
             return info;
         }
@@ -152,7 +153,7 @@ public sealed class JobRuntime : IAsyncDisposable
 
     public async Task<IReadOnlyList<JobInfo>> BackgroundAllAsync(SessionId sessionId, string? type = null, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
@@ -161,7 +162,7 @@ public sealed class JobRuntime : IAsyncDisposable
             {
                 if (entry.Info.Status != JobStatus.Running || entry.Detached || !entry.Blocking.ContainsKey(sessionId)
                     || type is not null && entry.Info.Type != type) continue;
-                prepared.Add((entry, await PrepareBackgroundAsync(entry)));
+                prepared.Add((entry, await PrepareBackgroundAsync(entry).ConfigureAwait(true)));
             }
             foreach (var item in prepared) CommitBackground(item.Entry, item.Info);
             return prepared.Select(item => item.Info).ToArray();
@@ -173,7 +174,7 @@ public sealed class JobRuntime : IAsyncDisposable
     {
         Entry entry;
         JobInfo info;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             RequireOpen();
@@ -182,22 +183,22 @@ public sealed class JobRuntime : IAsyncDisposable
             info = entry.Info with { Status = JobStatus.Cancelled, CompletedAt = Clock.GetUtcNow().ToUnixTimeMilliseconds() };
             // Explicit cancellation is durable before completion is visible. Shutdown uses Run's
             // interruption path instead and deliberately leaves the preceding marker unchanged.
-            await PersistAsync(entry, info);
+            await PersistAsync(entry, info).ConfigureAwait(true);
             entry.Info = info;
             entry.Blocking.Clear();
             entry.Done.TrySetResult(info);
         }
         finally { _gate.Release(); }
-        try { await entry.Stop.CancelAsync(); }
+        try { await entry.Stop.CancelAsync().ConfigureAwait(true); }
         catch (ObjectDisposedException) { /* Run has already completed and closed its cancellation scope. */ }
-        await entry.Work;
+        await entry.Work.ConfigureAwait(true);
         return info;
     }
 
     public async Task<IReadOnlyList<JobBackground>> PendingBackgroundAsync(CancellationToken ct = default)
     {
         RequireOpen();
-        var result = await _store.ListAsync(ct);
+        var result = await _store.ListAsync(ct).ConfigureAwait(true);
         foreach (var marker in result) marker.Validate();
         return result;
     }
@@ -214,7 +215,7 @@ public sealed class JobRuntime : IAsyncDisposable
     {
         _ = Snapshot(entry);
         var info = entry.Info with { NotificationId = entry.Recovery is null ? entry.Info.NotificationId : entry.Info.NotificationId ?? MessageId.Create() };
-        await PersistAsync(entry, info);
+        await PersistAsync(entry, info).ConfigureAwait(true);
         return info;
     }
 
@@ -245,7 +246,7 @@ public sealed class JobRuntime : IAsyncDisposable
         JobStatus status;
         try
         {
-            output = await run(token) ?? throw new InvalidOperationException("Job run returned no string output.");
+            output = await run(token).ConfigureAwait(true) ?? throw new InvalidOperationException("Job run returned no string output.");
             token.ThrowIfCancellationRequested();
             status = JobStatus.Completed;
         }
@@ -257,12 +258,13 @@ public sealed class JobRuntime : IAsyncDisposable
         }
         try
         {
-            await _gate.WaitAsync();
+            // Settle local ownership after execution cancellation; do not abandon the completion marker.
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 if (_jobs.GetValueOrDefault(entry.Info.Id) != entry || entry.Info.Status != JobStatus.Running) return;
                 var info = entry.Info with { Status = status, CompletedAt = Clock.GetUtcNow().ToUnixTimeMilliseconds(), Output = output, Error = error };
-                if (status != JobStatus.Cancelled) await PersistAsync(entry, info);
+                if (status != JobStatus.Cancelled) await PersistAsync(entry, info).ConfigureAwait(true);
                 entry.Info = info;
                 entry.Blocking.Clear();
                 entry.Done.TrySetResult(info);
@@ -281,11 +283,11 @@ public sealed class JobRuntime : IAsyncDisposable
 
     private async Task ObserveAsync(Task work)
     {
-        try { await work; }
+        try { await work.ConfigureAwait(true); }
         catch (Exception error) { Trace.TraceWarning("Job settlement failed; recovery marker remains ({0}).", error.GetType().Name); }
         finally
         {
-            await _gate.WaitAsync();
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try { _owned.Remove(work); }
             finally { _gate.Release(); }
         }
@@ -298,10 +300,10 @@ public sealed class JobRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Task[] owned;
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
         try { if (_closed) return; _closed = true; owned = _owned.ToArray(); }
         finally { _gate.Release(); }
-        await _lifetime.CancelAsync();
+        await _lifetime.CancelAsync().ConfigureAwait(true);
         await Task.WhenAll(owned).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         _lifetime.Dispose();
     }

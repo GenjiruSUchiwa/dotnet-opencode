@@ -70,8 +70,8 @@ public sealed partial class IntegrationRuntime
                 || entry.Status is not IntegrationPendingCommandStatus || entry.Persisting) return;
             _commands.Remove(attempt);
         }
-        await entry.Cancellation.CancelAsync();
-        await entry.Worker;
+        await entry.Cancellation.CancelAsync().ConfigureAwait(true);
+        await entry.Worker.ConfigureAwait(true);
         entry.Cancellation.Dispose();
     }
 
@@ -85,7 +85,7 @@ public sealed partial class IntegrationRuntime
                 lock (_gate)
                     if (entry.Status is IntegrationPendingCommandStatus pending)
                         entry.Status = new IntegrationPendingCommandStatus(entry.Info.Time, (pending.Message ?? "") + chunk);
-            }, entry.Cancellation.Token);
+            }, entry.Cancellation.Token).ConfigureAwait(true);
             lock (_gate)
             {
                 if (!_commands.ContainsKey(entry.Info.AttemptId) || entry.Status is not IntegrationPendingCommandStatus
@@ -94,11 +94,11 @@ public sealed partial class IntegrationRuntime
             }
             // The cancellation/expiry boundary is before persistence. Once claimed,
             // finish the shared-store commit and publish only secret-free notifications.
-            var selectedLabel = label ?? await UniqueLabelAsync(credentials, entry.Integration, name, CancellationToken.None);
+            var selectedLabel = label ?? await UniqueLabelAsync(credentials, entry.Integration, name, CancellationToken.None).ConfigureAwait(true);
             var mutation = await credentials.CreateAsync(entry.Integration,
                 JsonSerializer.SerializeToElement<CredentialValue>(new CredentialKey(key), OpenCodeJsonContext.Default.CredentialValue),
-                selectedLabel, CancellationToken.None);
-            await publish(mutation, CancellationToken.None);
+                selectedLabel, CancellationToken.None).ConfigureAwait(true);
+            await publish(mutation, CancellationToken.None).ConfigureAwait(true);
             lock (_gate) entry.Status = new IntegrationCompleteCommandStatus(entry.Info.Time);
         }
         catch (Exception error)
@@ -126,7 +126,7 @@ public sealed partial class IntegrationRuntime
                 && entry.Info.Time.Expires <= now.ToUnixTimeMilliseconds()).ToArray();
             foreach (var entry in expired) entry.Status = new IntegrationExpiredCommandStatus(entry.Info.Time);
         }
-        foreach (var entry in expired) await entry.Cancellation.CancelAsync();
+        foreach (var entry in expired) await entry.Cancellation.CancelAsync().ConfigureAwait(true);
     }
 
     private async Task DisposeCommandsAsync()
@@ -134,7 +134,7 @@ public sealed partial class IntegrationRuntime
         CommandEntry[] entries;
         Task[] workers;
         lock (_gate) { entries = _commands.Values.ToArray(); workers = _commandWorkers.ToArray(); }
-        await Task.WhenAll(workers);
+        await Task.WhenAll(workers).ConfigureAwait(true);
         lock (_gate)
         {
             foreach (var entry in entries) entry.Cancellation.Dispose();
@@ -164,13 +164,14 @@ public sealed partial class IntegrationRuntime
         var stderr = ReadErrorAsync();
         try
         {
-            await Task.WhenAll(stdout, stderr).WaitAsync(ct);
-            var result = await exited.WaitAsync(ct);
+            await Task.WhenAll(stdout, stderr).WaitAsync(ct).ConfigureAwait(true);
+            var result = await exited.WaitAsync(ct).ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
+            var errorOutput = await stderr.ConfigureAwait(true);
             if (result.ExitCode != 0)
-                throw new IntegrationAuthorizationException(string.IsNullOrWhiteSpace(stderr.Result)
-                    ? $"Authentication command exited {result.ExitCode}" : stderr.Result.Trim());
-            var key = stdout.Result.Trim();
+                throw new IntegrationAuthorizationException(string.IsNullOrWhiteSpace(errorOutput)
+                    ? $"Authentication command exited {result.ExitCode}" : errorOutput.Trim());
+            var key = (await stdout.ConfigureAwait(true)).Trim();
             if (key.Length == 0) throw new IntegrationAuthorizationException("Authentication command returned no credential");
             return key;
         }
@@ -180,9 +181,9 @@ public sealed partial class IntegrationRuntime
             catch (InvalidOperationException) when (process.HasExited) { }
             finally
             {
-                await stopping.CancelAsync();
-                await readers.CancelAsync();
-                await exited;
+                await stopping.CancelAsync().ConfigureAwait(true);
+                await readers.CancelAsync().ConfigureAwait(true);
+                await exited.ConfigureAwait(true);
                 await ((Task)Task.WhenAll(stdout, stderr)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
@@ -191,7 +192,7 @@ public sealed partial class IntegrationRuntime
         {
             var text = new StringBuilder();
             await foreach (var chunk in PipelineText.ChunksAsync(process.StandardError.BaseStream, process.StandardError.CurrentEncoding,
-                cancellationToken: readers.Token))
+                cancellationToken: readers.Token).ConfigureAwait(true))
             {
                 text.Append(chunk);
                 output(chunk);

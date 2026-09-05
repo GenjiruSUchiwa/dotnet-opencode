@@ -67,7 +67,7 @@ internal sealed class McpElicitationConnection : IAsyncDisposable
             _urls[id] = form.Id;
             try
             {
-                var state = await _forms.AskAsync(form, linked.Token);
+                var state = await _forms.AskAsync(form, linked.Token).ConfigureAwait(true);
                 linked.Token.ThrowIfCancellationRequested();
                 return TerminalResult(state, includeContent: false);
             }
@@ -81,7 +81,7 @@ internal sealed class McpElicitationConnection : IAsyncDisposable
         // Source explicitly accepts a valid zero-field schema. Do not turn malformed schemas or a
         // missing host adapter into empty approved forms. FormInfo itself requires at least one field.
         if (fields.Length == 0) return new ElicitResult { Action = "accept", Content = new Dictionary<string, JsonElement>() };
-        var answer = await _forms.AskAsync(new FormInfo(FormId.Create(), GlobalOwner, $"{_server} is requesting input", fields, metadata), linked.Token);
+        var answer = await _forms.AskAsync(new FormInfo(FormId.Create(), GlobalOwner, $"{_server} is requesting input", fields, metadata), linked.Token).ConfigureAwait(true);
         linked.Token.ThrowIfCancellationRequested();
         return TerminalResult(answer, includeContent: true);
     }
@@ -98,7 +98,7 @@ internal sealed class McpElicitationConnection : IAsyncDisposable
         await _forms.TryReplyAsync(form, new FormAnswer(new Dictionary<string, FormValue>
         {
             [ExternalKey] = new FormValue.Boolean(true)
-        }), linked.Token);
+        }), linked.Token).ConfigureAwait(true);
     }
 
     private static ElicitResult TerminalResult(FormState state, bool includeContent) => state switch
@@ -115,7 +115,7 @@ internal sealed class McpElicitationConnection : IAsyncDisposable
 
     private static FormField ToField(string key, ElicitRequestParams.PrimitiveSchemaDefinition property, bool required)
     {
-        var title = property.Title is { Length: > 0 } value && !Regex.IsMatch(value.Trim(), @"^(boolean|string|number|integer|array|object)(\s+with\b.*|\s+in\b.*)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)
+        var title = property.Title is { Length: > 0 } value && !Regex.IsMatch(value.Trim(), @"^(?:boolean|string|number|integer|array|object)(?:\s+with\b.*|\s+in\b.*)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture)
             ? value : property.Description ?? key;
         FormInputField field = property switch
         {
@@ -155,7 +155,7 @@ internal sealed class McpElicitationConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _lifetime.CancelAsync();
+        await _lifetime.CancelAsync().ConfigureAwait(true);
         _urls.Clear();
         _lifetime.Dispose();
     }

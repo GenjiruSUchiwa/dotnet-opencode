@@ -38,7 +38,7 @@ internal static class ToolTextDiff
             var hunk = rows.GetRange(start, end - start);
             var oldCount = hunk.Count(row => row.Kind != '+');
             var newCount = hunk.Count(row => row.Kind != '-');
-            patch.Append($"@@ -{(oldCount == 0 ? oldPosition - 1 : oldPosition)},{oldCount} +{(newCount == 0 ? newPosition - 1 : newPosition)},{newCount} @@\n");
+            patch.Append(System.Globalization.CultureInfo.InvariantCulture, $"@@ -{(oldCount == 0 ? oldPosition - 1 : oldPosition)},{oldCount} +{(newCount == 0 ? newPosition - 1 : newPosition)},{newCount} @@\n");
             foreach (var row in hunk)
             {
                 patch.Append(row.Kind).Append(row.Text);

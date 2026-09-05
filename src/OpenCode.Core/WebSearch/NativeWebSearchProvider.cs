@@ -48,7 +48,7 @@ public sealed class NativeWebSearchProvider : IWebSearchProvider, IDisposable, I
     {
         try
         {
-            var saved = await _credentials.GetActiveCredentialAsync(Info.Id, ct);
+            var saved = await _credentials.GetActiveCredentialAsync(Info.Id, ct).ConfigureAwait(true);
             if (saved is null) return _environment(_environmentName) is { Length: > 0 } key ? key : null;
             if (saved.IntegrationId != Info.Id) throw Unavailable();
             // Source saved-connection precedence: an unsupported selected credential does not fall through to another identity.
@@ -59,12 +59,12 @@ public sealed class NativeWebSearchProvider : IWebSearchProvider, IDisposable, I
         { throw new WebSearchException(WebSearchFailure.Unavailable, $"The {Info.Name} credential could not be resolved from this channel.", Info.Id); }
     }
 
-    public async Task<bool> AvailableAsync(CancellationToken ct) => await KeyAsync(ct) is not null;
+    public async Task<bool> AvailableAsync(CancellationToken ct) => await KeyAsync(ct).ConfigureAwait(false) is not null;
 
     public async Task<IReadOnlyList<WebSearchResult>> ExecuteAsync(string query, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var key = await KeyAsync(ct) ?? throw Unavailable();
+        var key = await KeyAsync(ct).ConfigureAwait(false) ?? throw Unavailable();
         using var lifetime = _credentials.Clock.CreateLinkedCancellationTokenSource(ct);
         lifetime.CancelAfter(TimeSpan.FromSeconds(25));
         try
@@ -81,10 +81,10 @@ public sealed class NativeWebSearchProvider : IWebSearchProvider, IDisposable, I
             if (Info.Id == "tavily") request.Headers.Add("X-Client-Name", "opencode2");
             request.Content = new ByteArrayContent(RequestBody(query));
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, lifetime.Token);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, lifetime.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
                 throw new WebSearchException(WebSearchFailure.Request, $"Web search request failed: {Info.Id}", Info.Id, (int)response.StatusCode);
-            var body = Encoding.UTF8.GetString(await HttpBody.CollectAsync(response, MaximumResponseBytes, lifetime.Token));
+            var body = Encoding.UTF8.GetString(await HttpBody.CollectAsync(response, MaximumResponseBytes, lifetime.Token).ConfigureAwait(false));
             return WebSearchBackendResponses.Parse(Info.Id, body);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && lifetime.IsCancellationRequested)
@@ -133,5 +133,5 @@ public sealed class NativeWebSearchProvider : IWebSearchProvider, IDisposable, I
 
     private WebSearchException Unavailable() => new(WebSearchFailure.Unavailable, $"A {Info.Name} API key is required for this configured backend.", Info.Id);
     public void Dispose() => _http.Dispose();
-    public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+    public ValueTask DisposeAsync() { _http.Dispose(); return ValueTask.CompletedTask; }
 }

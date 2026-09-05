@@ -24,7 +24,7 @@ public static class HtmlMarkdown
         // UTF-8 replacement decoding can expand byte count while retaining at most one UTF-16 unit per input byte.
         if (html.Length > MaximumBytes) throw new ToolExecutionException("HTML input exceeds the conversion limit.");
         // HtmlParser has no browsing loader or script engine; links, styles and images are never fetched.
-        using var document = await new HtmlParser(new HtmlParserOptions { IsScripting = false }).ParseDocumentAsync(html, ct);
+        using var document = await new HtmlParser(new HtmlParserOptions { IsScripting = false }).ParseDocumentAsync(html, ct).ConfigureAwait(false);
         var renderer = plainText ? null : new Renderer();
         var text = new StringBuilder();
         var skip = 0;
@@ -268,8 +268,8 @@ public static class HtmlMarkdown
                 if (name == "br") _code.Text.Append('\n');
                 if (name == "code" && element.GetAttribute("class") is { } classes)
                 {
-                    var match = Regex.Match(classes, @"(?:language-|lang-)([^\s]+)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, TimeSpan.FromSeconds(1));
-                    if (match.Success) _code.Language = match.Groups[1].Value;
+                    var match = Regex.Match(classes, @"(?:language-|lang-)(?<language>[^\s]+)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+                    if (match.Success) _code.Language = match.Groups["language"].Value;
                 }
                 return;
             }

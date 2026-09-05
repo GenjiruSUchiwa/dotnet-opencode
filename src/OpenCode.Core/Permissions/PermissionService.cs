@@ -67,11 +67,11 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
     {
         var request = Request(input);
         Pending? item = null;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            var result = await EvaluateAsync(request, input.Agent, ct);
+            var result = await EvaluateAsync(request, input.Agent, ct).ConfigureAwait(true);
             if (result.Decision.Effect == PermissionEffect.Deny)
                 throw new PermissionBlockedException(input.Action, request.Resources,
                     result.Rules.Where(rule => PermissionRules.Match(input.Action, rule.Action)).ToArray(), result.Decision.Message);
@@ -81,10 +81,10 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
         }
         finally { _gate.Release(); }
 
-        try { await item.Completion.Task.WaitAsync(ct); }
+        try { await item.Completion.Task.WaitAsync(ct).ConfigureAwait(true); }
         finally
         {
-            await _gate.WaitAsync(CancellationToken.None);
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 if (_pending.TryGetValue(item.Request.Id, out var current) && ReferenceEquals(current, item))
@@ -106,11 +106,11 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
     public async Task<PermissionDecision> AskAsync(PermissionAskInput input, CancellationToken ct = default)
     {
         var request = Request(input);
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            var result = await EvaluateAsync(request, input.Agent, ct);
+            var result = await EvaluateAsync(request, input.Agent, ct).ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
             if (result.Decision.Effect == PermissionEffect.Ask) Create(request with { Message = result.Decision.Message }, input.Agent);
             return new(request.Id, result.Decision.Effect);
@@ -121,7 +121,7 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
     public async Task ReplyAsync(PermissionId id, SessionId owner, PermissionReply reply, string? message = null, CancellationToken ct = default)
     {
         if (!Enum.IsDefined(reply)) throw new ArgumentOutOfRangeException(nameof(reply));
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -139,7 +139,7 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
             {
                 if (!PersistentGrants)
                     throw new NotSupportedException("Persistent permission grants are not implemented for this Location; use once or reject.");
-                await _saved.AddAsync(_projectId, existing.Request.Action, save, CancellationToken.None);
+                await _saved.AddAsync(_projectId, existing.Request.Action, save, CancellationToken.None).ConfigureAwait(true);
             }
             Complete(existing, reply);
             if (reply != PermissionReply.Always || existing.Request.Save is not { Count: > 0 }) return;
@@ -147,7 +147,7 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
             {
                 try
                 {
-                    var result = await EvaluateAsync(item.Request, item.Agent, CancellationToken.None);
+                    var result = await EvaluateAsync(item.Request, item.Agent, CancellationToken.None).ConfigureAwait(true);
                     if (result.Decision.Effect == PermissionEffect.Allow) Complete(item, PermissionReply.Always);
                 }
                 catch (PermissionSessionNotFoundException) { }
@@ -158,21 +158,21 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
 
     public async Task<IReadOnlyList<PermissionRequest>> ListAsync(SessionId? session = null, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try { return _pending.Values.Where(item => session is null || item.Request.SessionId == session).Select(item => item.Request).ToArray(); }
         finally { _gate.Release(); }
     }
 
     public async Task<PermissionRequest?> GetAsync(PermissionId id, CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try { return _pending.GetValueOrDefault(id)?.Request; }
         finally { _gate.Release(); }
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _gate.WaitAsync(CancellationToken.None);
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
         try
         {
             if (_disposed) return;
@@ -191,15 +191,15 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
     private async ValueTask<(PermissionEvaluation Decision, IReadOnlyList<PermissionRule> Rules)> EvaluateAsync(
         PermissionRequest request, AgentId? agent, CancellationToken ct)
     {
-        var configured = await _configured.GetAsync(request.SessionId, agent, ct);
+        var configured = await _configured.GetAsync(request.SessionId, agent, ct).ConfigureAwait(true);
         if (request.Resources.Any(resource => PermissionRules.Evaluate(request.Action, resource, configured).Effect == PermissionEffect.Deny))
             return (new(PermissionEffect.Deny), configured);
-        var grants = await _saved.ListAsync(_projectId, ct);
+        var grants = await _saved.ListAsync(_projectId, ct).ConfigureAwait(true);
         if (grants.Any(rule => rule.Effect != PermissionEffect.Allow)) throw new InvalidOperationException("Saved permission grants must be allow rules.");
         var rules = configured.Concat(grants).ToArray();
         var effect = request.Resources.Any(resource => PermissionRules.Evaluate(request.Action, resource, rules).Effect == PermissionEffect.Ask)
             ? PermissionEffect.Ask : PermissionEffect.Allow;
-        var decision = _hook is null ? new PermissionEvaluation(effect) : await _hook.EvaluateAsync(request, agent, effect, ct);
+        var decision = _hook is null ? new PermissionEvaluation(effect) : await _hook.EvaluateAsync(request, agent, effect, ct).ConfigureAwait(true);
         if (!Enum.IsDefined(decision.Effect)) throw new InvalidOperationException("Invalid permission hook effect.");
         return (decision, rules);
     }
@@ -235,14 +235,14 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Action);
         ArgumentNullException.ThrowIfNull(input.Resources);
-        if (!input.SessionId.IsInitialized()) throw new ArgumentException("Session ID is required.");
-        if (input.Agent is { } agent && !agent.IsInitialized()) throw new ArgumentException("Agent ID must be a string.");
+        if (!input.SessionId.IsInitialized()) throw new ArgumentException("Session ID is required.", nameof(input));
+        if (input.Agent is { } agent && !agent.IsInitialized()) throw new ArgumentException("Agent ID must be a string.", nameof(input));
         if (input.Id is { } id && (!id.IsInitialized() || !id.Value.StartsWith("per", StringComparison.Ordinal)))
-            throw new ArgumentException("Permission ID must start with per.");
+            throw new ArgumentException("Permission ID must start with per.", nameof(input));
         if (input.Source is { } source && (source.Type != "tool" || source.MessageId is null || source.Id is null))
-            throw new ArgumentException("Permission source must be a tool source with messageID and id strings.");
+            throw new ArgumentException("Permission source must be a tool source with messageID and id strings.", nameof(input));
         if (input.Resources.Any(resource => resource is null) || input.Save?.Any(resource => resource is null) == true)
-            throw new ArgumentException("Permission resources must be strings.");
+            throw new ArgumentException("Permission resources must be strings.", nameof(input));
         return new(input.Id ?? PermissionId.Create(), input.SessionId, input.Action, Array.AsReadOnly(input.Resources.ToArray()),
             input.Save is null ? null : Array.AsReadOnly(input.Save.ToArray()),
             input.Metadata is null ? null : new ReadOnlyDictionary<string, JsonElement>(input.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value.Clone())),

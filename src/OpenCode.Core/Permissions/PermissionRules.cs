@@ -39,7 +39,7 @@ public sealed class LocalPermissionRules : IPermissionRuleSource
     {
         var snapshot = rules.ToArray();
         if (snapshot.Any(rule => rule is null || rule.Action is null || rule.Resource is null || !Enum.IsDefined(rule.Effect)))
-            throw new ArgumentException("Invalid permission rule.");
+            throw new ArgumentException("Invalid permission rule.", nameof(rules));
         lock (_gate) _agents[agent] = snapshot;
     }
     public void RemoveAgent(AgentId agent) { lock (_gate) _agents.Remove(agent); }

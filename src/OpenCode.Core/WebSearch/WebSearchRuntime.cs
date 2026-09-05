@@ -14,7 +14,7 @@ public sealed class WebSearchRuntime(IWebSearchSelectionStore? selections = null
     {
         var entries = providers.ToArray();
         if (entries.Any(provider => provider is null || provider.Info.Id is null || provider.Info.Name is null))
-            throw new ArgumentException("Web search registrations require complete provider definitions.");
+            throw new ArgumentException("Web search registrations require complete provider definitions.", nameof(providers));
         var registration = new Registration(this, entries);
         lock (_gate) _registrations.Add(registration);
         updated?.Invoke();
@@ -28,7 +28,7 @@ public sealed class WebSearchRuntime(IWebSearchSelectionStore? selections = null
         {
             ConfigWebSearchSelection.Disabled => new(Disabled: true),
             ConfigWebSearchInfo info => new(info.Provider), null => null,
-            _ => throw new ArgumentException("Unsupported websearch configuration.")
+            _ => throw new ArgumentException("Unsupported websearch configuration.", nameof(configuration))
         };
         updated?.Invoke();
     }
@@ -40,7 +40,7 @@ public sealed class WebSearchRuntime(IWebSearchSelectionStore? selections = null
     {
         var available = new List<WebSearchProvider>();
         foreach (var provider in Snapshot().Values)
-            if (await provider.AvailableAsync(ct)) available.Add(provider.Info);
+            if (await provider.AvailableAsync(ct).ConfigureAwait(true)) available.Add(provider.Info);
         return available.OrderBy(provider => provider.Name, StringComparer.CurrentCulture).ToArray();
     }
 
@@ -48,13 +48,17 @@ public sealed class WebSearchRuntime(IWebSearchSelectionStore? selections = null
     {
         WebSearchSelection? configured;
         lock (_gate) configured = _configured;
-        var selection = configured ?? (selections is not null ? await selections.ReadAsync(ct) : null);
+        var selection = configured ?? (selections is not null ? await selections.ReadAsync(ct).ConfigureAwait(true) : null);
         if (selection?.Disabled == true) throw new WebSearchException(WebSearchFailure.Disabled, "Web search is disabled");
         var providers = Snapshot();
         if (selection?.ProviderId == "random")
         {
-            // Do not silently reroute a selected uncredentialed provider. Missing credentials are explicit.
-            return providers.Count == 0 ? null : providers.Values.ElementAt(Random.Shared.Next(providers.Count)).Info;
+            // The native host registers every implemented backend, but unlike source keyless
+            // adapters only credentialed ones are usable. Do not randomly advertise or select
+            // an unavailable backend; explicit provider IDs still fail rather than switching.
+            var available = await AvailableProvidersAsync(ct).ConfigureAwait(true);
+            if (available.Count == 0) throw new WebSearchException(WebSearchFailure.Unavailable, "No configured web search backend has a usable credential.");
+            return available[Random.Shared.Next(available.Count)];
         }
         return selection?.ProviderId is { Length: > 0 } id ? providers.GetValueOrDefault(id)?.Info : null;
     }
@@ -63,18 +67,18 @@ public sealed class WebSearchRuntime(IWebSearchSelectionStore? selections = null
         ?? throw new WebSearchException(WebSearchFailure.Unavailable, "Web search provider selection persistence is not configured.");
 
     public async Task<bool> CanExecuteAsync(string providerId, CancellationToken ct) =>
-        Snapshot().TryGetValue(providerId, out var provider) && await provider.AvailableAsync(ct);
+        Snapshot().TryGetValue(providerId, out var provider) && await provider.AvailableAsync(ct).ConfigureAwait(true);
 
     public async Task<WebSearchResponse> QueryAsync(WebSearchInput input, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(input.Query);
-        var id = !string.IsNullOrEmpty(input.ProviderId) ? input.ProviderId : (await DefaultAsync(ct))?.Id
+        var id = !string.IsNullOrEmpty(input.ProviderId) ? input.ProviderId : (await DefaultAsync(ct).ConfigureAwait(true))?.Id
             ?? throw new WebSearchException(WebSearchFailure.ProviderRequired, "Web search provider is required");
         if (!Snapshot().TryGetValue(id, out var provider))
             throw new WebSearchException(WebSearchFailure.ProviderNotFound, $"Web search provider not found: {id}", id);
-        if (!await provider.AvailableAsync(ct))
+        if (!await provider.AvailableAsync(ct).ConfigureAwait(true))
             throw new WebSearchException(WebSearchFailure.Unavailable, $"Web search credential or backend is unavailable: {id}", id);
-        var response = new WebSearchResponse(id, await provider.ExecuteAsync(input.Query, ct));
+        var response = new WebSearchResponse(id, await provider.ExecuteAsync(input.Query, ct).ConfigureAwait(true));
         try { response.Validate(); }
         catch (System.Text.Json.JsonException) { throw new WebSearchException(WebSearchFailure.Request, $"Invalid web search response: {id}", id); }
         return response;

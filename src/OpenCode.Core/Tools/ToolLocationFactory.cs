@@ -14,6 +14,7 @@ using OpenCode.Core.Shell;
 using OpenCode.Core.Permissions;
 using OpenCode.Core.Plugins;
 using OpenCode.Core.Tools.Builtins;
+using OpenCode.Core.WebSearch;
 using OpenCode.Schema;
 
 /// <param name="ShellEnvironment">Bind the host's SessionEnvironment.Get. Null inherits the host environment;
@@ -22,6 +23,8 @@ using OpenCode.Schema;
 /// <param name="McpCreated">Subscribe synchronously before any observation. Return a non-null subscription;
 /// it is disposed after MCP shutdown and before the registry. Do not observe the runtime or reenter the Location map here.
 /// A callback that throws must clean up its own incomplete subscription.</param>
+/// <param name="WebSearchReady">Read/configure the existing WebSearch runtime after provider plugins initialize.
+/// Must not reacquire this Location or allocate a runtime/provider. Called again before model snapshots.</param>
 public sealed record LocalToolOptions(
     string Home,
     string RipgrepExecutable,
@@ -43,7 +46,8 @@ public sealed record LocalToolOptions(
     Func<ShellRuntime>? ShellRuntime = null,
     Func<IShellToolJobs>? ShellJobs = null,
     IReadOnlyList<NativePluginDefinition>? Plugins = null,
-    Action<PluginId?>? PluginChanged = null);
+    Action<PluginId?>? PluginChanged = null,
+    Func<CancellationToken, Task<WebSearchRuntime>>? WebSearchReady = null);
 
 /// <summary>Concrete local Location composition. Install this factory in the SAME PermissionLocationMap
 /// used by Server. It registers supported modules but never advertises tools to a model or starts execution.</summary>
@@ -59,12 +63,12 @@ public sealed class ToolLocationFactory(
     public async ValueTask<PermissionLocationScope> CreateAsync(LocationRef location, CancellationToken ct)
     {
         if (location.WorkspaceId is not null) throw new NotSupportedException("Local builtins do not support explicit workspace placement.");
-        var info = await resolveLocation(location, ct);
+        var info = await resolveLocation(location, ct).ConfigureAwait(true);
         if (PermissionLocationMap.Canonical(new(info.Directory, info.WorkspaceId)) != PermissionLocationMap.Canonical(location))
             throw new InvalidOperationException("Tool Location resolution must preserve the authoritative Location key.");
         var options = local(info);
-        ArgumentNullException.ThrowIfNull(options.LoadReadInstructions);
-        if (!Path.IsPathFullyQualified(options.RipgrepExecutable)) throw new ArgumentException("The host must supply an absolute ripgrep executable.");
+        ArgumentNullException.ThrowIfNull(options.LoadReadInstructions, nameof(local));
+        if (!Path.IsPathFullyQualified(options.RipgrepExecutable)) throw new ArgumentException("The host must supply an absolute ripgrep executable.", nameof(local));
         var files = new LocalToolLocation(info.Directory, info.Project.Directory, options.Home, options.ProjectMarkers);
         var mutation = new LocalFileMutation(options.Formatter ?? new LocalFormatter(info.Directory, info.Project.Directory, options.FormatterBin, sessions.Clock), options.MaximumMutationBytes);
         var rules = new StorePermissionRules(sessions, location,
@@ -75,6 +79,7 @@ public sealed class ToolLocationFactory(
         plugins.Attach(registry);
         McpRuntime? mcp = null;
         IDisposable? mcpLifetime = null;
+        WebSearchToolBinding? websearch = null;
         try
         {
             ct.ThrowIfCancellationRequested();
@@ -97,11 +102,24 @@ public sealed class ToolLocationFactory(
             var subagent = options.Subagents is null ? null : new SubagentTool(options.Subagents(), permission).Create();
             var byName = tools.Concat(new[] { webfetch, question, subagent }.OfType<ToolInfo>()).ToDictionary(tool => tool.Id);
             // Preserve the supported subset of PluginInternal.pre's producer order.
-            var definitions = new[] { "edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "write" }
-                .Where(byName.ContainsKey).Select(name => new NativePluginDefinition(PluginId.FromExisting("opencode.tool." + name), "native",
-                    (scope, _) => { scope.TransformTools(draft => draft.Add(byName[name])); return ValueTask.CompletedTask; }))
+            var definitions = new[] { "edit", "glob", "grep", "question", "read", "shell", "skill", "subagent", "webfetch", "websearch", "write" }
+                .Where(name => byName.ContainsKey(name) || name == WebSearchTool.Name && options.WebSearchReady is not null)
+                .Select(name => new NativePluginDefinition(PluginId.FromExisting("opencode.tool." + name), "native", (scope, _) =>
+                {
+                    if (name == WebSearchTool.Name)
+                    {
+                        var binding = scope.Own(new WebSearchToolBinding(options.WebSearchReady!, permission, options.QuestionForms, registry, sessions.Clock, scope.Lifetime));
+                        scope.TransformTools(binding.Apply);
+                        websearch = binding;
+                    }
+                    else scope.TransformTools(draft => draft.Add(byName[name]));
+                    return ValueTask.CompletedTask;
+                }))
                 .Concat(options.Plugins ?? []).ToArray();
-            await plugins.ActivateAsync(definitions, ct);
+            await plugins.ActivateAsync(definitions, ct).ConfigureAwait(true);
+            // Provider initialization comes from options.Plugins; only now may readiness
+            // borrow their runtime. The builtin transform keeps its original precedence.
+            if (websearch is not null) await websearch.RefreshAsync(ct).ConfigureAwait(true);
             if (registry.RegistrationErrors.Count != 0)
                 throw new InvalidOperationException(string.Join("\n", registry.RegistrationErrors.Select(error => error.Message)));
             // McpRuntime installs exactly one transform. ObserveAsync refreshes its source and reloads it.
@@ -112,20 +130,21 @@ public sealed class ToolLocationFactory(
                 ? created(info, mcp) ?? throw new InvalidOperationException("McpCreated must return an owned subscription.")
                 : null;
             ct.ThrowIfCancellationRequested();
-            var state = new ToolLocationState(registry, rules, mcp, mcpLifetime, plugins);
+            var state = new ToolLocationState(registry, rules, mcp, mcpLifetime, plugins,
+                token => websearch?.RefreshAsync(token) ?? Task.CompletedTask);
             _loaded.Add(permission, state);
             return new(info, permission, state);
         }
         catch
         {
-            try { if (mcp is not null) await mcp.DisposeAsync(); }
+            try { if (mcp is not null) await mcp.DisposeAsync().ConfigureAwait(true); }
             finally
             {
                 try { mcpLifetime?.Dispose(); }
                 finally
                 {
-                    try { try { await plugins.DisposeAsync(); } finally { await registry.DisposeAsync(); } }
-                    finally { await permission.DisposeAsync(); }
+                    try { try { await plugins.DisposeAsync().ConfigureAwait(true); } finally { await registry.DisposeAsync().ConfigureAwait(true); } }
+                    finally { await permission.DisposeAsync().ConfigureAwait(true); }
                 }
             }
             throw;
@@ -134,27 +153,29 @@ public sealed class ToolLocationFactory(
 
     public async ValueTask<ToolLocationLease> AcquireAsync(PermissionLocationMap locations, LocationRef location, CancellationToken ct = default)
     {
-        var lease = await locations.AcquireAsync(location, ct);
+        var lease = await locations.AcquireAsync(location, ct).ConfigureAwait(true);
         try
         {
             if (!_loaded.TryGetValue(lease.Permissions, out var state))
                 throw new NotSupportedException("This permission Location was not constructed by this ToolLocationFactory.");
-            return new(lease, state.Registry, state.Rules, state.Mcp, state.Plugins);
+            await state.RefreshWebSearch(ct).ConfigureAwait(true);
+            return new(lease, state.Registry, state.Rules, state.Mcp, state.Plugins, state.RefreshWebSearch);
         }
-        catch { await lease.DisposeAsync(); throw; }
+        catch { await lease.DisposeAsync().ConfigureAwait(true); throw; }
     }
 
-    private sealed record ToolLocationState(ToolRegistry Registry, IPermissionRuleSource Rules, McpRuntime Mcp, IDisposable? McpLifetime, NativePluginHost Plugins) : IAsyncDisposable
+    private sealed record ToolLocationState(ToolRegistry Registry, IPermissionRuleSource Rules, McpRuntime Mcp, IDisposable? McpLifetime,
+        NativePluginHost Plugins, Func<CancellationToken, Task> RefreshWebSearch) : IAsyncDisposable
     {
         private int _disposed;
         public async ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            try { await Mcp.DisposeAsync(); }
+            try { await Mcp.DisposeAsync().ConfigureAwait(true); }
             finally
             {
                 try { McpLifetime?.Dispose(); }
-                finally { try { await Plugins.DisposeAsync(); } finally { await Registry.DisposeAsync(); } }
+                finally { try { await Plugins.DisposeAsync().ConfigureAwait(true); } finally { await Registry.DisposeAsync().ConfigureAwait(true); } }
             }
         }
     }
@@ -166,6 +187,7 @@ public sealed class ToolLocationLease : IAsyncDisposable
 {
     private readonly PermissionLocationLease _lease;
     private readonly IPermissionRuleSource _rules;
+    private readonly Func<CancellationToken, Task> _refreshWebSearch;
     private int _disposed;
     public LocationInfo Location => _lease.Location;
     public PermissionService Permissions => _lease.Permissions;
@@ -174,15 +196,17 @@ public sealed class ToolLocationLease : IAsyncDisposable
     public McpRuntime Mcp { get; }
     public NativePluginHost Plugins { get; }
 
-    internal ToolLocationLease(PermissionLocationLease lease, ToolRegistry registry, IPermissionRuleSource rules, McpRuntime mcp, NativePluginHost plugins)
-    { _lease = lease; Registry = registry; _rules = rules; Mcp = mcp; Plugins = plugins; }
+    internal ToolLocationLease(PermissionLocationLease lease, ToolRegistry registry, IPermissionRuleSource rules, McpRuntime mcp,
+        NativePluginHost plugins, Func<CancellationToken, Task> refreshWebSearch)
+    { _lease = lease; Registry = registry; _rules = rules; Mcp = mcp; Plugins = plugins; _refreshWebSearch = refreshWebSearch; }
 
     public async Task<ToolSnapshot> SnapshotAsync(SessionId session, AgentId? agent = null, CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0 || Permissions.IsDisposed, this);
         if (Mcp.SettledObservation is null)
             throw new InvalidOperationException("Await the shared MCP runtime observation before capturing a tool snapshot.");
-        var permissions = await _rules.GetAsync(session, agent, ct);
+        var permissions = await _rules.GetAsync(session, agent, ct).ConfigureAwait(true);
+        await _refreshWebSearch(ct).ConfigureAwait(true);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0 || Permissions.IsDisposed, this);
         return Registry.Snapshot(permissions);
     }

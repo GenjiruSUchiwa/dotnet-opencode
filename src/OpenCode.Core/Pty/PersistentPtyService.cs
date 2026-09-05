@@ -28,7 +28,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
 
     public async Task<IReadOnlyList<PersistentPtyInfo>> ListAsync(SessionId? session = null, CancellationToken ct = default)
     {
-        var response = await daemon.RequestIfRunningAsync(new { op = "list" }, ct);
+        var response = await daemon.RequestIfRunningAsync(new { op = "list" }, ct).ConfigureAwait(true);
         if (response is null) return [];
         PersistentPtyDaemon.Require(response.Value, "terminals");
         return response.Value.GetProperty("terminals").EnumerateArray().Select(Info)
@@ -36,7 +36,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
     }
 
     public async Task<PersistentPtyInfo> GetAsync(PtyId id, CancellationToken ct = default) =>
-        (await ListAsync(ct: ct)).FirstOrDefault(info => info.Id == id) ?? throw new PtyNotFoundException(id);
+        (await ListAsync(ct: ct).ConfigureAwait(true)).FirstOrDefault(info => info.Id == id) ?? throw new PtyNotFoundException(id);
 
     public async Task<PersistentPtyInfo> CreateAsync(SessionId session, PersistentPtyCreateInput input, CancellationToken ct = default)
     {
@@ -45,7 +45,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
             op = "create", program = input.Command ?? shell(), args = input.Args,
             cwd = input.Cwd ?? Path.GetPathRoot(Path.GetFullPath("/")), title = input.Title, group_id = session.Value,
             env = input.Env, cols = input.Size?.Cols ?? 80, rows = input.Size?.Rows ?? 24
-        }, start: true, ct);
+        }, start: true, ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(response, "created");
         var terminal = Info(response.GetProperty("terminal"));
         publish(PersistentPtyEventDefinitions.Added.Create(EventId.Create(), daemon.Clock.GetUtcNow().ToUnixTimeMilliseconds(), new(session, terminal)));
@@ -54,35 +54,35 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
 
     public async Task WriteAsync(PtyId id, string data, string? attachmentId = null, CancellationToken ct = default)
     {
-        await GetAsync(id, ct);
+        await GetAsync(id, ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(await daemon.RequestAsync(new { op = "write", id = Number(id), attachment_id = attachmentId,
-            data_base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(data)) }, ct: ct), "ok");
+            data_base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(data)) }, ct: ct).ConfigureAwait(true), "ok");
     }
 
     public async Task ResizeAsync(PtyId id, TerminalSize size, string? attachmentId = null, CancellationToken ct = default)
     {
-        var terminal = await GetAsync(id, ct);
+        var terminal = await GetAsync(id, ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(await daemon.RequestAsync(new { op = "resize", id = Number(id), attachment_id = attachmentId,
-            cols = size.Cols, rows = size.Rows }, ct: ct), "ok");
+            cols = size.Cols, rows = size.Rows }, ct: ct).ConfigureAwait(true), "ok");
         lock (_gate) _current[terminal.SessionId] = id;
     }
 
     public async Task InputAsync(PtyId id, string attachmentId, TerminalSize size, ReadOnlyMemory<byte> data,
         bool control = false, CancellationToken ct = default)
     {
-        var terminal = await GetAsync(id, ct);
+        var terminal = await GetAsync(id, ct).ConfigureAwait(true);
         var response = control
-            ? await daemon.RequestAsync(new { op = "control", id = Number(id), attachment_id = attachmentId, cols = size.Cols, rows = size.Rows }, ct: ct)
+            ? await daemon.RequestAsync(new { op = "control", id = Number(id), attachment_id = attachmentId, cols = size.Cols, rows = size.Rows }, ct: ct).ConfigureAwait(true)
             : await daemon.RequestAsync(new { op = "input", id = Number(id), attachment_id = attachmentId, cols = size.Cols, rows = size.Rows,
-                data_base64 = Convert.ToBase64String(data.Span) }, ct: ct);
+                data_base64 = Convert.ToBase64String(data.Span) }, ct: ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(response, "ok");
         lock (_gate) _current[terminal.SessionId] = id;
     }
 
     public async Task<PersistentPtySnapshot> SnapshotAsync(PtyId id, CancellationToken ct = default)
     {
-        await GetAsync(id, ct);
-        var response = await daemon.RequestAsync(new { op = "snapshot", id = Number(id) }, ct: ct);
+        await GetAsync(id, ct).ConfigureAwait(true);
+        var response = await daemon.RequestAsync(new { op = "snapshot", id = Number(id) }, ct: ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(response, "snapshot");
         return new(Info(response.GetProperty("terminal")), response.GetProperty("text").GetString()!,
             Convert.FromBase64String(response.GetProperty("checkpoint_base64").GetString()!),
@@ -95,7 +95,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
         PtyId id;
         lock (_gate) if (!_current.TryGetValue(session, out id)) return null;
         PersistentPtyInfo terminal;
-        try { terminal = await GetAsync(id, ct); }
+        try { terminal = await GetAsync(id, ct).ConfigureAwait(true); }
         catch (PtyNotFoundException)
         {
             lock (_gate) if (_current.TryGetValue(session, out var current) && current == id) _current.Remove(session);
@@ -107,7 +107,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
             return null;
         }
         object request = lines is null ? new { op = "read_rows", id = Number(id) } : new { op = "read_rows", id = Number(id), rows = lines.Value };
-        var response = await daemon.RequestAsync(request, ct: ct);
+        var response = await daemon.RequestAsync(request, ct: ct).ConfigureAwait(true);
         PersistentPtyDaemon.Require(response, "rows");
         var info = Info(response.GetProperty("terminal"));
         return new(info.Id, info.Title, info.Cwd, info.ForegroundProcess,
@@ -117,15 +117,15 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
 
     public async Task RemoveAsync(PtyId id, CancellationToken ct = default)
     {
-        var terminal = await GetAsync(id, ct);
-        PersistentPtyDaemon.Require(await daemon.RequestAsync(new { op = "terminate", id = Number(id) }, ct: ct), "ok");
+        var terminal = await GetAsync(id, ct).ConfigureAwait(true);
+        PersistentPtyDaemon.Require(await daemon.RequestAsync(new { op = "terminate", id = Number(id) }, ct: ct).ConfigureAwait(true), "ok");
         lock (_gate) if (_current.TryGetValue(terminal.SessionId, out var current) && current == id) _current.Remove(terminal.SessionId);
         publish(PersistentPtyEventDefinitions.Removed.Create(EventId.Create(), daemon.Clock.GetUtcNow().ToUnixTimeMilliseconds(), new(terminal.SessionId, id)));
     }
 
     public async Task ShutdownAsync(CancellationToken ct = default)
     {
-        await daemon.ShutdownAsync(ct);
+        await daemon.ShutdownAsync(ct).ConfigureAwait(true);
         lock (_gate) _current.Clear();
     }
     public Task<PersistentPtyHandoff?> HandoffAsync(CancellationToken ct = default) => daemon.HandoffAsync(ct);
@@ -133,8 +133,8 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
     public async Task<PersistentPtyAttachment> AttachAsync(PtyId id, long cursor, string attachmentId, string role,
         bool takeover, Action<PersistentPtyStreamEvent> onEvent, Action onEnd, CancellationToken ct = default)
     {
-        await GetAsync(id, ct);
-        var connection = await daemon.SubscribeAsync(Number(id), cursor, attachmentId, role, takeover, ct);
+        await GetAsync(id, ct).ConfigureAwait(true);
+        var connection = await daemon.SubscribeAsync(Number(id), cursor, attachmentId, role, takeover, ct).ConfigureAwait(true);
         try
         {
             var attachment = new PersistentPtyAttachment(connection.Stream, connection.Initial, change =>
@@ -145,7 +145,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
             if (attachment.Role == "controller") lock (_gate) _current[attachment.Info.SessionId] = id;
             return attachment;
         }
-        catch { await connection.Stream.DisposeAsync(); throw; }
+        catch { await connection.Stream.DisposeAsync().ConfigureAwait(true); throw; }
     }
 
     private void RemoveVisibleExit(PtyId id)
@@ -162,7 +162,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
     private async Task RemoveVisibleAsync(PtyId id)
     {
         await Task.Yield();
-        try { await RemoveAsync(id, _shutdown.Token); }
+        try { await RemoveAsync(id, _shutdown.Token).ConfigureAwait(true); }
         catch (PtyNotFoundException) { }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
         catch (Exception error) { System.Diagnostics.Trace.TraceWarning("Could not remove exited persistent terminal {0}: {1}", id, error.Message); }
@@ -170,7 +170,7 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
     }
 
     internal static long Number(PtyId id) => id.Value.StartsWith("pty_persistent_", StringComparison.Ordinal)
-        && long.TryParse(id.Value[15..], out var number) && number is >= 1 and <= 9007199254740991 ? number
+        && long.TryParse(id.Value[15..], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var number) && number is >= 1 and <= 9007199254740991 ? number
         : throw new PersistentPtyUnavailableException($"invalid persistent PTY ID: {id}");
 
     internal static PersistentPtyInfo Info(JsonElement value)
@@ -190,11 +190,11 @@ public sealed class PersistentPtyService(PersistentPtyDaemon daemon, Func<string
 
     public async ValueTask DisposeAsync()
     {
-        await _shutdown.CancelAsync();
+        await _shutdown.CancelAsync().ConfigureAwait(true);
         Task[] tasks;
         lock (_gate) tasks = _tasks.ToArray();
-        await Task.WhenAll(tasks);
-        await daemon.DisposeAsync();
+        await Task.WhenAll(tasks).ConfigureAwait(true);
+        await daemon.DisposeAsync().ConfigureAwait(true);
     }
 }
 
@@ -237,7 +237,7 @@ public sealed class PersistentPtyAttachment : IAsyncDisposable
         {
             while (true)
             {
-                var frame = await PersistentPtyDaemon.ReadAsync(_stream, _lifetime.Token);
+                var frame = await PersistentPtyDaemon.ReadAsync(_stream, _lifetime.Token).ConfigureAwait(true);
                 if (frame.Length > 0 && frame[0] == 0)
                 {
                     if (frame.Length < 17) throw new JsonException("invalid opencode-pty output frame");
@@ -269,9 +269,9 @@ public sealed class PersistentPtyAttachment : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        await _lifetime.CancelAsync();
-        await _stream.DisposeAsync();
-        await _pump;
+        await _lifetime.CancelAsync().ConfigureAwait(true);
+        await _stream.DisposeAsync().ConfigureAwait(true);
+        await _pump.ConfigureAwait(true);
         _lifetime.Dispose();
     }
 }

@@ -28,7 +28,7 @@ public sealed class QuestionTool(FormService forms, PermissionService permission
         try
         {
             await permissions.AssertAsync(new PermissionAskInput(context.SessionId, Name, ["*"], Agent: context.AgentId,
-                Source: new PermissionSource("tool", context.RequireMessageId().Value, context.CallId)), ct);
+                Source: new PermissionSource("tool", context.RequireMessageId().Value, context.CallId)), ct).ConfigureAwait(true);
         }
         catch (Exception error) when (error is PermissionBlockedException or PermissionCorrectedException)
         { throw new ToolExecutionException("Permission denied: question", error); }
@@ -49,7 +49,7 @@ public sealed class QuestionTool(FormService forms, PermissionService permission
             {
                 ["kind"] = JsonSerializer.SerializeToElement("question"),
                 ["tool"] = JsonSerializer.SerializeToElement(new { messageID = context.RequireMessageId().Value, id = context.CallId })
-            }), ct);
+            }), ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         if (state is FormCancelledState) throw new QuestionCancelledException();
         if (state is not FormAnsweredState answered) throw new ToolContractException("Form ask returned an unsettled question.");

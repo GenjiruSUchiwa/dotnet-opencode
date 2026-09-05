@@ -20,10 +20,10 @@ public sealed class WebSearchTool(WebSearchRuntime websearch, IToolPermission pe
     public async Task<ToolInfo?> CreateIfAvailableAsync(CancellationToken ct = default)
     {
         WebSearchProvider? selected;
-        try { selected = await websearch.DefaultAsync(ct); }
-        catch (WebSearchException error) when (error.Failure == WebSearchFailure.Disabled) { return null; }
-        if (selected is not null && !await websearch.CanExecuteAsync(selected.Id, ct)) return null;
-        if (selected is null && (forms is null || !websearch.CanSelect || (await websearch.AvailableProvidersAsync(ct)).Count == 0)) return null;
+        try { selected = await websearch.DefaultAsync(ct).ConfigureAwait(true); }
+        catch (WebSearchException error) when (error.Failure is WebSearchFailure.Disabled or WebSearchFailure.Unavailable) { return null; }
+        if (selected is not null && !await websearch.CanExecuteAsync(selected.Id, ct).ConfigureAwait(true)) return null;
+        if (selected is null && (forms is null || !websearch.CanSelect || (await websearch.AvailableProvidersAsync(ct).ConfigureAwait(true)).Count == 0)) return null;
         return ToolInfo.FromJson(Name,
             $"Search the web using the user's selected search integration. Use this for current information beyond knowledge cutoff.\n\nThe current year is {_clock.GetLocalNow().Year}. Use this year when searching for recent information or current events.",
             JsonSerializer.Deserialize<JsonElement>("""
@@ -37,15 +37,15 @@ public sealed class WebSearchTool(WebSearchRuntime websearch, IToolPermission pe
     public async Task<ToolExecutionResult> ExecuteAsync(JsonElement input, ToolContext context, CancellationToken ct = default)
     {
         var query = new ToolInput(input).String("query");
-        try { await permission.AssertAsync(Name, [query], ["*"], context, new Dictionary<string, object> { ["query"] = query }, ct); }
+        try { await permission.AssertAsync(Name, [query], ["*"], context, new Dictionary<string, object> { ["query"] = query }, ct).ConfigureAwait(true); }
         catch (PermissionBlockedException denial) { throw new ToolExecutionException(denial.Detail, denial); }
         catch (PermissionCorrectedException correction) { throw new ToolExecutionException(correction.Feedback, correction); }
         // PermissionDeclinedException and caller interruption are deliberately not translated here.
         try
         {
-            var provider = (await websearch.DefaultAsync(ct))?.Id ?? await ChooseAsync(context.SessionId, ct);
-            await context.ReportProgress(new Dictionary<string, object> { ["provider"] = provider });
-            var result = await websearch.QueryAsync(new(query, provider), ct);
+            var provider = (await websearch.DefaultAsync(ct).ConfigureAwait(true))?.Id ?? await ChooseAsync(context.SessionId, ct).ConfigureAwait(true);
+            await context.ReportProgress(new Dictionary<string, object> { ["provider"] = provider }).ConfigureAwait(true);
+            var result = await websearch.QueryAsync(new(query, provider), ct).ConfigureAwait(true);
             var output = new WebSearchToolOutput(result.ProviderId, result.Results);
             var content = result.Results.Count == 0 ? NoResults : string.Join("\n\n", result.Results.Select(item =>
             {
@@ -75,38 +75,38 @@ public sealed class WebSearchTool(WebSearchRuntime websearch, IToolPermission pe
         lifetime.CancelAfter(TimeSpan.FromMinutes(1));
         try
         {
-            await ProviderSelection.WaitAsync(lifetime.Token);
+            await ProviderSelection.WaitAsync(lifetime.Token).ConfigureAwait(true);
             try
             {
-                if (await websearch.DefaultAsync(lifetime.Token) is { } selected) return selected.Id;
-                var providers = await websearch.AvailableProvidersAsync(lifetime.Token);
+                if (await websearch.DefaultAsync(lifetime.Token).ConfigureAwait(true) is { } selected) return selected.Id;
+                var providers = await websearch.AvailableProvidersAsync(lifetime.Token).ConfigureAwait(true);
                 if (providers.Count == 0) throw new WebSearchException(WebSearchFailure.Unavailable, "No configured web search backend has a usable credential.");
                 var metadata = new Dictionary<string, JsonElement> { ["kind"] = JsonSerializer.SerializeToElement("websearch.provider", OpenCodeJsonContext.Default.String) };
                 var answer = await forms.AskAsync(session.Value, new("Web Search",
                     [new FormStringField { Key = "choice", Description = "Allow OpenCode to search the web for up-to-date information?", Required = true, Custom = false,
                         Options = [new("allow", $"Allow search via {string.Join(", ", providers.Select(provider => provider.Name))}"),
-                            new("choose", "Choose another provider"), new("disable", "Disable web search")] }], Metadata: metadata), lifetime.Token);
+                            new("choose", "Choose another provider"), new("disable", "Disable web search")] }], Metadata: metadata), lifetime.Token).ConfigureAwait(true);
                 if (answer is FormCancelledState) throw new ToolExecutionException("Web search cancelled");
                 if (answer is not FormAnsweredState allowed || allowed.Answer.GetValueOrDefault("choice") is not FormValue.Text choice)
                     throw new ToolContractException("Web search form returned an unsettled or invalid response.");
                 if (choice.Value == "disable")
                 {
-                    await websearch.SelectAsync(new(Disabled: true), lifetime.Token);
+                    await websearch.SelectAsync(new(Disabled: true), lifetime.Token).ConfigureAwait(true);
                     throw new WebSearchException(WebSearchFailure.Disabled, "Web search is disabled");
                 }
                 if (choice.Value == "allow")
                 {
-                    await websearch.SelectAsync(new("random"), lifetime.Token);
+                    await websearch.SelectAsync(new("random"), lifetime.Token).ConfigureAwait(true);
                     return providers[Random.Shared.Next(providers.Count)].Id;
                 }
                 if (choice.Value != "choose") throw new ToolContractException("Invalid web search selection.");
                 var picked = await forms.AskAsync(session.Value, new("Choose a web search provider",
                     [new FormStringField { Key = "provider", Description = "Choose a provider for web search.", Required = true, Custom = false,
-                        Options = providers.Select(provider => new FormOption(provider.Id, provider.Name)).ToArray() }], Metadata: metadata), lifetime.Token);
+                        Options = providers.Select(provider => new FormOption(provider.Id, provider.Name)).ToArray() }], Metadata: metadata), lifetime.Token).ConfigureAwait(true);
                 if (picked is FormCancelledState) throw new ToolExecutionException("Web search cancelled");
                 if (picked is not FormAnsweredState value || value.Answer.GetValueOrDefault("provider") is not FormValue.Text id || !providers.Any(provider => provider.Id == id.Value))
                     throw new ToolContractException("Invalid web search provider selection.");
-                await websearch.SelectAsync(new(id.Value), lifetime.Token);
+                await websearch.SelectAsync(new(id.Value), lifetime.Token).ConfigureAwait(true);
                 return id.Value;
             }
             finally { ProviderSelection.Release(); }

@@ -38,13 +38,13 @@ public sealed class SkillTool
         var id = new ToolInput(input).String("id");
         ct.ThrowIfCancellationRequested();
         SkillInfo? skill;
-        try { skill = (await _catalog(ct)).FirstOrDefault(item => string.Equals(item.Id.Value, id, StringComparison.Ordinal)); }
+        try { skill = (await _catalog(ct).ConfigureAwait(true)).FirstOrDefault(item => string.Equals(item.Id.Value, id, StringComparison.Ordinal)); }
         catch (IOException error) { throw new ToolExecutionException($"Unable to load skill {id}", error); }
         catch (UnauthorizedAccessException error) { throw new ToolExecutionException($"Unable to load skill {id}", error); }
         if (skill is null) throw new ToolExecutionException($"Unable to load skill {id}");
 
         // Visibility/autoinvoke controls guidance, not execution authorization. Manual loads still assert the ID.
-        try { await _permission.AssertAsync(Name, [skill.Id.Value], [skill.Id.Value], context, null, ct); }
+        try { await _permission.AssertAsync(Name, [skill.Id.Value], [skill.Id.Value], context, null, ct).ConfigureAwait(true); }
         catch (PermissionBlockedException denial)
         { throw new ToolExecutionException($"Unable to load skill {id}: {denial.Detail}", denial); }
         catch (PermissionCorrectedException correction)
@@ -88,13 +88,13 @@ public sealed class SkillTool
             try
             {
                 foreach (var entry in current.EnumerateFileSystemInfos("*", new EnumerationOptions
-                { AttributesToSkip = 0, IgnoreInaccessible = false, ReturnSpecialDirectories = false }))
+                { AttributesToSkip = (FileAttributes)0, IgnoreInaccessible = false, ReturnSpecialDirectories = false }))
                 {
                     ct.ThrowIfCancellationRequested();
                     if (++observed > 100_000) throw new IOException("Skill resource enumeration exceeds the local 100000-entry limit.");
-                    if ((entry.Attributes & FileAttributes.Directory) != 0)
+                    if ((entry.Attributes & FileAttributes.Directory) != (FileAttributes)0)
                     {
-                        if ((entry.Attributes & FileAttributes.ReparsePoint) == 0) pending.Push(new DirectoryInfo(entry.FullName));
+                        if ((entry.Attributes & FileAttributes.ReparsePoint) == (FileAttributes)0) pending.Push(new DirectoryInfo(entry.FullName));
                         continue;
                     }
                     if (entry.Name == "SKILL.md") continue;

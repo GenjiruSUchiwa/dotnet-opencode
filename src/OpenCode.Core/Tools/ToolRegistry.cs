@@ -19,7 +19,7 @@ public sealed class ToolRegistration : IDisposable, IAsyncDisposable
     internal bool Active = true;
     internal ToolRegistration(ToolRegistry owner, Action<IToolDraft> transform) { _owner = owner; Transform = transform; }
     public void Dispose() => _owner.Remove(this);
-    public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+    public ValueTask DisposeAsync() { _owner.Remove(this); return ValueTask.CompletedTask; }
 }
 
 /// <summary>Location-owned ordered transforms. Contains no permission assertion service or default registrations.</summary>
@@ -121,7 +121,9 @@ public sealed class ToolRegistry : IDisposable, IAsyncDisposable
         }
     }
 
-    public void Dispose()
+    public void Dispose() => Close();
+
+    private void Close()
     {
         lock (_gate)
         {
@@ -140,10 +142,10 @@ public sealed class ToolRegistry : IDisposable, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        Dispose();
+        Close();
         Task? worker;
         lock (_gate) worker = _worker;
-        if (worker is not null) await worker;
+        if (worker is not null) await worker.ConfigureAwait(true);
     }
 
     private async Task ReloadLoopAsync()
@@ -154,7 +156,7 @@ public sealed class ToolRegistry : IDisposable, IAsyncDisposable
             {
                 int remaining;
                 lock (_gate) remaining = (int)Math.Max(0, _requestedAt + 500 - Clock.GetTimestampMilliseconds());
-                await Task.Delay(TimeSpan.FromMilliseconds(remaining), Clock, _shutdown.Token);
+                await Task.Delay(TimeSpan.FromMilliseconds(remaining), Clock, _shutdown.Token).ConfigureAwait(true);
                 lock (_gate)
                 {
                     if (_closed) return;

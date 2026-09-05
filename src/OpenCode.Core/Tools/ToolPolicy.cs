@@ -28,16 +28,16 @@ public sealed record ToolFilePolicy(IToolLocation Location, IToolPermission Perm
 {
     internal async Task<ToolPath> ResolveAsync(string path, ToolPathKind? kind, ToolContext context, CancellationToken ct)
     {
-        var target = await Location.ResolveAsync(path, kind, ct);
+        var target = await Location.ResolveAsync(path, kind, ct).ConfigureAwait(true);
         if (target.ExternalDirectory is { } external)
-            await AssertAsync("external_directory", [external.Resource], [external.Save], context, null, ct);
+            await AssertAsync("external_directory", [external.Resource], [external.Save], context, null, ct).ConfigureAwait(true);
         return target;
     }
 
     internal async Task AssertAsync(string action, IReadOnlyList<string> resources, IReadOnlyList<string> save,
         ToolContext context, IReadOnlyDictionary<string, object>? metadata, CancellationToken ct)
     {
-        try { await Permission.AssertAsync(action, resources, save, context, metadata, ct); }
+        try { await Permission.AssertAsync(action, resources, save, context, metadata, ct).ConfigureAwait(true); }
         catch (PermissionBlockedException denial) { throw new ToolExecutionException(denial.Detail, denial); }
         catch (PermissionCorrectedException correction) { throw new ToolExecutionException(correction.Feedback, correction); }
     }

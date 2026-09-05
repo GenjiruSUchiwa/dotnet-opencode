@@ -25,7 +25,7 @@ public sealed partial class ShellRuntime
     private async Task ObserveBackgroundAsync(Func<CancellationToken, Task> work)
     {
         await Task.Yield();
-        try { await work(_shutdown.Token); }
+        try { await work(_shutdown.Token).ConfigureAwait(true); }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested) { }
         catch (Exception error)
         {

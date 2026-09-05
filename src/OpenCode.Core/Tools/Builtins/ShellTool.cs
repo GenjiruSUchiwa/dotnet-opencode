@@ -54,7 +54,7 @@ public sealed class ShellTool
         if (_policy is null || _runtime is null) throw new NotSupportedException("shell requires the shared Location ShellRuntime and scanned permission policy; no independent process fallback is available.");
         try
         {
-            return await ShellToolExecution.ExecuteAsync(_runtime(), _policy, _jobs, command, workdir, timeout, background, context, ct);
+            return await ShellToolExecution.ExecuteAsync(_runtime(), _policy, _jobs, command, workdir, timeout, background, context, ct).ConfigureAwait(true);
         }
         catch (PermissionBlockedException denial) { throw new ToolExecutionException($"Unable to execute command: {denial.Detail}", denial); }
         catch (PermissionCorrectedException correction) { throw new ToolExecutionException(correction.Feedback, correction); }

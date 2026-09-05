@@ -14,7 +14,7 @@ public sealed class ShellProcessSource(string directory, TimeProvider? clock = n
         IReadOnlyDictionary<string, string>? environment = null)
     {
         ct.ThrowIfCancellationRequested();
-        if (!Path.IsPathFullyQualified(directory)) throw new ArgumentException("Shell output directory must be absolute.");
+        if (!Path.IsPathFullyQualified(directory)) throw new ArgumentException("Shell output directory must be absolute.", nameof(directory));
         Directory.CreateDirectory(directory);
         var file = Path.Combine(directory, $"sh_{Guid.NewGuid():N}.out");
         using var capture = File.OpenHandle(file, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite);
@@ -46,7 +46,7 @@ public sealed class ShellProcessSource(string directory, TimeProvider? clock = n
         int? exit = null;
         try
         {
-            var status = await exited.WaitAsync(lifetime.Token);
+            var status = await exited.WaitAsync(lifetime.Token).ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
             exit = status.ExitCode;
         }
@@ -62,21 +62,22 @@ public sealed class ShellProcessSource(string directory, TimeProvider? clock = n
             catch (InvalidOperationException) when (process.HasExited) { }
             finally
             {
-                stopping.Cancel();
-                await exited;
+                await stopping.CancelAsync().ConfigureAwait(true);
+                await exited.ConfigureAwait(true);
             }
         }
         ct.ThrowIfCancellationRequested();
         // Both native standard handles share one backing file, with no reader task that can wait forever for
         // an inherited pipe after the root exits. Read a bounded snapshot, even if a detached descendant writes.
-        await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+        var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
             4096, FileOptions.Asynchronous);
+        await using var streamLifetime = stream.ConfigureAwait(true);
         const int maximumBytes = 50 * 1024;
         const int maximumLines = 2000;
         var size = stream.Length;
         var bytes = new byte[(int)Math.Min(size, maximumBytes)];
         stream.Position = Math.Max(0, size - maximumBytes);
-        var count = await stream.ReadAtLeastAsync(bytes, bytes.Length, false, ct);
+        var count = await stream.ReadAtLeastAsync(bytes, bytes.Length, false, ct).ConfigureAwait(true);
         var offset = 0;
         if (size > maximumBytes)
             while (offset < count && (bytes[offset] & 0xc0) == 0x80) offset++;

@@ -29,13 +29,13 @@ public sealed class GrepTool(ToolFilePolicy? policy = null, RipgrepProcess? ripg
         var include = args.OptionalString("include");
         var limit = args.Integer("limit", 100, 1, int.MaxValue - 1);
         if (policy is null || ripgrep is null) throw new NotSupportedException("grep requires Location, permission and ripgrep services.");
-        var target = await policy.ResolveAsync(path, null, context, ct);
+        var target = await policy.ResolveAsync(path, null, context, ct).ConfigureAwait(true);
         await policy.AssertAsync(Name, [pattern], ["*"], context,
-            new Dictionary<string, object> { ["root"] = ".", ["path"] = path, ["include"] = include ?? "", ["limit"] = limit }, ct);
+            new Dictionary<string, object> { ["root"] = ".", ["path"] = path, ["include"] = include ?? "", ["limit"] = limit }, ct).ConfigureAwait(true);
         var directory = Directory.Exists(target.Absolute);
         if (!directory && !File.Exists(target.Absolute)) throw new ToolExecutionException($"Search path does not exist: {path}");
         var cwd = directory ? target.Absolute : Path.GetDirectoryName(target.Absolute)!;
-        var rows = await ripgrep.GrepAsync(cwd, pattern, directory ? null : Path.GetFileName(target.Absolute), include, limit + 1, ct);
+        var rows = await ripgrep.GrepAsync(cwd, pattern, directory ? null : Path.GetFileName(target.Absolute), include, limit + 1, ct).ConfigureAwait(true);
         var matches = rows.Take(limit).Select(row => row with
         {
             Entry = row.Entry with { Path = Path.GetRelativePath(policy.Location.Directory, Path.GetFullPath(row.Entry.Path, cwd)) }
@@ -52,9 +52,9 @@ public sealed class GrepTool(ToolFilePolicy? policy = null, RipgrepProcess? ripg
             }
             var previewLength = Math.Min(2000, match.Text.Length);
             if (previewLength < match.Text.Length && char.IsHighSurrogate(match.Text[previewLength - 1])) previewLength--;
-            text.AppendLine().Append($"  Line {match.Line}: {match.Text[..previewLength]}{(previewLength < match.Text.Length ? "..." : "")}");
+            text.AppendLine().Append(System.Globalization.CultureInfo.InvariantCulture, $"  Line {match.Line}: {match.Text[..previewLength]}{(previewLength < match.Text.Length ? "..." : "")}");
         }
-        if (truncated) text.Append($"\n\n(Results are truncated: showing first {matches.Length} results. Consider using a more specific path or pattern.)");
+        if (truncated) text.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n\n(Results are truncated: showing first {matches.Length} results. Consider using a more specific path or pattern.)");
         return new(text.ToString(), matches, new Dictionary<string, object> { ["matches"] = matches.Length, ["truncated"] = truncated });
     }
 }

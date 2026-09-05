@@ -19,6 +19,9 @@ public sealed record McpObservation(IReadOnlyList<McpServer> Servers, IReadOnlyL
 /// <summary>One Location owns this runtime and its stable tool transform. Construction performs no I/O.</summary>
 public sealed partial class McpRuntime : IAsyncDisposable
 {
+    // tool/mcp.ts always declares output, using {} when the MCP server omitted its
+    // outputSchema. Keep the registry's no-schema/no-output contract strict elsewhere.
+    private static readonly JsonElement UnconstrainedOutput = JsonSerializer.Deserialize<JsonElement>("{}");
     private readonly string _directory;
     private readonly ToolRegistry _registry;
     private readonly IToolPermission _permission;
@@ -79,8 +82,8 @@ public sealed partial class McpRuntime : IAsyncDisposable
         UpdateAsync(async token =>
         {
             _configuration = Configure([configuration]);
-            await ReconcileAsync(token);
-            await ApplyChangesAsync(token);
+            await ReconcileAsync(token).ConfigureAwait(true);
+            await ApplyChangesAsync(token).ConfigureAwait(true);
         }, ct);
 
     private async Task StartAsync(string name, Entry entry, CancellationToken ct, bool force = false)
@@ -97,7 +100,7 @@ public sealed partial class McpRuntime : IAsyncDisposable
             startup.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Startup ?? 30_000));
             if (entry.Config is McpLocalConfig local)
             {
-                if (local.Command.Count == 0) throw new ArgumentException("MCP command must not be empty.");
+                if (local.Command.Count == 0) throw new ArgumentException("MCP command must not be empty.", nameof(entry));
                 // SDK owns System.Diagnostics.Process and bounded shutdown. Its public stdio options
                 // do not expose .NET 11 process injection; no shell or alternate runtime is inserted here.
                 entry.Client = await ConnectAsync(name, entry, new StdioClientTransport(new()
@@ -106,17 +109,17 @@ public sealed partial class McpRuntime : IAsyncDisposable
                     WorkingDirectory = Path.GetFullPath(local.Cwd ?? ".", _directory),
                     EnvironmentVariables = local.Environment?.ToDictionary(item => item.Key, item => (string?)item.Value),
                     InheritEnvironmentVariables = true
-                }), startup.Token);
+                }), startup.Token).ConfigureAwait(true);
             }
             else if (entry.Config is McpRemoteConfig remote)
             {
                 var url = new UriBuilder(remote.Url);
-                if (url.Scheme is not ("http" or "https")) throw new ArgumentException("MCP remote URL must use HTTP or HTTPS.");
+                if (url.Scheme is not ("http" or "https")) throw new ArgumentException("MCP remote URL must use HTTP or HTTPS.", nameof(entry));
                 var added = remote.CodeMode != false && !url.Query.TrimStart('?').Split('&').Any(part => Uri.UnescapeDataString(part.Split('=')[0]) == "codemode");
                 if (added) url.Query = url.Query.TrimStart('?') + (url.Query.Length > 1 ? "&" : "") + "codemode=false";
-                try { entry.Client = await OpenRemoteAsync(name, entry, remote, url.Uri, startup.Token); }
+                try { entry.Client = await OpenRemoteAsync(name, entry, remote, url.Uri, startup.Token).ConfigureAwait(true); }
                 catch (HttpRequestException error) when (added && error.StatusCode == HttpStatusCode.NotFound)
-                { entry.Client = await OpenRemoteAsync(name, entry, remote, new Uri(remote.Url), startup.Token); }
+                { entry.Client = await OpenRemoteAsync(name, entry, remote, new Uri(remote.Url), startup.Token).ConfigureAwait(true); }
             }
             var connected = entry.Client ?? throw new NotSupportedException("Unknown MCP transport.");
             foreach (var (method, kind) in new[]
@@ -140,19 +143,19 @@ public sealed partial class McpRuntime : IAsyncDisposable
                 _ = completion.Exception;
                 if (ReferenceEquals(entry.Client, connected)) QueueChange(entry, McpChangeKind.Status);
             }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-            await RefreshAsync(entry, ct);
+            await RefreshAsync(entry, ct).ConfigureAwait(true);
             SetStatus(name, entry, new McpConnectedStatus());
             CatalogChanged(name, McpChangeKind.Tools | McpChangeKind.Prompts | McpChangeKind.Resources);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await StopAsync(name, entry);
+            await StopAsync(name, entry).ConfigureAwait(true);
             SetStatus(name, entry, new McpPendingStatus());
             throw;
         }
         catch (Exception error) when (!ct.IsCancellationRequested)
         {
-            await StopAsync(name, entry);
+            await StopAsync(name, entry).ConfigureAwait(true);
             SetStatus(name, entry, entry.Config is McpRemoteConfig { OAuth: not McpOAuthDisabled }
                 && error is (McpOAuthRequiredException or HttpRequestException { StatusCode: HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden })
                 ? new McpNeedsAuthStatus() : new McpFailedStatus(error.Message));
@@ -168,14 +171,14 @@ public sealed partial class McpRuntime : IAsyncDisposable
             {
                 using var catalog = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
                 catalog.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Catalog ?? 30_000));
-                entry.Tools = (await connected.ListToolsAsync(cancellationToken: catalog.Token)).ToArray();
+                entry.Tools = (await connected.ListToolsAsync(cancellationToken: catalog.Token).ConfigureAwait(false)).ToArray();
             }
             if (connected.ServerCapabilities.Prompts is not null)
-                entry.Prompts = await OptionalCatalogAsync(entry, "prompts", async token => await connected.ListPromptsAsync(cancellationToken: token), ct);
+                entry.Prompts = await OptionalCatalogAsync(entry, "prompts", async token => await connected.ListPromptsAsync(cancellationToken: token).ConfigureAwait(false), ct).ConfigureAwait(false);
             if (connected.ServerCapabilities.Resources is not null)
             {
-                entry.Resources = await OptionalCatalogAsync(entry, "resources", async token => await connected.ListResourcesAsync(cancellationToken: token), ct);
-                entry.Templates = await OptionalCatalogAsync(entry, "resource templates", async token => await connected.ListResourceTemplatesAsync(cancellationToken: token), ct);
+                entry.Resources = await OptionalCatalogAsync(entry, "resources", async token => await connected.ListResourcesAsync(cancellationToken: token).ConfigureAwait(false), ct).ConfigureAwait(false);
+                entry.Templates = await OptionalCatalogAsync(entry, "resource templates", async token => await connected.ListResourceTemplatesAsync(cancellationToken: token).ConfigureAwait(false), ct).ConfigureAwait(false);
             }
         }
         catch
@@ -191,7 +194,7 @@ public sealed partial class McpRuntime : IAsyncDisposable
         // TS treats these three catalogs independently; their failures must not discard tools.
         using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Catalog ?? 30_000));
-        try { return (await list(timeout.Token)).ToArray(); }
+        try { return (await list(timeout.Token).ConfigureAwait(false)).ToArray(); }
         catch (Exception error) when (!ct.IsCancellationRequested)
         {
             System.Diagnostics.Trace.TraceWarning("MCP {0} discovery failed: {1}", catalog, error.Message);
@@ -219,27 +222,27 @@ public sealed partial class McpRuntime : IAsyncDisposable
                         NotificationMethods.ElicitationCompleteNotification, elicitation.CompleteAsync)]
                 }
 #pragma warning restore MCP9005
-            }, cancellationToken: ct);
+            }, cancellationToken: ct).ConfigureAwait(true);
             entry.Elicitation = elicitation;
             return client;
         }
         catch
         {
-            try { if (elicitation is not null) await elicitation.DisposeAsync(); }
-            finally { if (transport is IAsyncDisposable disposable) await disposable.DisposeAsync(); }
+            try { if (elicitation is not null) await elicitation.DisposeAsync().ConfigureAwait(true); }
+            finally { if (transport is IAsyncDisposable disposable) await disposable.DisposeAsync().ConfigureAwait(true); }
             throw;
         }
     }
 
     private async Task<McpClient> OpenRemoteAsync(string name, Entry entry, McpRemoteConfig remote, Uri uri, CancellationToken ct)
     {
-        var oauth = _oauth is null ? null : await _oauth.ConnectionOptionsAsync(name, remote, ct);
+        var oauth = _oauth is null ? null : await _oauth.ConnectionOptionsAsync(name, remote, ct).ConfigureAwait(true);
         return await ConnectAsync(name, entry, new HttpClientTransport(new()
         {
             Name = name, Endpoint = uri, TransportMode = HttpTransportMode.StreamableHttp,
             AdditionalHeaders = remote.Headers?.ToDictionary(item => item.Key, item => item.Value),
             OAuth = oauth
-        }), ct);
+        }), ct).ConfigureAwait(true);
     }
 
     private ToolInfo Registration(string server, Entry entry, McpClientTool tool)
@@ -250,7 +253,7 @@ public sealed partial class McpRuntime : IAsyncDisposable
         input["additionalProperties"] = false;
         return ToolInfo.FromJson(tool.Name, tool.Description ?? "", JsonSerializer.SerializeToElement(input), async (args, context, ct) =>
         {
-            try { await _permission.AssertAsync(ToolInfo.EffectiveName(tool.Name, ToolInfo.NormalizedName(server)), ["*"], ["*"], context, null, ct); }
+            try { await _permission.AssertAsync(ToolInfo.EffectiveName(tool.Name, ToolInfo.NormalizedName(server)), ["*"], ["*"], context, null, ct).ConfigureAwait(true); }
             catch (PermissionCorrectedException error) { throw new ToolExecutionException(error.Feedback, error); }
             using var execution = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
             CallToolResult result;
@@ -258,11 +261,11 @@ public sealed partial class McpRuntime : IAsyncDisposable
             {
                 // A captured registry definition resolves the current connection, as TS callTool does.
                 // Reconnect must not strand it on the disposed McpClientTool from discovery.
-                var live = await ConnectedAsync(server, ct);
+                var live = await ConnectedAsync(server, ct).ConfigureAwait(true);
                 execution.CancelAfter(TimeSpan.FromMilliseconds(Timeout(live.Config)?.Execution ?? 43_200_000));
                 result = await live.Client.CallToolAsync(tool.Name,
                     args.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone()),
-                    options: new() { Meta = new JsonObject { ["sessionID"] = context.SessionId.Value } }, cancellationToken: execution.Token);
+                    options: new() { Meta = new JsonObject { ["sessionID"] = context.SessionId.Value } }, cancellationToken: execution.Token).ConfigureAwait(true);
             }
             catch (Exception error) when (error is ModelContextProtocol.McpException or HttpRequestException or IOException or McpServerNotFoundException or McpNotConnectedException or McpOAuthRequiredException)
             { throw new ToolExecutionException(error.Message, error); }
@@ -270,9 +273,9 @@ public sealed partial class McpRuntime : IAsyncDisposable
             { throw new ToolExecutionException("MCP tool execution timed out", error); }
             var content = result.Content.SelectMany(ConvertContent).ToArray();
             var text = string.Join("\n", content.OfType<ToolTextContent>().Select(part => part.Text));
-            if (result.IsError == true) throw new ToolExecutionException(string.IsNullOrWhiteSpace(text) ? "MCP tool returned an error" : text);
+            if (result.IsError == true) throw new ToolExecutionException(string.IsNullOrWhiteSpace(text) ? "MCP tool returned an error" : text.Trim());
             return new ToolExecutionResult { Content = content, Output = result.StructuredContent is { } structured ? JsonSerializer.SerializeToElement(structured) : text.Length == 0 ? null : text };
-        }, tool.ReturnJsonSchema, new(Namespace: ToolInfo.NormalizedName(server), CodeMode: CodeMode(entry.Config)));
+        }, tool.ReturnJsonSchema ?? UnconstrainedOutput, new(Namespace: ToolInfo.NormalizedName(server), CodeMode: CodeMode(entry.Config)));
     }
 
     private static IEnumerable<ToolContent> ConvertContent(ContentBlock block) => block switch
@@ -303,18 +306,18 @@ public sealed partial class McpRuntime : IAsyncDisposable
 
     public async Task<GetPromptResult> PromptAsync(string server, string name, IReadOnlyDictionary<string, object?>? arguments = null, CancellationToken ct = default)
     {
-        var entry = await ConnectedAsync(server, ct);
+        var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
         using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
-        return await entry.Client.GetPromptAsync(name, arguments, cancellationToken: timeout.Token);
+        return await entry.Client.GetPromptAsync(name, arguments, cancellationToken: timeout.Token).ConfigureAwait(false);
     }
 
     public async Task<ReadResourceResult> ReadResourceAsync(string server, string uri, CancellationToken ct = default)
     {
-        var entry = await ConnectedAsync(server, ct);
+        var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
         using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
-        return await entry.Client.ReadResourceAsync(uri, cancellationToken: timeout.Token);
+        return await entry.Client.ReadResourceAsync(uri, cancellationToken: timeout.Token).ConfigureAwait(false);
     }
 
     private static bool CodeMode(McpServerConfig config) => config switch { McpLocalConfig local => local.CodeMode != false, McpRemoteConfig remote => remote.CodeMode != false, _ => true };
@@ -323,20 +326,20 @@ public sealed partial class McpRuntime : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _shutdown.CancelAsync();
+        await _shutdown.CancelAsync().ConfigureAwait(true);
         _signals.Writer.TryComplete();
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
         try
         {
             if (_closed) return;
             _closed = true;
-            _registration.Dispose();
-            foreach (var item in _entries) await StopAsync(item.Key, item.Value);
+            await _registration.DisposeAsync().ConfigureAwait(true);
+            foreach (var item in _entries) await StopAsync(item.Key, item.Value).ConfigureAwait(true);
             _entries.Clear();
             _servers = [];
             SettledObservation = null;
         }
         finally { _gate.Release(); }
-        if (_worker is { } worker) await worker;
+        if (_worker is { } worker) await worker.ConfigureAwait(true);
     }
 }

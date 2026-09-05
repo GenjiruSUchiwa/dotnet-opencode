@@ -12,16 +12,16 @@ internal static class ShellToolExecution
     {
         if (background && jobs?.SupportsBackground != true)
             throw new ToolExecutionException("Background shell execution requires the host's durable Job and Session completion-notification adapter.");
-        var started = await runtime.CreateToolAsync(new ShellCreateInput(command, timeout, workdir), context, policy, ct);
+        var started = await runtime.CreateToolAsync(new ShellCreateInput(command, timeout, workdir), context, policy, ct).ConfigureAwait(true);
         var retained = false;
         var jobRequested = false;
         try
         {
-            await context.ReportProgress(new Dictionary<string, object> { ["shellID"] = started.Id.Value }).WaitAsync(ct);
+            await context.ReportProgress(new Dictionary<string, object> { ["shellID"] = started.Id.Value }).WaitAsync(ct).ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
             if (jobs is null)
             {
-                var output = ShellToolOutput.Completed(await runtime.ResultAsync(started, ct: ct), timeout);
+                var output = ShellToolOutput.Completed(await runtime.ResultAsync(started, ct: ct).ConfigureAwait(true), timeout);
                 ct.ThrowIfCancellationRequested();
                 retained = true;
                 return output.ToolResult();
@@ -33,22 +33,22 @@ internal static class ShellToolExecution
             {
                 try
                 {
-                    var output = ShellToolOutput.Completed(await runtime.ResultAsync(started, ct: token), timeout);
+                    var output = ShellToolOutput.Completed(await runtime.ResultAsync(started, ct: token).ConfigureAwait(true), timeout);
                     token.ThrowIfCancellationRequested();
                     settled.TrySetResult(output);
                     return string.Join("\n\n", output.Messages());
                 }
                 catch (OperationCanceledException)
                 {
-                    await RemoveOwnedAsync(runtime, started.Id);
+                    await RemoveOwnedAsync(runtime, started.Id).ConfigureAwait(true);
                     throw;
                 }
-            }), ct).WaitAsync(ct);
+            }), ct).WaitAsync(ct).ConfigureAwait(true);
             if (job.Id != started.Id.Value) throw new InvalidOperationException("The shell Job adapter did not preserve the supplied shell-ID job identity.");
             ct.ThrowIfCancellationRequested();
             if (background)
             {
-                var handoff = await jobs.BackgroundAsync(job.Id, ct);
+                var handoff = await jobs.BackgroundAsync(job.Id, ct).ConfigureAwait(true);
                 RequireBackground(jobs, handoff, started);
                 // BackgroundAsync committed ownership/recovery. A late tool cancellation must not
                 // cancel the independently owned job after that handoff.
@@ -57,7 +57,7 @@ internal static class ShellToolExecution
                 return ShellToolOutput.Background(started).ToolResult();
             }
 
-            var result = await jobs.BlockAsync(job.Id, context.SessionId, ct).WaitAsync(ct)
+            var result = await jobs.BlockAsync(job.Id, context.SessionId, ct).WaitAsync(ct).ConfigureAwait(true)
                 ?? throw new ToolExecutionException("The shell job is no longer available.");
             if (result.Backgrounded)
             {
@@ -65,7 +65,7 @@ internal static class ShellToolExecution
                 retained = true;
                 // Only promotion clears the foreground timeout; explicit background requests keep
                 // an explicitly supplied timeout, matching source ShellTool.
-                await runtime.TimeoutAsync(started.Id, 0, CancellationToken.None);
+                await runtime.TimeoutAsync(started.Id, 0, CancellationToken.None).ConfigureAwait(true);
                 Watch(runtime, jobs, started, context.SessionId, result.Info, settled.Task);
                 return ShellToolOutput.Background(started).ToolResult();
             }
@@ -77,7 +77,7 @@ internal static class ShellToolExecution
                 throw new InvalidOperationException("The shell Job adapter completed before its real command result was captured.");
             ct.ThrowIfCancellationRequested();
             retained = true;
-            return (await settled.Task).ToolResult();
+            return (await settled.Task.ConfigureAwait(true)).ToolResult();
         }
         finally
         {
@@ -91,8 +91,8 @@ internal static class ShellToolExecution
                 }
                 // Covers cancellation/progress failure between process creation and job admission.
                 // Cleanup failures must not turn a user decline/interruption into a recoverable tool error.
-                await RemoveOwnedAsync(runtime, started.Id);
-                try { await cancelling; }
+                await RemoveOwnedAsync(runtime, started.Id).ConfigureAwait(true);
+                try { await cancelling.ConfigureAwait(true); }
                 catch (Exception error) { Trace.TraceWarning("Shell job cancellation failed ({0}).", error.GetType().Name); }
             }
         }
@@ -108,20 +108,20 @@ internal static class ShellToolExecution
     private static void Watch(ShellRuntime runtime, IShellToolJobs jobs, ShellInfo shell, SessionId session, ShellJobInfo handoff, Task<ShellToolOutput> settled) =>
         runtime.OwnBackground(async ct =>
         {
-            var job = await jobs.WaitAsync(handoff.Id, ct)
+            var job = await jobs.WaitAsync(handoff.Id, ct).ConfigureAwait(true)
                 ?? throw new InvalidOperationException("The background shell job disappeared before completion admission.");
             if (job.Id != handoff.Id || job.Status == ShellJobStatus.Running || job.NotificationId != handoff.NotificationId)
                 throw new InvalidOperationException("The background shell job returned an invalid completion identity/state.");
             if (job.Status == ShellJobStatus.Completed && !settled.IsCompletedSuccessfully)
                 throw new InvalidOperationException("The completed background shell has no captured result.");
-            var output = job.Status == ShellJobStatus.Completed ? await settled : null;
-            await jobs.AdmitCompletionAsync(session, handoff.NotificationId!.Value, ShellToolOutput.Notification(shell, job, output), ct);
-            await jobs.CompleteBackgroundAsync(handoff.NotificationId.Value, ct);
+            var output = job.Status == ShellJobStatus.Completed ? await settled.ConfigureAwait(true) : null;
+            await jobs.AdmitCompletionAsync(session, handoff.NotificationId!.Value, ShellToolOutput.Notification(shell, job, output), ct).ConfigureAwait(true);
+            await jobs.CompleteBackgroundAsync(handoff.NotificationId.Value, ct).ConfigureAwait(true);
         });
 
     private static async Task RemoveOwnedAsync(ShellRuntime runtime, ShellId id)
     {
-        try { await runtime.RemoveAsync(id, CancellationToken.None); }
+        try { await runtime.RemoveAsync(id, CancellationToken.None).ConfigureAwait(true); }
         catch (Exception error) when (error is ShellNotFoundException or ObjectDisposedException) { }
         catch (Exception error) { Trace.TraceWarning("Owned shell cleanup failed ({0}).", error.GetType().Name); }
     }

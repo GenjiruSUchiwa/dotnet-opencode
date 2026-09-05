@@ -41,10 +41,10 @@ internal static class OwnedToolProcess
         var error = onChunk is null ? Task.CompletedTask : ReadErrorAsync();
         try
         {
-            var stopped = await output;
+            var stopped = await output.ConfigureAwait(true);
             if (stopped) RequestStop();
-            var status = await exited.WaitAsync(lifetime.Token);
-            await error;
+            var status = await exited.WaitAsync(lifetime.Token).ConfigureAwait(true);
+            await error.ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
             // Cancellation used for a search limit is expected, not a caller interruption or timeout.
             if (status.Canceled && !stopped)
@@ -63,8 +63,8 @@ internal static class OwnedToolProcess
             try { RequestStop(); }
             finally
             {
-                lifetime.Cancel();
-                try { await exited; }
+                await lifetime.CancelAsync().ConfigureAwait(true);
+                try { await exited.ConfigureAwait(true); }
                 finally { await Task.WhenAll(output, error).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
             }
         }
@@ -84,7 +84,7 @@ internal static class OwnedToolProcess
         async Task<bool> ReadOutputAsync()
         {
             await foreach (var chunk in PipelineText.ChunksAsync(process.StandardOutput.BaseStream, process.StandardOutput.CurrentEncoding,
-                cancellationToken: lifetime.Token))
+                cancellationToken: lifetime.Token).ConfigureAwait(true))
                 if (!onChunk!(chunk.AsMemory())) return true;
             return false;
         }
@@ -92,7 +92,7 @@ internal static class OwnedToolProcess
         async Task ReadErrorAsync()
         {
             await foreach (var chunk in PipelineText.ChunksAsync(process.StandardError.BaseStream, process.StandardError.CurrentEncoding,
-                cancellationToken: lifetime.Token))
+                cancellationToken: lifetime.Token).ConfigureAwait(true))
             {
                 var available = 8192 - errors.Length;
                 if (chunk.Length > available) errorTruncated = true;
@@ -117,7 +117,7 @@ internal static class OwnedToolProcess
                 if (!onLine(line)) return false;
             }
             return true;
-        }, timeout, ct, clock);
+        }, timeout, ct, clock).ConfigureAwait(true);
         if (!result.StoppedEarly && records.TryRead(out var final, completed: true))
         {
             var line = final.Text;

@@ -46,17 +46,17 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         if (options.Handoff is null || _inherited) return;
-        await _startup.WaitAsync(ct);
+        await _startup.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
             if (_inherited) return;
             if (options.Handoff.ExpiresAt <= Clock.GetUtcNow().ToUnixTimeMilliseconds())
                 throw new PersistentPtyUnavailableException("PTY restart handoff expired");
-            var registration = await DiscoverAsync(ct);
+            var registration = await DiscoverAsync(ct).ConfigureAwait(false);
             if (registration.InstanceId != options.Handoff.InstanceId)
                 throw new PersistentPtyUnavailableException("PTY restart daemon changed");
-            await ClaimAsync(registration, options.Handoff.Ticket, ct);
+            await ClaimAsync(registration, options.Handoff.Ticket, ct).ConfigureAwait(false);
             _inherited = true;
         }
         finally { _startup.Release(); }
@@ -64,43 +64,43 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
 
     public async Task<JsonElement?> RequestIfRunningAsync(object request, CancellationToken ct = default)
     {
-        try { return await RequestAsync(request, ct: ct); }
+        try { return await RequestAsync(request, ct: ct).ConfigureAwait(false); }
         catch (PersistentPtyDaemonException error) when (error.Kind == "connect") { return null; }
     }
 
     public async Task<JsonElement> RequestAsync(object request, bool start = false, CancellationToken ct = default)
     {
-        await InitializeAsync(ct);
-        try { return await AttemptAsync(request, start, ct); }
+        await InitializeAsync(ct).ConfigureAwait(false);
+        try { return await AttemptAsync(request, start, ct).ConfigureAwait(false); }
         catch (PersistentPtyDaemonException error) when (error.Kind is "registration" or "connect")
         {
             // Retry only authentication rejection or failure to connect, never a
             // dispatched mutation whose response was lost.
-            await ForgetAsync();
+            await ForgetAsync().ConfigureAwait(false);
             if (error.Kind == "connect" && !start) throw;
-            return await AttemptAsync(request, start, ct);
+            return await AttemptAsync(request, start, ct).ConfigureAwait(false);
         }
     }
 
     private async Task<JsonElement> AttemptAsync(object request, bool start, CancellationToken ct)
     {
-        var registration = await ConnectAsync(start, ct);
-        return await OneShotAsync(registration, request, ct);
+        var registration = await ConnectAsync(start, ct).ConfigureAwait(false);
+        return await OneShotAsync(registration, request, ct).ConfigureAwait(false);
     }
 
     private async Task<PersistentPtyRegistration> ConnectAsync(bool start, CancellationToken ct)
     {
-        await _startup.WaitAsync(ct);
+        await _startup.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
             if (_registration is { } current) return current;
-            await CloseOwnerAsync();
+            await CloseOwnerAsync().ConfigureAwait(false);
             PersistentPtyRegistration registration;
-            try { registration = await DiscoverAsync(ct); }
+            try { registration = await DiscoverAsync(ct).ConfigureAwait(false); }
             catch (PersistentPtyDaemonException error) when (start && error.Kind == "connect")
-            { return await StartAsync(ct); }
-            await ClaimAsync(registration, null, ct);
+            { return await StartAsync(ct).ConfigureAwait(false); }
+            await ClaimAsync(registration, null, ct).ConfigureAwait(false);
             return registration;
         }
         finally { _startup.Release(); }
@@ -111,7 +111,7 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
         PersistentPtyRegistration registration;
         try
         {
-            registration = JsonSerializer.Deserialize(await File.ReadAllTextAsync(Path.Combine(Directory, "service.json"), ct),
+            registration = JsonSerializer.Deserialize(await File.ReadAllTextAsync(Path.Combine(Directory, "service.json"), ct).ConfigureAwait(false),
                 PersistentPtyWireJsonContext.Default.PersistentPtyRegistration) ?? throw new JsonException("Missing PTY registration.");
         }
         catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
@@ -119,7 +119,7 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
         catch (JsonException error) { throw new PersistentPtyDaemonException("protocol", "Invalid persistent PTY daemon registration.", error); }
         if (registration.Protocol != ProtocolVersion)
             throw new PersistentPtyDaemonException("protocol", $"opencode-pty protocol mismatch: daemon={registration.Protocol}, client={ProtocolVersion}");
-        var response = await OneShotAsync(registration, new { op = "ping" }, ct);
+        var response = await OneShotAsync(registration, new { op = "ping" }, ct).ConfigureAwait(false);
         if (Type(response) != "pong" || response.GetProperty("instance_id").GetString() != registration.InstanceId
             || response.GetProperty("pid").GetInt32() != registration.Pid || response.GetProperty("protocol").GetInt32() != ProtocolVersion)
             throw new PersistentPtyDaemonException("protocol", "opencode-pty registration mismatch");
@@ -130,20 +130,20 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
     {
         using var deadline = Clock.CreateLinkedCancellationTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
-        var stream = await OpenAsync(registration.Socket, deadline.Token);
+        var stream = await OpenAsync(registration.Socket, deadline.Token).ConfigureAwait(false);
         try
         {
             object request = ticket is null ? new { op = "own", instance_id = registration.InstanceId }
                 : new { op = "own", instance_id = registration.InstanceId, ticket };
-            await WriteAsync(stream, registration.Token, request, deadline.Token);
-            var response = Decode(await ReadAsync(stream, deadline.Token));
+            await WriteAsync(stream, registration.Token, request, deadline.Token).ConfigureAwait(false);
+            var response = Decode(await ReadAsync(stream, deadline.Token).ConfigureAwait(false));
             Require(response, "owned");
             _owner = stream;
             _registration = registration;
             _ownerReplies = Channel.CreateUnbounded<JsonElement>(new() { SingleReader = true, SingleWriter = true, AllowSynchronousContinuations = false });
             _ownerPump = ObserveOwnerAsync(stream, registration, _ownerReplies);
         }
-        catch { await stream.DisposeAsync(); throw; }
+        catch { await stream.DisposeAsync().ConfigureAwait(false); throw; }
     }
 
     private async Task<PersistentPtyRegistration> StartAsync(CancellationToken ct)
@@ -167,26 +167,26 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
             {
                 try
                 {
-                    var registration = await DiscoverAsync(deadline.Token);
-                    await ClaimAsync(registration, null, deadline.Token);
+                    var registration = await DiscoverAsync(deadline.Token).ConfigureAwait(false);
+                    await ClaimAsync(registration, null, deadline.Token).ConfigureAwait(false);
                     return registration;
                 }
                 catch (PersistentPtyDaemonException error) when (error.Kind == "connect")
-                { await Task.Delay(TimeSpan.FromMilliseconds(50), Clock, deadline.Token); }
+                { await Task.Delay(TimeSpan.FromMilliseconds(50), Clock, deadline.Token).ConfigureAwait(false); }
             }
         }
         catch
         {
             // This is the handle of this attempt's own contender, never a PID
             // taken from a registration or another channel.
-            await child.WaitForExitOrKillOnCancellationAsync(new CancellationToken(true));
+            await child.WaitForExitOrKillOnCancellationAsync(new CancellationToken(true)).ConfigureAwait(false);
             throw;
         }
     }
 
     public async Task<PersistentPtyHandoff?> HandoffAsync(CancellationToken ct = default)
     {
-        await _startup.WaitAsync(ct);
+        await _startup.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -196,8 +196,8 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
             if (registration is null || owner is null || replies is null) return null;
             using var deadline = Clock.CreateLinkedCancellationTokenSource(ct);
             deadline.CancelAfter(TimeSpan.FromSeconds(5));
-            await WriteAsync(owner, registration.Token, new { op = "prepare_handoff" }, deadline.Token);
-            var response = await replies.Reader.ReadAsync(deadline.Token);
+            await WriteAsync(owner, registration.Token, new { op = "prepare_handoff" }, deadline.Token).ConfigureAwait(false);
+            var response = await replies.Reader.ReadAsync(deadline.Token).ConfigureAwait(false);
             Require(response, "handoff");
             return new PersistentPtyHandoff(Directory, registration.InstanceId, response.GetProperty("ticket").GetString()!,
                 response.GetProperty("expires_at").GetDouble());
@@ -207,54 +207,54 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
 
     public async Task ShutdownAsync(CancellationToken ct = default)
     {
-        var response = await RequestIfRunningAsync(new { op = "shutdown" }, ct);
-        await ForgetAsync();
+        var response = await RequestIfRunningAsync(new { op = "shutdown" }, ct).ConfigureAwait(false);
+        await ForgetAsync().ConfigureAwait(false);
         if (response is null) return;
         Require(response.Value, "ok");
         using var deadline = Clock.CreateLinkedCancellationTokenSource(ct);
         deadline.CancelAfter(TimeSpan.FromSeconds(5));
         while (true)
         {
-            try { await DiscoverAsync(deadline.Token); }
+            try { await DiscoverAsync(deadline.Token).ConfigureAwait(false); }
             catch (PersistentPtyDaemonException error) when (error.Kind == "connect") { return; }
-            await Task.Delay(TimeSpan.FromMilliseconds(50), Clock, deadline.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), Clock, deadline.Token).ConfigureAwait(false);
         }
     }
 
     internal async Task<(FrameConnection Stream, JsonElement Initial)> SubscribeAsync(long id, long cursor, string attachmentId,
         string role, bool takeover, CancellationToken ct)
     {
-        try { return await SubscribeAttemptAsync(id, cursor, attachmentId, role, takeover, ct); }
+        try { return await SubscribeAttemptAsync(id, cursor, attachmentId, role, takeover, ct).ConfigureAwait(false); }
         catch (PersistentPtyDaemonException error) when (error.Kind == "registration")
         {
-            await ForgetAsync();
-            return await SubscribeAttemptAsync(id, cursor, attachmentId, role, takeover, ct);
+            await ForgetAsync().ConfigureAwait(false);
+            return await SubscribeAttemptAsync(id, cursor, attachmentId, role, takeover, ct).ConfigureAwait(false);
         }
     }
 
     private async Task<(FrameConnection Stream, JsonElement Initial)> SubscribeAttemptAsync(long id, long cursor, string attachmentId,
         string role, bool takeover, CancellationToken ct)
     {
-        var registration = await ConnectAsync(false, ct);
-        var stream = await OpenAsync(registration.Socket, ct);
+        var registration = await ConnectAsync(false, ct).ConfigureAwait(false);
+        var stream = await OpenAsync(registration.Socket, ct).ConfigureAwait(false);
         try
         {
             await WriteAsync(stream, registration.Token, new { op = "subscribe", id, offset = cursor,
-                attachment_id = attachmentId, role, takeover }, ct);
-            var initial = Decode(await ReadAsync(stream, ct));
+                attachment_id = attachmentId, role, takeover }, ct).ConfigureAwait(false);
+            var initial = Decode(await ReadAsync(stream, ct).ConfigureAwait(false));
             Require(initial, "attached");
             return (stream, initial);
         }
-        catch { await stream.DisposeAsync(); throw; }
+        catch { await stream.DisposeAsync().ConfigureAwait(false); throw; }
     }
 
     private async Task ForgetAsync()
     {
-        await _startup.WaitAsync();
+        await _startup.WaitAsync().ConfigureAwait(false);
         try
         {
             _registration = null;
-            await CloseOwnerAsync();
+            await CloseOwnerAsync().ConfigureAwait(false);
         }
         finally { _startup.Release(); }
     }
@@ -263,7 +263,7 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
     {
         try
         {
-            while (true) await replies.Writer.WriteAsync(Decode(await ReadAsync(stream, CancellationToken.None)));
+            while (true) await replies.Writer.WriteAsync(Decode(await ReadAsync(stream, CancellationToken.None).ConfigureAwait(false))).ConfigureAwait(false);
         }
         catch (Exception error) { replies.Writer.TryComplete(error); }
         finally { Interlocked.CompareExchange(ref _registration, null, registration); }
@@ -271,8 +271,8 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
 
     private async Task CloseOwnerAsync()
     {
-        if (_owner is not null) await _owner.DisposeAsync();
-        await _ownerPump;
+        if (_owner is not null) await _owner.DisposeAsync().ConfigureAwait(false);
+        await _ownerPump.ConfigureAwait(false);
         _owner = null;
         _ownerReplies = null;
     }
@@ -284,10 +284,11 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
         var dispatched = false;
         try
         {
-            await using var stream = await OpenAsync(registration.Socket, deadline.Token);
+            var stream = await OpenAsync(registration.Socket, deadline.Token).ConfigureAwait(false);
+            await using var streamLifetime = stream.ConfigureAwait(false);
             dispatched = true;
-            await WriteAsync(stream, registration.Token, request, deadline.Token);
-            return Decode(await ReadAsync(stream, deadline.Token));
+            await WriteAsync(stream, registration.Token, request, deadline.Token).ConfigureAwait(false);
+            return Decode(await ReadAsync(stream, deadline.Token).ConfigureAwait(false));
         }
         catch (PersistentPtyDaemonException) { throw; }
         catch (OperationCanceledException error) when (!ct.IsCancellationRequested)
@@ -301,11 +302,11 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
         if (OperatingSystem.IsWindows() && address.StartsWith(@"\\.\pipe\", StringComparison.OrdinalIgnoreCase))
         {
             var pipe = new NamedPipeClientStream(".", address[9..], PipeDirection.InOut, PipeOptions.Asynchronous);
-            try { await pipe.ConnectAsync(ct); return new FrameConnection(pipe); }
-            catch { pipe.Dispose(); throw; }
+            try { await pipe.ConnectAsync(ct).ConfigureAwait(false); return new FrameConnection(pipe); }
+            catch { await pipe.DisposeAsync().ConfigureAwait(false); throw; }
         }
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        try { await socket.ConnectAsync(new UnixDomainSocketEndPoint(address), ct); return new FrameConnection(new NetworkStream(socket, ownsSocket: true)); }
+        try { await socket.ConnectAsync(new UnixDomainSocketEndPoint(address), ct).ConfigureAwait(false); return new FrameConnection(new NetworkStream(socket, ownsSocket: true)); }
         catch { socket.Dispose(); throw; }
     }
 
@@ -313,7 +314,7 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(new { token, request });
         if (bytes.Length > MaxFrameBytes) throw new PersistentPtyDaemonException("protocol", "opencode-pty frame too large");
-        await stream.WriteAsync(bytes, ct);
+        await stream.WriteAsync(bytes, ct).ConfigureAwait(false);
     }
 
     internal static Task<byte[]> ReadAsync(FrameConnection stream, CancellationToken ct) =>
@@ -339,12 +340,12 @@ public sealed class PersistentPtyDaemon(PersistentPtyOptions options, TimeProvid
 
     public async ValueTask DisposeAsync()
     {
-        await _startup.WaitAsync();
+        await _startup.WaitAsync().ConfigureAwait(false);
         try
         {
             if (_closed) return;
             _closed = true;
-            await CloseOwnerAsync();
+            await CloseOwnerAsync().ConfigureAwait(false);
             _registration = null;
         }
         finally { _startup.Release(); }

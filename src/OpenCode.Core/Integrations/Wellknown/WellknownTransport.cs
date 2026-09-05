@@ -26,7 +26,7 @@ public sealed class WellknownTransport : IDisposable
     public async Task<WellknownEntry> InspectAsync(string value, CancellationToken ct = default)
     {
         var origin = Origin(value);
-        var manifest = WellknownManifest.Decode(await GetAsync(new Uri(origin + "/.well-known/opencode"), null, ct));
+        var manifest = WellknownManifest.Decode(await GetAsync(new Uri(origin + "/.well-known/opencode"), null, ct).ConfigureAwait(false));
         return new(origin, OpenCode.Schema.IntegrationId.FromExisting(origin), manifest);
     }
 
@@ -50,7 +50,7 @@ public sealed class WellknownTransport : IDisposable
                 throw new WellknownDiscoveryException("Authenticated wellknown config requires this integration's key and the same source authority.");
             headers.Add(pair.Key, Substitute(pair.Value, entry.Manifest.Auth?.Env, key));
         }
-        var document = await GetAsync(uri, headers, ct);
+        var document = await GetAsync(uri, headers, ct).ConfigureAwait(false);
         if (document.ValueKind != JsonValueKind.Object) throw new WellknownDiscoveryException("Wellknown remote config must be an object.");
         configs.Add(document.TryGetProperty("config", out var nested) && nested.ValueKind == JsonValueKind.Object ? nested.Clone() : document);
         return configs;
@@ -59,8 +59,8 @@ public sealed class WellknownTransport : IDisposable
     internal static string Substitute(string value, string? env, string? key)
     {
         if (value.Contains("{file:", StringComparison.Ordinal)) throw new WellknownDiscoveryException("Wellknown config cannot read local files.");
-        return Regex.Replace(value, @"\{env:([^}]+)\}", match => match.Groups[1].Value == env && key is not null ? key
-            : throw new WellknownDiscoveryException("Wellknown config references an unavailable or undeclared credential variable."));
+        return Regex.Replace(value, @"\{env:(?<name>[^}]+)\}", match => match.Groups["name"].Value == env && key is not null ? key
+            : throw new WellknownDiscoveryException("Wellknown config references an unavailable or undeclared credential variable."), RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture);
     }
 
     private async Task<JsonElement> GetAsync(Uri uri, IReadOnlyDictionary<string, string>? headers, CancellationToken ct)
@@ -71,11 +71,12 @@ public sealed class WellknownTransport : IDisposable
         {
             if (headers is not null)
                 foreach (var pair in headers) request.Headers.Add(pair.Key, pair.Value);
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             // Redirects are reported, never followed with discovered headers or credentials.
             if (!response.IsSuccessStatusCode) throw new WellknownDiscoveryException($"Wellknown metadata request failed with HTTP {(int)response.StatusCode}.");
-            await using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+            var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            await using var streamLifetime = stream.ConfigureAwait(false);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct).ConfigureAwait(false);
             return document.RootElement.Clone();
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new WellknownDiscoveryException("Wellknown metadata request timed out."); }

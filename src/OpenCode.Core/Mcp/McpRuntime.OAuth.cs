@@ -11,7 +11,7 @@ public sealed partial class McpRuntime
     /// <summary>Host integration declarations from effective runtime definitions; contains no headers/client secrets.</summary>
     public async Task<IReadOnlyList<McpOAuthRegistration>> OAuthRegistrationsAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -32,8 +32,8 @@ public sealed partial class McpRuntime
     /// <summary>The host supplies an already bound callback URI and retains the returned attempt.</summary>
     public async Task<McpOAuthAuthorization> StartAuthorizationAsync(string server, Uri redirectUri, CancellationToken ct = default)
     {
-        var config = await OAuthConfigAsync(server, ct);
-        return await _oauth!.StartAsync(server, config, redirectUri, ct, _shutdown.Token);
+        var config = await OAuthConfigAsync(server, ct).ConfigureAwait(true);
+        return await _oauth!.StartAsync(server, config, redirectUri, ct, _shutdown.Token).ConfigureAwait(true);
     }
 
     /// <summary>Returns only the persisted credential ID, never access/refresh tokens. Switched events trigger reconnect.</summary>
@@ -42,12 +42,12 @@ public sealed partial class McpRuntime
     {
         try
         {
-            var config = await OAuthConfigAsync(attempt.Server, ct);
+            var config = await OAuthConfigAsync(attempt.Server, ct).ConfigureAwait(true);
             if (config.Url != attempt.Config.Url || !JsonNode.DeepEquals(JsonSerializer.SerializeToNode(config.OAuth), JsonSerializer.SerializeToNode(attempt.Config.OAuth)))
                 throw new McpOAuthException("MCP OAuth configuration changed; start a new authorization attempt.");
-            return await _oauth!.CompleteAsync(attempt, code, state, issuer, label, ct);
+            return await _oauth!.CompleteAsync(attempt, code, state, issuer, label, ct).ConfigureAwait(true);
         }
-        finally { await attempt.DisposeAsync(); }
+        finally { await attempt.DisposeAsync().ConfigureAwait(true); }
     }
 
     public ValueTask CancelAuthorizationAsync(McpOAuthAuthorization attempt) =>
@@ -55,7 +55,7 @@ public sealed partial class McpRuntime
 
     public async Task<bool> RevokeAuthorizationAsync(string server, CancellationToken ct = default) =>
         await (_oauth ?? throw new NotSupportedException("The host has not supplied MCP OAuth persistence."))
-            .RevokeAsync(server, await OAuthConfigAsync(server, ct), ct);
+            .RevokeAsync(server, await OAuthConfigAsync(server, ct).ConfigureAwait(true), ct).ConfigureAwait(true);
 
     /// <summary>
     /// Host hook for committed CredentialNotification.Switched events. Enqueue this work; do not
@@ -69,14 +69,14 @@ public sealed partial class McpRuntime
             {
                 if (item.Value.Status is McpDisabledStatus || item.Value.Config is not McpRemoteConfig remote
                     || remote.OAuth is McpOAuthDisabled || McpOAuthService.IntegrationId(item.Key, remote.Url) != integrationId) continue;
-                await StopAsync(item.Key, item.Value);
-                await StartAsync(item.Key, item.Value, token, force: true);
+                await StopAsync(item.Key, item.Value).ConfigureAwait(true);
+                await StartAsync(item.Key, item.Value, token, force: true).ConfigureAwait(true);
             }
         }, ct);
 
     private async Task<McpRemoteConfig> OAuthConfigAsync(string server, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);

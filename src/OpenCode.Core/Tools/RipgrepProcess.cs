@@ -44,7 +44,7 @@ public sealed class RipgrepProcess(string executable, TimeProvider? clock = null
             matches.Add(new(new(Normalize(row.Path.Text)), row.Line, row.Offset,
                 row.Lines.Text, submatches));
             return matches.Count <= limit;
-        }, ct);
+        }, ct).ConfigureAwait(true);
         CheckExit(result, pattern);
         return result.ExitCode == 1 && !result.StoppedEarly ? [] : matches.Take(limit).ToArray();
     }
@@ -62,7 +62,7 @@ public sealed class RipgrepProcess(string executable, TimeProvider? clock = null
             if (retainedBytes > 20 * 1024 * 1024) throw new ToolExecutionException("Search results exceed the local 20 MiB capture limit. Narrow the path, pattern or result limit.");
             if (line.Length > 0) entries.Add(new(Normalize(line)));
             return entries.Count <= limit;
-        }, ct);
+        }, ct).ConfigureAwait(true);
         CheckExit(result, null);
         return result.ExitCode == 1 && !result.StoppedEarly ? [] : entries.Take(limit).ToArray();
     }
@@ -87,7 +87,7 @@ public sealed class RipgrepProcess(string executable, TimeProvider? clock = null
 
     private async Task<ToolProcessResult> RunAsync(ProcessStartInfo start, Func<string, bool> onLine, CancellationToken ct)
     {
-        try { return await OwnedToolProcess.RunLinesAsync(start, onLine, 30_000, ct, _clock); }
+        try { return await OwnedToolProcess.RunLinesAsync(start, onLine, 30_000, ct, _clock).ConfigureAwait(true); }
         catch (TimeoutException error)
         {
             ct.ThrowIfCancellationRequested();

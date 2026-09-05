@@ -14,7 +14,7 @@ public sealed class WellknownConfigSources(WellknownService wellknown, Credentia
         var documents = new List<ConfigSource>();
         var diagnostics = new List<ConfigDiagnostic>();
         IReadOnlyList<WellknownEntry> entries;
-        try { entries = await wellknown.EntriesAsync(ct); }
+        try { entries = await wellknown.EntriesAsync(ct).ConfigureAwait(false); }
         catch (Exception error) when (error is WellknownDiscoveryException or JsonException or IOException)
         {
             return new([], [new(null, "$", "unavailable", "Wellknown sources could not be discovered; the registry was retained.")]);
@@ -23,12 +23,12 @@ public sealed class WellknownConfigSources(WellknownService wellknown, Credentia
         {
             if (entry.Manifest.Auth is not { } auth) continue;
             // Exact URL integration identity only; never fall back to Console/provider credentials.
-            var stored = await credentials.GetActiveCredentialAsync(entry.Origin, ct);
+            var stored = await credentials.GetActiveCredentialAsync(entry.Origin, ct).ConfigureAwait(false);
             if (stored is null || stored.IntegrationId != entry.Origin) continue;
             if (stored.Value.Deserialize(OpenCodeJsonContext.Default.CredentialValue) is not CredentialKey credential) continue;
             try
             {
-                var configs = await wellknown.ResolveAuthenticatedAsync(entry, credential.Key, ct);
+                var configs = await wellknown.ResolveAuthenticatedAsync(entry, credential.Key, ct).ConfigureAwait(false);
                 foreach (var config in configs)
                 {
                     var document = JsonNode.Parse(config.GetRawText())!.AsObject();

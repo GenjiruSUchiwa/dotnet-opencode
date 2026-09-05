@@ -13,7 +13,7 @@ public static class ShellOutputRetention
         var owned = directories.Select(directory =>
         {
             if (!Path.IsPathFullyQualified(directory) || Path.TrimEndingDirectorySeparator(directory) == Path.GetPathRoot(directory))
-                throw new ArgumentException("Retention requires explicit private output directories, not relative paths or volume roots.");
+                throw new ArgumentException("Retention requires explicit private output directories, not relative paths or volume roots.", nameof(directories));
             return Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         }).Distinct(comparer).ToArray();
         var active = protectedFiles.Select(Path.GetFullPath).ToHashSet(comparer);
@@ -25,7 +25,7 @@ public static class ShellOutputRetention
             try
             {
                 var folder = new DirectoryInfo(directory);
-                if (!folder.Exists || (folder.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                if (!folder.Exists || (folder.Attributes & FileAttributes.ReparsePoint) != (FileAttributes)0) continue;
                 foreach (var file in folder.EnumerateFiles("*", SearchOption.TopDirectoryOnly))
                 {
                     ct.ThrowIfCancellationRequested();
@@ -34,7 +34,7 @@ public static class ShellOutputRetention
                     try
                     {
                         file.Refresh();
-                        if (!file.Exists || (file.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0
+                        if (!file.Exists || (file.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != (FileAttributes)0
                             || file.LastWriteTimeUtc >= cutoff) continue;
                         file.Delete();
                     }

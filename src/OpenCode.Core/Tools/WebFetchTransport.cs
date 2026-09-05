@@ -24,7 +24,7 @@ public sealed class WebFetchTransport : IDisposable
             request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
             request.Headers.TryAddWithoutValidation("Accept", accept);
             request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
-            var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308) || response.Headers.Location is null)
                 return response;
             try

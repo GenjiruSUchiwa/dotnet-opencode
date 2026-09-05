@@ -99,14 +99,14 @@ public static class WebSearchBackendResponses
             if (url is null) return null;
             var title = Field(block, "Title");
             var published = Field(block, "Published");
-            var content = Regex.Match(block, @"^(?:Highlights|Text):\s*\n?([\s\S]*)$", RegexOptions.Multiline).Groups[1].Value.Trim();
+            var content = Regex.Match(block, @"^(?:Highlights|Text):\s*\n?(?<content>[\s\S]*)$", RegexOptions.Multiline | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture).Groups["content"].Value.Trim();
             return new WebSearchResult(url, new(Published(published == "N/A" ? null : published)), title == "N/A" ? null : title, Nonempty(content));
         }).OfType<WebSearchResult>().ToArray();
         // A malformed/unknown textual payload must not masquerade as a successful empty search.
         if (results.Length == 0) throw new JsonException("Exa response contained no source-format URL records.");
         return results;
     }
-    private static string? Field(string block, string field) => Nonempty(Regex.Match(block, "^" + field + @":\s*(.+)$", RegexOptions.Multiline).Groups[1].Value.Trim());
+    private static string? Field(string block, string field) => Nonempty(Regex.Match(block, "^" + Regex.Escape(field) + @":\s*(?<value>.+)$", RegexOptions.Multiline | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture).Groups["value"].Value.Trim());
     private static string? Nonempty(string? text) => string.IsNullOrEmpty(text) ? null : text;
     private static double? Published(string? value) => value is not null && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
         DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out var date) ? date.ToUnixTimeMilliseconds() : null;

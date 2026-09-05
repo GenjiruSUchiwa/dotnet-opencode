@@ -37,7 +37,7 @@ internal static class SkillSources
                 var directory = Path.GetFullPath(root);
                 foreach (var file in Files(directory, ct).Order(StringComparer.Ordinal))
                 {
-                    var content = await File.ReadAllTextAsync(file, ct);
+                    var content = await File.ReadAllTextAsync(file, ct).ConfigureAwait(false);
                     if (content.Length == 0) continue;
                     var skill = Parse(directory, file, content);
                     if (skill is not null) skills[skill.Id.Value] = skill;
@@ -60,7 +60,7 @@ internal static class SkillSources
         if (content.StartsWith("---\n", StringComparison.Ordinal) || content.StartsWith("---\r\n", StringComparison.Ordinal))
         {
             var start = content.IndexOf('\n') + 1;
-            var end = Regex.Match(content[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant);
+            var end = Regex.Match(content[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
             if (!end.Success) return null;
             var header = content.Substring(start, end.Index);
             var offset = start + end.Index + end.Length;
@@ -90,13 +90,13 @@ internal static class SkillSources
         catch (YamlException)
         {
             // ConfigMarkdown.sanitize retries unquoted top-level colon values as literal blocks.
-            var sanitized = string.Join("\n", Regex.Split(header, "\r?\n").SelectMany(line =>
+            var sanitized = string.Join("\n", Regex.Split(header, "\r?\n", RegexOptions.NonBacktracking).SelectMany(line =>
             {
-                var match = Regex.Match(line, @"^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$");
+                var match = Regex.Match(line, @"^(?<key>[a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(?<value>.*)$", RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture);
                 if (!match.Success) return new[] { line };
-                var value = match.Groups[2].Value.Trim();
+                var value = match.Groups["value"].Value.Trim();
                 return value.Length > 0 && value is not (">" or "|") && value[0] is not ('\'' or '"') && value.Contains(':')
-                    ? new[] { match.Groups[1].Value + ": |-", "  " + value } : [line];
+                    ? new[] { match.Groups["key"].Value + ": |-", "  " + value } : [line];
             }));
             try { return Mapping(Read(sanitized)); }
             catch (YamlException) { return null; }
@@ -142,7 +142,7 @@ internal static class SkillSources
             try { attributes = File.GetAttributes(directory.FullName); }
             catch (FileNotFoundException) { return; }
             catch (DirectoryNotFoundException) { return; }
-            if ((attributes & FileAttributes.Directory) == 0) return;
+            if ((attributes & FileAttributes.Directory) == (FileAttributes)0) return;
             var physical = directory.ResolveLinkTarget(true) as DirectoryInfo ?? directory;
             if (!visiting.Add(physical.FullName)) return;
             try
@@ -151,7 +151,7 @@ internal static class SkillSources
                 {
                     ct.ThrowIfCancellationRequested();
                     var path = Path.Combine(logical, child.Name);
-                    if ((child.Attributes & FileAttributes.Directory) != 0)
+                    if ((child.Attributes & FileAttributes.Directory) != (FileAttributes)0)
                         Walk(new DirectoryInfo(child.FullName), path);
                     else if (child.Name == "SKILL.md" || logical == root && child.Name.EndsWith(".md", StringComparison.Ordinal))
                         result.Add(path);

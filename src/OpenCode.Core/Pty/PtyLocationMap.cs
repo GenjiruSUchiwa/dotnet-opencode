@@ -23,7 +23,7 @@ public sealed class PtyLocationMap(
         var key = Key(new(location.Directory, location.WorkspaceId));
         if (key.WorkspaceId is not null)
             throw new NotSupportedException("Explicit workspace PTY placement is not implemented by the local runtime.");
-        await gate.WaitAsync(ct);
+        await gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(shutdown is not null, this);
@@ -39,7 +39,7 @@ public sealed class PtyLocationMap(
                 entries.Add(key, new(scope, attachEvents(location, runtime)));
                 return scope;
             }
-            catch { await runtime.DisposeAsync(); throw; }
+            catch { await runtime.DisposeAsync().ConfigureAwait(true); throw; }
         }
         finally { gate.Release(); }
     }
@@ -48,37 +48,37 @@ public sealed class PtyLocationMap(
     {
         var key = Key(location);
         Task? closing = null;
-        await gate.WaitAsync(ct);
+        await gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             if (entries.TryGetValue(key, out var entry)) closing = entry.Closing ??= CloseAsync(key, entry);
         }
         finally { gate.Release(); }
-        if (closing is not null) await closing;
+        if (closing is not null) await closing.ConfigureAwait(true);
     }
 
     public async ValueTask DisposeAsync()
     {
         Task closing;
-        await gate.WaitAsync();
+        await gate.WaitAsync().ConfigureAwait(true);
         try
         {
             shutdown ??= Task.WhenAll(entries.Select(pair => pair.Value.Closing ??= CloseAsync(pair.Key, pair.Value)).ToArray());
             closing = shutdown;
         }
         finally { gate.Release(); }
-        await closing;
+        await closing.ConfigureAwait(true);
     }
 
     private async Task CloseAsync(LocationRef key, Entry entry)
     {
-        try { await entry.Scope.Pty.DisposeAsync(); }
+        try { await entry.Scope.Pty.DisposeAsync().ConfigureAwait(true); }
         finally
         {
-            try { await entry.Events.DisposeAsync(); }
+            try { await entry.Events.DisposeAsync().ConfigureAwait(true); }
             finally
             {
-                await gate.WaitAsync();
+                await gate.WaitAsync().ConfigureAwait(true);
                 try { entries.Remove(key); }
                 finally { gate.Release(); }
             }
@@ -87,7 +87,7 @@ public sealed class PtyLocationMap(
 
     private static LocationRef Key(LocationRef location)
     {
-        if (!Path.IsPathFullyQualified(location.Directory)) throw new ArgumentException("A resolved absolute Location directory is required.");
+        if (!Path.IsPathFullyQualified(location.Directory)) throw new ArgumentException("A resolved absolute Location directory is required.", nameof(location));
         return new(OperatingSystem.IsWindows() ? Path.GetFullPath(location.Directory) : location.Directory, location.WorkspaceId);
     }
 }

@@ -51,7 +51,7 @@ public sealed class WebFetchTool
         }
         var metadata = new Dictionary<string, object> { ["url"] = rawUrl, ["format"] = format };
         if (input.TryGetProperty("timeout", out _)) metadata["timeout"] = timeout;
-        try { await _permission.AssertAsync(Name, [rawUrl], ["*"], context, metadata, ct); }
+        try { await _permission.AssertAsync(Name, [rawUrl], ["*"], context, metadata, ct).ConfigureAwait(true); }
         catch (PermissionBlockedException denial) { throw new ToolExecutionException(denial.Detail, denial); }
         catch (PermissionCorrectedException correction) { throw new ToolExecutionException(correction.Feedback, correction); }
 
@@ -68,11 +68,11 @@ public sealed class WebFetchTool
                     "text" => "text/plain;q=1.0, text/markdown;q=0.9, text/html;q=0.8, */*;q=0.1",
                     _ => "text/html;q=1.0, application/xhtml+xml;q=0.9, text/plain;q=0.8, text/markdown;q=0.7, */*;q=0.1"
                 };
-                var response = await _http.GetAsync(url, accept, UserAgent, lifetime.Token);
+                var response = await _http.GetAsync(url, accept, UserAgent, lifetime.Token).ConfigureAwait(true);
                 if (response.StatusCode == HttpStatusCode.Forbidden && response.Headers.TryGetValues("cf-mitigated", out var mitigated) && mitigated.Contains("challenge", StringComparer.Ordinal))
                 {
                     response.Dispose();
-                    response = await _http.GetAsync(url, accept, "opencode", lifetime.Token);
+                    response = await _http.GetAsync(url, accept, "opencode", lifetime.Token).ConfigureAwait(true);
                 }
                 using (response)
                 {
@@ -86,7 +86,7 @@ public sealed class WebFetchTool
                     if (!(mime.Length == 0 || mime.StartsWith("text/", StringComparison.Ordinal) || mime is "application/json" or "application/xml" or "application/javascript" or "application/x-javascript" ||
                         mime.EndsWith("+json", StringComparison.Ordinal) || mime.EndsWith("+xml", StringComparison.Ordinal)))
                         throw new ToolExecutionException($"Unsupported fetched file content type: {mime}");
-                    body = await HttpBody.CollectAsync(response, HtmlMarkdown.MaximumBytes, lifetime.Token);
+                    body = await HttpBody.CollectAsync(response, HtmlMarkdown.MaximumBytes, lifetime.Token).ConfigureAwait(true);
                 }
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && lifetime.IsCancellationRequested)
@@ -98,7 +98,7 @@ public sealed class WebFetchTool
         var content = Encoding.UTF8.GetString(body);
         if (content.StartsWith('\uFEFF')) content = content[1..];
         var output = contentType.Contains("text/html", StringComparison.Ordinal) && format != "html"
-            ? await HtmlMarkdown.ConvertAsync(content, format == "text", ct) : content;
+            ? await HtmlMarkdown.ConvertAsync(content, format == "text", ct).ConfigureAwait(true) : content;
         ct.ThrowIfCancellationRequested();
         var result = new WebFetchOutput(rawUrl, contentType, format, output);
         return new(output, result, new Dictionary<string, object> { ["contentType"] = contentType });

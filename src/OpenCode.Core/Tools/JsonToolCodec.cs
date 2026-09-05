@@ -46,19 +46,19 @@ public sealed class JsonToolCodec : IToolValueCodec
     {
         if (depth > 64) throw new NotSupportedException("Tool schema exceeds 64 levels.");
         if (schema.ValueKind is JsonValueKind.True or JsonValueKind.False) return;
-        if (schema.ValueKind != JsonValueKind.Object) throw new ArgumentException($"{path}: schema must be an object or boolean.");
+        if (schema.ValueKind != JsonValueKind.Object) throw new ArgumentException($"{path}: schema must be an object or boolean.", nameof(schema));
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in schema.EnumerateObject())
         {
-            if (!names.Add(item.Name)) throw new ArgumentException($"{path}: duplicate schema keyword {item.Name}.");
+            if (!names.Add(item.Name)) throw new ArgumentException($"{path}: duplicate schema keyword {item.Name}.", nameof(schema));
             var value = item.Value;
             switch (item.Name)
             {
                 case "title": case "description": case "$comment":
-                    if (value.ValueKind != JsonValueKind.String) throw new ArgumentException($"{path}.{item.Name} must be a string.");
+                    if (value.ValueKind != JsonValueKind.String) throw new ArgumentException($"{path}.{item.Name} must be a string.", nameof(schema));
                     break;
                 case "examples":
-                    if (value.ValueKind != JsonValueKind.Array) throw new ArgumentException($"{path}.examples must be an array.");
+                    if (value.ValueKind != JsonValueKind.Array) throw new ArgumentException($"{path}.examples must be an array.", nameof(schema));
                     break;
                 case "default":
                     // Annotations do not apply defaults or otherwise change validation.
@@ -71,39 +71,39 @@ public sealed class JsonToolCodec : IToolValueCodec
                 case "type":
                     var types = value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().ToArray() : [value];
                     if (types.Length == 0 || types.Any(type => type.ValueKind != JsonValueKind.String || !Types.Contains(type.GetString()!)))
-                        throw new ArgumentException($"{path}.type contains an unsupported type.");
+                        throw new ArgumentException($"{path}.type contains an unsupported type.", nameof(schema));
                     break;
                 case "properties":
-                    if (value.ValueKind != JsonValueKind.Object) throw new ArgumentException($"{path}.properties must be an object.");
+                    if (value.ValueKind != JsonValueKind.Object) throw new ArgumentException($"{path}.properties must be an object.", nameof(schema));
                     var properties = new HashSet<string>(StringComparer.Ordinal);
                     foreach (var property in value.EnumerateObject())
                     {
-                        if (!properties.Add(property.Name)) throw new ArgumentException($"{path}.properties contains duplicate property {property.Name}.");
+                        if (!properties.Add(property.Name)) throw new ArgumentException($"{path}.properties contains duplicate property {property.Name}.", nameof(schema));
                         CheckSchema(property.Value, path + "." + property.Name, depth + 1);
                     }
                     break;
                 case "required":
                     if (value.ValueKind != JsonValueKind.Array || value.EnumerateArray().Any(item => item.ValueKind != JsonValueKind.String))
-                        throw new ArgumentException($"{path}.required must be an array of strings.");
+                        throw new ArgumentException($"{path}.required must be an array of strings.", nameof(schema));
                     break;
                 case "additionalProperties": case "items": case "not":
                     CheckSchema(value, path + "." + item.Name, depth + 1);
                     break;
                 case "allOf": case "anyOf": case "oneOf":
                     if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0)
-                        throw new ArgumentException($"{path}.{item.Name} must be a nonempty array.");
+                        throw new ArgumentException($"{path}.{item.Name} must be a nonempty array.", nameof(schema));
                     foreach (var branch in value.EnumerateArray()) CheckSchema(branch, path + "." + item.Name, depth + 1);
                     break;
                 case "enum":
-                    if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0) throw new ArgumentException($"{path}.enum must be a nonempty array.");
+                    if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0) throw new ArgumentException($"{path}.enum must be a nonempty array.", nameof(schema));
                     break;
                 case "const": break;
                 case "minLength": case "maxLength": case "minItems": case "maxItems": case "minProperties": case "maxProperties":
-                    if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var count) || count < 0) throw new ArgumentException($"{path}.{item.Name} must be a nonnegative 32-bit integer.");
+                    if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var count) || count < 0) throw new ArgumentException($"{path}.{item.Name} must be a nonnegative 32-bit integer.", nameof(schema));
                     break;
                 case "minimum": case "maximum": case "exclusiveMinimum": case "exclusiveMaximum":
                     if (!TryNumber(value, out _))
-                        throw new ArgumentException($"{path}.{item.Name} must be exactly representable as a .NET decimal.");
+                        throw new ArgumentException($"{path}.{item.Name} must be exactly representable as a .NET decimal.", nameof(schema));
                     break;
                 default: throw new NotSupportedException($"Unsupported tool schema keyword: {path}.{item.Name}");
             }

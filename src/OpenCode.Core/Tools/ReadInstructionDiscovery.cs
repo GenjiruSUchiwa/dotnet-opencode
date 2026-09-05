@@ -39,7 +39,7 @@ public sealed class ReadInstructionDiscovery
                 }
                 if (Same(current, root)) break;
             }
-            if (candidates.Count != 0) await _load(session, candidates.AsReadOnly(), ct);
+            if (candidates.Count != 0) await _load(session, candidates.AsReadOnly(), ct).ConfigureAwait(true);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

@@ -46,10 +46,11 @@ public sealed class EditTool(ToolFilePolicy? policy = null, IToolFileMutation? m
             throw new ToolExecutionException("oldString must not be empty. Use write to create or overwrite a file.");
         if (policy is null || mutation is null)
             throw new NotSupportedException("edit requires Location, permission and file mutation services.");
-        var target = await policy.ResolveAsync(path, ToolPathKind.File, context, ct);
-        await using var transaction = await mutation.LockAsync(target.Absolute, ct);
+        var target = await policy.ResolveAsync(path, ToolPathKind.File, context, ct).ConfigureAwait(true);
+        var transaction = await mutation.LockAsync(target.Absolute, ct).ConfigureAwait(true);
+        await using var transactionLifetime = transaction.ConfigureAwait(true);
 
-        var original = await transaction.ReadAsync(ct) ?? throw new ToolExecutionException($"File not found: {path}");
+        var original = await transaction.ReadAsync(ct).ConfigureAwait(true) ?? throw new ToolExecutionException($"File not found: {path}");
         var text = original.Text;
         var ending = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         oldString = oldString.Replace("\r\n", "\n").Replace("\n", ending);
@@ -75,7 +76,7 @@ public sealed class EditTool(ToolFilePolicy? policy = null, IToolFileMutation? m
         var preview = count > 0 && (count == 1 || replaceAll)
             ? mutation.Diff(target.Resource, text, updatedText, FileDiffStatus.Modified) : null;
         await policy.AssertAsync("edit", [target.Resource], ["*"], context,
-            preview is null ? null : new Dictionary<string, object> { ["files"] = new[] { preview } }, ct);
+            preview is null ? null : new Dictionary<string, object> { ["files"] = new[] { preview } }, ct).ConfigureAwait(true);
 
         if (count == 0)
         {
@@ -87,7 +88,7 @@ public sealed class EditTool(ToolFilePolicy? policy = null, IToolFileMutation? m
             throw new ToolExecutionException($"Found {count} matches for oldString, but expected exactly one. Add more surrounding context to make oldString unique, or set replaceAll to true to replace every occurrence.");
         }
 
-        var formatted = await transaction.WriteTextAsync(updatedText, ct);
+        var formatted = await transaction.WriteTextAsync(updatedText, ct).ConfigureAwait(true);
         var files = new[] { mutation.Diff(target.Resource, text, formatted, FileDiffStatus.Modified) };
         return new ToolExecutionResult($"Edited {target.Resource} ({count} replacement{(count == 1 ? "" : "s")})",
             new { files, replacements = count }, new Dictionary<string, object> { ["files"] = files });

@@ -38,45 +38,45 @@ public sealed class ShellToolJobs : IShellToolJobs
             {
                 ["sessionID"] = JsonSerializer.SerializeToElement(input.SessionId.Value),
                 ["shellID"] = JsonSerializer.SerializeToElement(input.Shell.Id.Value)
-            }, new JobShellRecovery(input.SessionId, input.Shell.Id, input.Shell.Command)), ct);
+            }, new JobShellRecovery(input.SessionId, input.Shell.Id, input.Shell.Command)), ct).ConfigureAwait(true);
         return Project(info);
     }
 
     public async Task<ShellJobBlock?> BlockAsync(string id, SessionId sessionId, CancellationToken ct)
     {
-        var result = await _jobs.BlockAsync(id, sessionId, ct);
+        var result = await _jobs.BlockAsync(id, sessionId, ct).ConfigureAwait(true);
         return result is null ? null : new ShellJobBlock(Project(result.Info), result.Backgrounded);
     }
 
     public async Task<ShellJobInfo?> BackgroundAsync(string id, CancellationToken ct)
     {
-        var result = await _jobs.BackgroundAsync(id, ct);
+        var result = await _jobs.BackgroundAsync(id, ct).ConfigureAwait(true);
         return result is null ? null : Project(result);
     }
 
     /// <summary>Source foreground promotion; resolves the blocked ShellTool only after markers are committed.</summary>
     public async Task<IReadOnlyList<ShellJobInfo>> BackgroundAllAsync(SessionId sessionId, CancellationToken ct = default) =>
-        (await _jobs.BackgroundAllAsync(sessionId, "shell", ct)).Select(Project).ToArray();
+        (await _jobs.BackgroundAllAsync(sessionId, "shell", ct).ConfigureAwait(true)).Select(Project).ToArray();
 
     public async Task<ShellJobInfo?> WaitAsync(string id, CancellationToken ct)
     {
-        var result = await _jobs.WaitAsync(id, ct: ct);
+        var result = await _jobs.WaitAsync(id, ct: ct).ConfigureAwait(true);
         return result.Info is null ? null : Project(result.Info);
     }
 
-    public async Task CancelAsync(string id, CancellationToken ct) => await _jobs.CancelAsync(id, ct);
+    public async Task CancelAsync(string id, CancellationToken ct) => await _jobs.CancelAsync(id, ct).ConfigureAwait(true);
 
     public async Task AdmitCompletionAsync(SessionId sessionId, MessageId notificationId, ShellNotification notification, CancellationToken ct)
     {
         if (!notification.Metadata.TryGetValue("jobID", out var id) || id.ValueKind != JsonValueKind.String)
-            throw new ArgumentException("Shell completion requires the actual job ID.");
-        var job = await _jobs.GetAsync(id.GetString()!, ct);
+            throw new ArgumentException("Shell completion requires the actual job ID.", nameof(notification));
+        var job = await _jobs.GetAsync(id.GetString()!, ct).ConfigureAwait(true);
         if (job is null || job.Type != "shell" || job.Status == JobStatus.Running || job.NotificationId != notificationId
             || job.Metadata?.TryGetValue("sessionID", out var owner) != true || owner.GetString() != sessionId.Value
             || job.Metadata?.TryGetValue("shellID", out var shell) != true
             || !notification.Metadata.TryGetValue("shellID", out var supplied) || shell.GetString() != supplied.GetString())
             throw new InvalidOperationException("Shell completion does not match its terminal job and Session identity.");
-        await AdmitAsync(sessionId, notificationId, notification, suppressWake: false, ct);
+        await AdmitAsync(sessionId, notificationId, notification, suppressWake: false, ct).ConfigureAwait(true);
     }
 
     public Task CompleteBackgroundAsync(MessageId notificationId, CancellationToken ct) => _jobs.CompleteBackgroundAsync(notificationId, ct);
@@ -90,11 +90,11 @@ public sealed class ShellToolJobs : IShellToolJobs
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime);
         var recovered = new List<MessageId>();
-        foreach (var background in await _jobs.PendingBackgroundAsync(linked.Token))
+        foreach (var background in await _jobs.PendingBackgroundAsync(linked.Token).ConfigureAwait(true))
         {
             if (background.Recovery is not JobShellRecovery shell) continue;
             background.Validate();
-            if (await _jobs.GetAsync(background.Id, linked.Token) is { Status: JobStatus.Running }) continue;
+            if (await _jobs.GetAsync(background.Id, linked.Token).ConfigureAwait(true) is { Status: JobStatus.Running }) continue;
             // A running marker is not an exit code or evidence of a surviving process. No PID,
             // output file, or fabricated ShellInfo is used to infer success after a restart.
             var state = background.Status switch
@@ -111,10 +111,10 @@ public sealed class ShellToolJobs : IShellToolJobs
             {
                 await AdmitAsync(shell.SessionId, background.NotificationId,
                     ShellNotification.Background(background.Id, shell.ShellId, shell.Command, state, text),
-                    suspended.Contains(shell.SessionId), linked.Token);
+                    suspended.Contains(shell.SessionId), linked.Token).ConfigureAwait(true);
             }
             catch (SessionMutationNotFoundException) { /* Source recovery removes markers whose receiving Session was deleted. */ }
-            await _jobs.CompleteBackgroundAsync(background.NotificationId, linked.Token);
+            await _jobs.CompleteBackgroundAsync(background.NotificationId, linked.Token).ConfigureAwait(true);
             recovered.Add(background.NotificationId);
         }
         return recovered;
@@ -123,14 +123,14 @@ public sealed class ShellToolJobs : IShellToolJobs
     private async Task AdmitAsync(SessionId sessionId, MessageId notificationId, ShellNotification notification, bool suppressWake, CancellationToken ct)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime);
-        _ = await _sessions.GetSessionAsync(sessionId, linked.Token) ?? throw new SessionMutationNotFoundException(sessionId);
-        var existing = await _sessions.ReconcileInboxAsync(sessionId, notificationId, "synthetic", ct: linked.Token);
+        _ = await _sessions.GetSessionAsync(sessionId, linked.Token).ConfigureAwait(true) ?? throw new SessionMutationNotFoundException(sessionId);
+        var existing = await _sessions.ReconcileInboxAsync(sessionId, notificationId, "synthetic", ct: linked.Token).ConfigureAwait(true);
         if (existing is null)
             await _sessions.AdmitInboxAsync(sessionId, notificationId,
                 new SyntheticInboxPayload(notification.Text, notification.Description,
-                    notification.Metadata.ToDictionary(item => item.Key, item => item.Value.Clone(), StringComparer.Ordinal)), ct: linked.Token);
-        var current = await _sessions.GetSessionAsync(sessionId, linked.Token) ?? throw new SessionMutationNotFoundException(sessionId);
-        if (!suppressWake && current.Revert is null) await _execution.WakeAsync(sessionId, _lifetime);
+                    notification.Metadata.ToDictionary(item => item.Key, item => item.Value.Clone(), StringComparer.Ordinal)), ct: linked.Token).ConfigureAwait(true);
+        var current = await _sessions.GetSessionAsync(sessionId, linked.Token).ConfigureAwait(true) ?? throw new SessionMutationNotFoundException(sessionId);
+        if (!suppressWake && current.Revert is null) await _execution.WakeAsync(sessionId, _lifetime).ConfigureAwait(true);
     }
 
     private static ShellJobInfo Project(JobInfo info) => new(info.Id, info.Status switch

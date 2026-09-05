@@ -65,7 +65,7 @@ public sealed class ToolSnapshot
     {
         ct.ThrowIfCancellationRequested();
         var invocation = new ToolInvocation(name, input);
-        if (_hooks is not null) invocation = await _hooks.BeforeAsync(invocation, context, ct);
+        if (_hooks is not null) invocation = await _hooks.BeforeAsync(invocation, context, ct).ConfigureAwait(true);
         var requested = definitions?.GetValueOrDefault(invocation.Name);
         if (definitions is not null && requested is null && (_direct.ContainsKey(invocation.Name) || invocation.Name == "execute" && _execute is not null))
             throw new ToolExecutionException($"Tool is not available for this request: {invocation.Name}");
@@ -73,13 +73,13 @@ public sealed class ToolSnapshot
         var tool = name == "execute" && _execute is not null ? _execute : _direct.GetValueOrDefault(name);
         if (tool is null) throw new ToolExecutionException($"Unknown tool: {name}");
         ToolExecutionResult result;
-        try { result = await Execute(tool, invocation.Input, context, ct); }
+        try { result = await Execute(tool, invocation.Input, context, ct).ConfigureAwait(true); }
         catch (ToolExecutionException error)
         {
-            if (_hooks is not null) throw await _hooks.AfterErrorAsync(name, invocation.Input, context, error, ct);
+            if (_hooks is not null) throw await _hooks.AfterErrorAsync(name, invocation.Input, context, error, ct).ConfigureAwait(true);
             throw;
         }
-        if (_hooks is not null) result = await _hooks.AfterSuccessAsync(name, invocation.Input, context, result, ct);
+        if (_hooks is not null) result = await _hooks.AfterSuccessAsync(name, invocation.Input, context, result, ct).ConfigureAwait(true);
         return Normalize(result);
     }
 
@@ -88,29 +88,29 @@ public sealed class ToolSnapshot
     {
         // Upstream nested calls keep their captured registration; the before hook can
         // repair input, but cannot escape that capture by renaming the tool.
-        var invocation = _hooks is null ? new ToolInvocation(name, input) : await _hooks.BeforeAsync(new(name, input), context, ct);
+        var invocation = _hooks is null ? new ToolInvocation(name, input) : await _hooks.BeforeAsync(new(name, input), context, ct).ConfigureAwait(true);
         ToolExecutionResult result;
-        try { result = await Execute(tool, invocation.Input, context, ct); }
+        try { result = await Execute(tool, invocation.Input, context, ct).ConfigureAwait(true); }
         catch (ToolExecutionException error)
         {
-            if (_hooks is not null) throw await _hooks.AfterErrorAsync(name, invocation.Input, context, error, ct);
+            if (_hooks is not null) throw await _hooks.AfterErrorAsync(name, invocation.Input, context, error, ct).ConfigureAwait(true);
             throw;
         }
-        if (_hooks is not null) result = await _hooks.AfterSuccessAsync(name, invocation.Input, context, result, ct);
+        if (_hooks is not null) result = await _hooks.AfterSuccessAsync(name, invocation.Input, context, result, ct).ConfigureAwait(true);
         return Normalize(result);
     }
 
     private static async Task<ToolExecutionResult> Execute(ToolInfo tool, JsonElement input, ToolContext context, CancellationToken ct)
     {
         object? decoded;
-        try { decoded = await tool.Input.DecodeAsync(input, ct); }
+        try { decoded = await tool.Input.DecodeAsync(input, ct).ConfigureAwait(true); }
         catch (ToolValidationException error)
         {
             throw new ToolExecutionException($"Invalid arguments for tool \"{tool.Id}\":\n{error.Message}\n\nUpdate the arguments and call the tool again.", error);
         }
         // .NET exceptions have no Effect typed-failure/defect distinction. Only the explicit
         // ToolExecutionException contract is recoverable; security/control flow and defects pass through.
-        var result = await tool.Execute(decoded, context, ct);
+        var result = await tool.Execute(decoded, context, ct).ConfigureAwait(true);
         if (result is null) throw new ToolContractException("Tool returned no result.");
         if (tool.Output is null)
         {
@@ -120,7 +120,7 @@ public sealed class ToolSnapshot
         if (!result.HasOutput) throw new ToolExecutionException("Tool did not return its declared output.");
         try
         {
-            var encoded = await tool.Output.EncodeAsync(result.Output, ct);
+            var encoded = await tool.Output.EncodeAsync(result.Output, ct).ConfigureAwait(true);
             if (encoded.ValueKind == JsonValueKind.Undefined)
                 throw new ToolValidationException([new("root", "Output codec returned a non-JSON value.")]);
             result = result with { Output = encoded.Clone() };

@@ -52,7 +52,7 @@ public sealed class McpOAuthAuthorization : IAsyncDisposable
     internal async Task<AuthorizationResult> RedirectAsync(AuthorizationCallbackContext context, CancellationToken ct)
     {
         if (!Ready.TrySetResult(context)) throw new McpOAuthException("MCP requested another authorization flow; start a new attempt.");
-        return await Callback.Task.WaitAsync(ct);
+        return await Callback.Task.WaitAsync(ct).ConfigureAwait(true);
     }
 
     internal void Fail(Exception error)
@@ -76,8 +76,8 @@ public sealed class McpOAuthAuthorization : IAsyncDisposable
 
     private async Task CloseAsync()
     {
-        await Lifetime.CancelAsync();
-        await Driver;
+        await Lifetime.CancelAsync().ConfigureAwait(true);
+        await Driver.ConfigureAwait(true);
         Lifetime.Dispose();
     }
 }
@@ -113,10 +113,10 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
         try
         {
             using var wait = CancellationTokenSource.CreateLinkedTokenSource(ct, attempt.Cancellation);
-            await attempt.Ready.Task.WaitAsync(wait.Token);
+            await attempt.Ready.Task.WaitAsync(wait.Token).ConfigureAwait(true);
             return attempt;
         }
-        catch { await attempt.DisposeAsync(); throw; }
+        catch { await attempt.DisposeAsync().ConfigureAwait(true); throw; }
     }
 
     /// <summary>Pass code, state, and optional iss from the real callback. The SDK validates state/issuer before token exchange.</summary>
@@ -131,12 +131,12 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
             linked.Token.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state)) throw new McpOAuthException("MCP callback code and state are required.");
             attempt.Callback.TrySetResult(new AuthorizationResult { Code = code, State = state, Iss = issuer });
-            var tokens = await attempt.Tokens.Task.WaitAsync(linked.Token);
+            var tokens = await attempt.Tokens.Task.WaitAsync(linked.Token).ConfigureAwait(true);
             var value = ToCredential(attempt.IntegrationId, attempt.Config.Url, tokens);
             linked.Token.ThrowIfCancellationRequested();
-            return await credentials.CreateAsync(attempt.IntegrationId, value, label, linked.Token);
+            return await credentials.CreateAsync(attempt.IntegrationId, value, label, linked.Token).ConfigureAwait(true);
         }
-        finally { await attempt.DisposeAsync(); }
+        finally { await attempt.DisposeAsync().ConfigureAwait(true); }
     }
 
     public ValueTask CancelAsync(McpOAuthAuthorization attempt)
@@ -150,11 +150,11 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
     {
         RequireOAuth(config);
         var identity = IntegrationId(server, config.Url);
-        var selected = await credentials.SelectedAsync(identity, ct);
+        var selected = await credentials.SelectedAsync(identity, ct).ConfigureAwait(true);
         if (selected is null) return false;
         if (selected.IntegrationId != identity || selected.Value is not CredentialOAuth oauth || oauth.MethodId != identity)
             throw new McpOAuthException("The selected credential is not an OAuth credential for this MCP integration.");
-        return await credentials.RemoveAsync(selected.Id, null, ct);
+        return await credentials.RemoveAsync(selected.Id, null, ct).ConfigureAwait(true);
     }
 
     internal async Task<ClientOAuthOptions?> ConnectionOptionsAsync(string server, McpRemoteConfig config, CancellationToken ct)
@@ -162,7 +162,7 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
         if (config.OAuth is McpOAuthDisabled) return null;
         RequireOAuth(config);
         var identity = IntegrationId(server, config.Url);
-        var selected = await credentials.SelectedAsync(identity, ct);
+        var selected = await credentials.SelectedAsync(identity, ct).ConfigureAwait(true);
         var cache = selected is { Value: CredentialOAuth oauth } && selected.IntegrationId == identity && oauth.MethodId == identity
             ? new McpOAuthTokenCache(credentials, selected.Id, identity, config.Url, Clock) : null;
         var options = Options(config, new Uri((config.OAuth as McpOAuthConfig)?.RedirectUri ?? "http://127.0.0.1/callback"), cache);
@@ -176,19 +176,21 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
         try
         {
             var options = Options(attempt.Config, attempt.RedirectUri, new AuthorizationCache(attempt));
-            options.AuthorizationCallbackHandler = async (context, token) => await attempt.RedirectAsync(context, token);
+            options.AuthorizationCallbackHandler = async (context, token) => await attempt.RedirectAsync(context, token).ConfigureAwait(true);
             // The public .NET SDK exposes OAuth through the HTTP transport, not TS auth(). A
             // temporary handshake obtains the real challenge; no fabricated 401 or endpoint is used.
-            await using var transport = new HttpClientTransport(new()
+            var transport = new HttpClientTransport(new()
             {
                 Name = attempt.Server, Endpoint = new Uri(attempt.Config.Url), TransportMode = HttpTransportMode.StreamableHttp,
                 AdditionalHeaders = attempt.Config.Headers?.ToDictionary(item => item.Key, item => item.Value),
                 OAuth = options
             });
-            await using var client = await McpClient.CreateAsync(transport, new()
+            await using var transportLifetime = transport.ConfigureAwait(true);
+            var client = await McpClient.CreateAsync(transport, new()
             {
                 ClientInfo = new() { Name = "opencode", Version = "dotnet" }, InitializationTimeout = TimeSpan.FromMinutes(10)
-            }, cancellationToken: attempt.Cancellation);
+            }, cancellationToken: attempt.Cancellation).ConfigureAwait(true);
+            await using var clientLifetime = client.ConfigureAwait(true);
             if (!attempt.Tokens.Task.IsCompletedSuccessfully)
                 throw new McpOAuthException("The MCP endpoint did not request OAuth authorization.");
         }
@@ -213,7 +215,7 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
     {
         if (config.OAuth is McpOAuthDisabled) throw new NotSupportedException("OAuth is disabled for this MCP server.");
         if (!Uri.TryCreate(config.Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-            throw new ArgumentException("MCP OAuth requires an absolute HTTP(S) server URL.");
+            throw new ArgumentException("MCP OAuth requires an absolute HTTP(S) server URL.", nameof(config));
     }
 
     private void RequireOwner(McpOAuthAuthorization attempt)
@@ -263,10 +265,10 @@ public sealed class McpOAuthService(IMcpOAuthCredentials credentials, TimeProvid
 
     private sealed class AuthorizationCache(McpOAuthAuthorization attempt) : ITokenCache
     {
-        public ValueTask<TokenContainer?> GetTokensAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(attempt.Tokens.Task.IsCompletedSuccessfully ? attempt.Tokens.Task.Result : null);
+        public async ValueTask<TokenContainer?> GetTokensAsync(CancellationToken cancellationToken) =>
+            attempt.Tokens.Task.IsCompletedSuccessfully ? await attempt.Tokens.Task.ConfigureAwait(true) : null;
 
-        public ValueTask StoreTokensAsync(TokenContainer tokens, CancellationToken cancellationToken = default)
+        public ValueTask StoreTokensAsync(TokenContainer tokens, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (tokens is null || string.IsNullOrEmpty(tokens.AccessToken)) throw new McpOAuthException("MCP OAuth did not return tokens.");

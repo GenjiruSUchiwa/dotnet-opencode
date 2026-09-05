@@ -29,7 +29,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     /// <summary>Protect every registered capture, including exited results still observable by jobs/readers.</summary>
     public async Task<IReadOnlyList<string>> OwnedCapturesAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try { ObjectDisposedException.ThrowIf(_closed, this); return _commands.Values.Select(entry => entry.Info.File).ToArray(); }
         finally { _gate.Release(); }
     }
@@ -55,7 +55,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     {
         Clock = clock ?? TimeProvider.System;
         if (location.WorkspaceId is not null) throw new NotSupportedException("Native shell processes support implicit-local Locations only.");
-        if (!Path.IsPathFullyQualified(outputDirectory)) throw new ArgumentException("Shell output directory must be absolute.");
+        if (!Path.IsPathFullyQualified(outputDirectory)) throw new ArgumentException("Shell output directory must be absolute.", nameof(outputDirectory));
         _location = location;
         _directory = outputDirectory;
         _prepareUser = prepareUser;
@@ -70,8 +70,8 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         _ = Duration(input.Timeout);
         var environment = EnvironmentSnapshot(input.Metadata);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown.Token);
-        await _beforeCreate(linked.Token);
-        return await StartAsync(input, await _prepareUser(input, linked.Token), environment, linked.Token);
+        await _beforeCreate(linked.Token).ConfigureAwait(true);
+        return await StartAsync(input, await _prepareUser(input, linked.Token).ConfigureAwait(true), environment, linked.Token).ConfigureAwait(true);
     }
 
     /// <summary>Tool callers must supply the real Location policy/context. Scan and approve before creating any process/file.</summary>
@@ -84,9 +84,9 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         input = input with { Metadata = metadata };
         var environment = EnvironmentSnapshot(metadata);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _shutdown.Token);
-        await _beforeCreate(linked.Token);
-        var prepared = await policy.PrepareAsync(input.Command, input.Cwd, context, linked.Token);
-        return await StartAsync(input, prepared, environment, linked.Token);
+        await _beforeCreate(linked.Token).ConfigureAwait(true);
+        var prepared = await policy.PrepareAsync(input.Command, input.Cwd, context, linked.Token).ConfigureAwait(true);
+        return await StartAsync(input, prepared, environment, linked.Token).ConfigureAwait(true);
     }
 
     private IReadOnlyDictionary<string, string> EnvironmentSnapshot(IReadOnlyDictionary<string, JsonElement>? metadata)
@@ -105,8 +105,8 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     {
         var duration = Duration(input.Timeout);
         if (!Path.IsPathFullyQualified(prepared.Executable) || !Path.IsPathFullyQualified(prepared.WorkingDirectory))
-            throw new ArgumentException("Prepared shell executable and working directory must be absolute.");
-        await _gate.WaitAsync(ct);
+            throw new ArgumentException("Prepared shell executable and working directory must be absolute.", nameof(prepared));
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -162,7 +162,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
                     using var stop = new CancellationTokenSource();
                     var wait = process.SafeHandle.WaitForExitOrKillOnCancellationAsync(stop.Token);
                     try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-                    finally { await stop.CancelAsync(); await wait; }
+                    finally { await stop.CancelAsync().ConfigureAwait(true); await wait.ConfigureAwait(true); }
                 }
                 throw;
             }
@@ -180,7 +180,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
 
     public async Task<IReadOnlyList<ShellInfo>> ListAsync(CancellationToken ct = default)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -190,13 +190,13 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         finally { _gate.Release(); }
     }
 
-    public async Task<ShellInfo> GetAsync(ShellId id, CancellationToken ct = default) => (await RequireAsync(id, ct)).Info;
-    public async Task<ShellInfo> WaitAsync(ShellId id, CancellationToken ct = default) => await (await RequireAsync(id, ct)).Done.Task.WaitAsync(ct);
+    public async Task<ShellInfo> GetAsync(ShellId id, CancellationToken ct = default) => (await RequireAsync(id, ct).ConfigureAwait(false)).Info;
+    public async Task<ShellInfo> WaitAsync(ShellId id, CancellationToken ct = default) => await (await RequireAsync(id, ct).ConfigureAwait(false)).Done.Task.WaitAsync(ct).ConfigureAwait(false);
 
     public async Task<ShellInfo> TimeoutAsync(ShellId id, double milliseconds, CancellationToken ct = default)
     {
         var duration = Duration(milliseconds);
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             var entry = Require(id);
@@ -208,10 +208,11 @@ public sealed partial class ShellRuntime : IAsyncDisposable
 
     public async Task<ShellOutput> OutputAsync(ShellId id, ShellOutputInput? input = null, CancellationToken ct = default)
     {
-        var entry = await RequireAsync(id, ct);
+        var entry = await RequireAsync(id, ct).ConfigureAwait(false);
         try
         {
-            await using var stream = new FileStream(entry.Info.File, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous);
+            var stream = new FileStream(entry.Info.File, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous);
+            await using var streamLifetime = stream.ConfigureAwait(false);
             var size = stream.Length;
             var cursor = input?.Cursor ?? 0;
             if (cursor >= size) return new("", size, size, false);
@@ -220,7 +221,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
             var start = checked((long)cursor);
             var buffer = new byte[(int)Math.Min(limit, size - start)];
             stream.Position = start;
-            var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, false, ct);
+            var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, false, ct).ConfigureAwait(false);
             return new(Encoding.UTF8.GetString(buffer, 0, read), start + read, size, false);
         }
         catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
@@ -232,12 +233,12 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumBytes, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumLines, 1);
         ShellInfo info;
-        try { info = await WaitAsync(started.Id, ct); }
+        try { info = await WaitAsync(started.Id, ct).ConfigureAwait(true); }
         catch (ShellNotFoundException) { info = started with { Status = ShellStatus.Killed, Time = started.Time with { Completed = Clock.GetUtcNow().ToUnixTimeMilliseconds() } }; }
         try
         {
-            var latest = await OutputAsync(started.Id, new(Cursor: 9_007_199_254_740_991), ct);
-            var page = await OutputAsync(started.Id, new(Cursor: Math.Max(0, latest.Size - maximumBytes), Limit: maximumBytes), ct);
+            var latest = await OutputAsync(started.Id, new(Cursor: 9_007_199_254_740_991), ct).ConfigureAwait(true);
+            var page = await OutputAsync(started.Id, new(Cursor: Math.Max(0, latest.Size - maximumBytes), Limit: maximumBytes), ct).ConfigureAwait(true);
             var lines = page.Output.Split('\n');
             var count = lines.Length - (page.Output.EndsWith('\n') ? 1 : 0);
             var truncated = latest.Size > maximumBytes || count > maximumLines;
@@ -251,22 +252,22 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     public async Task RemoveAsync(ShellId id, CancellationToken ct = default)
     {
         Entry entry;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             entry = Require(id, allowFailure: true);
             entry.Removed = true;
-            entry.Timeout?.Cancel();
+            CancelTimeout(entry);
             _commands.Remove(id);
             _exited.Remove(id);
             entry.Done.TrySetException(new ShellNotFoundException(id));
             _ = entry.Done.Task.Exception;
         }
         finally { _gate.Release(); }
-        try { await StopAsync(entry); }
+        try { await StopAsync(entry).ConfigureAwait(true); }
         finally
         {
-            await entry.Observer;
+            await entry.Observer.ConfigureAwait(true);
             File.Delete(entry.Info.File);
             _publish(ShellEventDefinitions.Deleted.Create(EventId.Create(), Clock.GetUtcNow().ToUnixTimeMilliseconds(), new ShellDeletedEventData(id), _location));
         }
@@ -277,12 +278,12 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         await Task.Yield();
         try
         {
-            var result = await entry.Process.SafeHandle.WaitForExitOrKillOnCancellationAsync(entry.Stop.Token);
-            await _gate.WaitAsync();
+            var result = await entry.Process.SafeHandle.WaitForExitOrKillOnCancellationAsync(entry.Stop.Token).ConfigureAwait(true);
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 if (_closed || entry.Removed) return;
-                entry.Timeout?.Cancel();
+                CancelTimeout(entry);
                 entry.Info = entry.Info with
                 {
                     Status = entry.RequestedStatus ?? (result.Canceled ? ShellStatus.Killed : ShellStatus.Exited),
@@ -311,8 +312,8 @@ public sealed partial class ShellRuntime : IAsyncDisposable
             {
                 if (entry.Done.Task.IsFaulted && !entry.Process.HasExited)
                 {
-                    await StopAsync(entry);
-                    await entry.Process.SafeHandle.WaitForExitOrKillOnCancellationAsync(entry.Stop.Token);
+                    await StopAsync(entry).ConfigureAwait(true);
+                    await entry.Process.SafeHandle.WaitForExitOrKillOnCancellationAsync(entry.Stop.Token).ConfigureAwait(true);
                 }
             }
             finally { entry.Process.Dispose(); entry.Capture.Dispose(); entry.Input.Dispose(); }
@@ -321,7 +322,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
 
     private void SetTimeout(Entry entry, int duration)
     {
-        entry.Timeout?.Cancel();
+        CancelTimeout(entry);
         entry.Timeout = duration == 0 ? null : new CancellationTokenSource();
         if (entry.Timeout is { } timeout) _ = ExpireAsync(entry, duration, timeout);
     }
@@ -330,31 +331,35 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     {
         try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(duration), Clock, timeout.Token);
-            await _gate.WaitAsync(timeout.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(duration), Clock, timeout.Token).ConfigureAwait(true);
+            await _gate.WaitAsync(timeout.Token).ConfigureAwait(true);
             try
             {
                 if (_closed || entry.Removed || entry.Info.Status != ShellStatus.Running || entry.Timeout != timeout) return;
                 entry.RequestedStatus = ShellStatus.Timeout;
             }
             finally { _gate.Release(); }
-            await StopAsync(entry);
+            await StopAsync(entry).ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
         catch (Exception error) { Trace.TraceWarning("Shell timeout cleanup failed ({0}).", error.GetType().Name); }
     }
+
+    // This token is private to Delay/gate waiting. Cancel synchronously while holding
+    // the lifecycle gate, before replacing its timeout or publishing terminal state.
+    private static void CancelTimeout(Entry entry) => entry.Timeout?.Cancel();
 
     private static async Task StopAsync(Entry entry)
     {
         if (entry.Observer.IsCompleted) return;
         try { if (!entry.Process.HasExited) entry.Process.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { /* The observer may have reaped the owned process concurrently. */ }
-        finally { await entry.Stop.CancelAsync(); }
+        finally { await entry.Stop.CancelAsync().ConfigureAwait(false); }
     }
 
     private async Task<Entry> RequireAsync(ShellId id, CancellationToken ct)
     {
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try { return Require(id); }
         finally { _gate.Release(); }
     }
@@ -371,25 +376,25 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Entry[] entries;
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
         try
         {
             if (_closed) return;
             _closed = true;
             entries = _commands.Values.ToArray();
             _commands.Clear(); _exited.Clear();
-            foreach (var entry in entries) { entry.Timeout?.Cancel(); entry.Done.TrySetCanceled(); }
+            foreach (var entry in entries) { CancelTimeout(entry); entry.Done.TrySetCanceled(CancellationToken.None); }
         }
         finally { _gate.Release(); }
-        await _shutdown.CancelAsync();
+        await _shutdown.CancelAsync().ConfigureAwait(true);
         await Task.WhenAll(entries.Select(async entry =>
         {
-            try { await StopAsync(entry); }
-            finally { await entry.Observer; }
-        }));
+            try { await StopAsync(entry).ConfigureAwait(true); }
+            finally { await entry.Observer.ConfigureAwait(true); }
+        })).ConfigureAwait(true);
         Task[] background;
         lock (_backgroundGate) background = _background.ToArray();
-        await Task.WhenAll(background);
+        await Task.WhenAll(background).ConfigureAwait(true);
         // Preserve capture files for the host's seven-day retention sweep; shutdown is not an exit event.
     }
 }

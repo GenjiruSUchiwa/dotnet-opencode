@@ -43,7 +43,7 @@ public sealed record ShellNotification(string Text, string Description, IReadOnl
     public static ShellNotification Background(string jobId, ShellId shellId, string command, string state, string text,
         IReadOnlyDictionary<string, JsonElement>? outputMetadata = null)
     {
-        if (state is not ("completed" or "error" or "cancelled")) throw new ArgumentException("A shell completion requires a terminal job state.");
+        if (state is not ("completed" or "error" or "cancelled")) throw new ArgumentException("A shell completion requires a terminal job state.", nameof(state));
         var metadata = outputMetadata?.ToDictionary(item => item.Key, item => item.Value.Clone(), StringComparer.Ordinal)
             ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         metadata["source"] = JsonSerializer.SerializeToElement("shell");

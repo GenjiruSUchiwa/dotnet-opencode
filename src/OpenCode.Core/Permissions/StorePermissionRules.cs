@@ -13,10 +13,10 @@ public sealed class StorePermissionRules(
 {
     public async ValueTask<IReadOnlyList<PermissionRule>> GetAsync(SessionId session, AgentId? agent, CancellationToken ct)
     {
-        var current = await sessions.GetSessionAsync(session, ct) ?? throw new PermissionSessionNotFoundException(session);
+        var current = await sessions.GetSessionAsync(session, ct).ConfigureAwait(true) ?? throw new PermissionSessionNotFoundException(session);
         if (PermissionLocationMap.Canonical(current.Location) != PermissionLocationMap.Canonical(location))
             throw new PermissionLocationMismatchException(session);
-        var resolved = await resolveAgent(agent ?? (current.Agent is { } selected ? AgentId.FromExisting(selected) : null), ct);
+        var resolved = await resolveAgent(agent ?? (current.Agent is { } selected ? AgentId.FromExisting(selected) : null), ct).ConfigureAwait(true);
         if (resolved is null) return [new PermissionRule("*", "*", PermissionEffect.Deny)];
         var rules = resolved.Permissions.ToArray();
         if (rules.Any(rule => rule is null || rule.Action is null || rule.Resource is null || !Enum.IsDefined(rule.Effect)))

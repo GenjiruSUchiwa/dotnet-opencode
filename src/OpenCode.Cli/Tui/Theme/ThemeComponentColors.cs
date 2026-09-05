@@ -11,7 +11,9 @@ public sealed record ComposerTheme(
         var highlight = disabled ? tokens.Border : shell ? tokens.ActionText(ThemeActionVariant.Primary, ThemeActionState.Selected)
             : agentColor is null ? tokens.Border : ThemeColor.Parse(agentColor);
         return new(tokens.Background.Hex, surface.Hex, highlight.Hex,
-            tokens.FormfieldText(disabled ? ThemeActionState.Disabled : ThemeActionState.Default).Hex, tokens.Subdued.Hex,
+            // Upstream prompt textColor/focusedTextColor use text.default (or
+            // text.subdued when muted), not a form-field option state.
+            (disabled ? tokens.Subdued : tokens.Text).Hex, tokens.Subdued.Hex,
             highlight.Hex, disabled ? tokens.Subdued.Hex : tokens.Text.Hex, tokens.Subdued.Hex,
             // A selected model variant is configuration metadata, not warning feedback.
             tokens.FormfieldText(disabled ? ThemeActionState.Disabled : ThemeActionState.Selected).Hex,

@@ -398,6 +398,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
                 parent.InsertChild(sibling, new TuiNode
                 {
                     TagName = "#text",
+                    IsMarkup = frame.FrameType == RenderTreeFrameType.Markup,
                     TextContent = frame.FrameType == RenderTreeFrameType.Text ? frame.TextContent : frame.MarkupContent
                 });
                 return 1;
@@ -482,6 +483,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             case "cursor": node.Cursor = Number(node, name, value); break;
             case "selection-anchor": node.SelectionAnchor = Number(node, name, value); break;
             case "max-height": node.MaxHeight = Number(node, name, value, 1) ?? 1; break;
+            case "text-max-height": node.TextMaxHeight = Number(node, name, value); break;
             case "focus-key": node.FocusKey = value?.ToString(); break;
             case "onkeydown": node.KeyHandlerId = EventHandler(node, name, value, handlerId); break;
             case "onsizechanged": node.SizeHandlerId = EventHandler(node, name, value, handlerId); break;

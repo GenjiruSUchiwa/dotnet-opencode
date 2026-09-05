@@ -7,7 +7,7 @@
          PaddingX="@(Compact ? 0 : TerminalWidth < 44 ? 1 : 2)" PaddingTop="@(Compact ? 0 : 1)">
         @Attachments
         <Input Value="@Value" Cursor="Cursor" SelectionAnchor="SelectionAnchor" MaxHeight="@Math.Max(6, TerminalHeight / 3)"
-               Placeholder="@(ShellMode ? "Run a command…" : "Ask anything...")" Fg="@Colors.InputText" Bg="@Colors.PromptBackground" PlaceholderFg="@Colors.PlaceholderText"
+               Placeholder="@(ShellMode ? "Run a command…" : "Ask anything...")" Fg="@Colors.InputText" PlaceholderFg="@Colors.PlaceholderText"
                FocusKey="prompt" OnKeyDown="OnKeyDown" OnPaste="OnPaste" OnTextInput="OnTextInput" TextMarks="TextMarks"
                OnPointerDown="OnPointerDown" OnPointerMove="OnPointerMove" OnPointerUp="OnPointerUp" />
         @if (!Compact)
@@ -49,8 +49,8 @@
     @if (!Compact)
     {
         <Box Direction="TuiFlexDirection.Row" Width="Width" Height="1" Bg="@Colors.PageBackground">
-            <TuiText Value="@(Colors.OpaquePrompt ? "╹" : " ")" Fg="@Colors.Border" Bg="@Colors.PageBackground" Width="1" Height="1" />
-            <TuiText Value="@(new string(Colors.OpaquePrompt ? '▀' : ' ', Math.Max(0, Width - 1)))" Fg="@Colors.PromptBackground" Bg="@Colors.PageBackground" Width="@Math.Max(0, Width - 1)" Height="1" />
+            <TuiText Value="@(Colors.OpaquePrompt ? "╹" : " ")" Fg="@Colors.Border" Bg="@Colors.PageBackground" Width="1" Height="1" Selectable="false" />
+            <TuiText Value="@(new string(Colors.OpaquePrompt ? '▀' : ' ', Math.Max(0, Width - 1)))" Fg="@Colors.PromptBackground" Bg="@Colors.PageBackground" Width="@Math.Max(0, Width - 1)" Height="1" Selectable="false" />
         </Box>
         <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">
             <Box Grow="1" Shrink="1" Height="1">

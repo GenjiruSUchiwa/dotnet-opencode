@@ -138,6 +138,8 @@ public class TuiText : PointerComponentBase
     [Parameter] public bool Bold { get; set; }
     [Parameter] public bool Dim { get; set; }
     [Parameter] public int? Height { get; set; }
+    /// <summary>Optional cap on the natural wrapped row count; explicit Height still controls fixed-row content.</summary>
+    [Parameter] public int? MaxHeight { get; set; }
     [Parameter] public int? Width { get; set; }
     [Parameter] public int Grow { get; set; }
     [Parameter] public bool Tail { get; set; }
@@ -167,6 +169,7 @@ public class TuiText : PointerComponentBase
         builder.AddAttribute(9, "width", Width);
         builder.AddAttribute(11, "wrap-mode", WrapMode.ToString());
         builder.AddAttribute(12, "selectable", Selectable);
+        builder.AddAttribute(13, "text-max-height", MaxHeight);
         // Runs remain typed component state. Element attributes would stringify them.
         AddPointerAttributes(builder);
         if (Runs.IsDefault) builder.AddContent(108, Value);

@@ -19,6 +19,8 @@ public enum TuiPosition { Flow, Absolute }
 public sealed class TuiNode
 {
     public string TagName { get; internal init; } = "box";
+    internal bool IsMarkup { get; init; }
+    private bool IsFormattingWhitespace => TagName == "#text" && IsMarkup && string.IsNullOrWhiteSpace(TextContent);
     public TuiNode? Parent { get; private set; }
     internal object? Key { get; init; }
     internal object? AnchorKey => Key ?? Parent?.AnchorKey;
@@ -49,6 +51,11 @@ public sealed class TuiNode
             if (TagName is "text" or "input") return _layoutChildren;
             foreach (var child in Children)
             {
+                // Razor emits newline/indent markup around components and
+                // fragments. Keep its frame identity for render diffs, but do
+                // not turn formatting into terminal rows/columns or painted cells.
+                // Text/input Content still reads the original children verbatim.
+                if (child.IsFormattingWhitespace) continue;
                 if (child.TagName == "#component") _layoutChildren.AddRange(child.LayoutChildren);
                 else _layoutChildren.Add(child);
             }
@@ -67,12 +74,6 @@ public sealed class TuiNode
         _flowChildren = null;
         _content = null;
         Parent?.InvalidateLayoutChildren();
-    }
-
-    private void InvalidateContent()
-    {
-        _content = null;
-        Parent?.InvalidateContent();
     }
 
     public TuiFlexDirection Direction { get; internal set; } = TuiFlexDirection.Column;
@@ -136,6 +137,7 @@ public sealed class TuiNode
     internal byte IntrinsicWidthMethod;
     internal int? IntrinsicWidth;
     public int MaxHeight { get; internal set; } = 1;
+    internal int? TextMaxHeight;
     public string? FocusKey { get; internal set; }
     public bool Focused { get; internal set; }
     public ulong KeyHandlerId { get; internal set; }
@@ -202,7 +204,8 @@ public sealed class TuiNode
         {
             if (_textContent == value) return;
             _textContent = value;
-            InvalidateContent();
+            // A markup update can switch between formatting and visible text.
+            InvalidateLayoutChildren();
         }
     }
 

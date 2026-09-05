@@ -110,9 +110,10 @@ public partial class OpenCodeApp
     }
 
     private void ThemeChanged() => QueueThemeUpdate(() => { _themeError = null; return Task.CompletedTask; });
+    // Text selection is native per-run inversion, not the selected state of a
+    // form field/list option. Upstream text and textarea leave both overrides unset.
     private void ApplyHostTheme() => ApplyRenderColors?.Invoke(new(BaseColors.Text.Native, BaseColors.Background.Native,
-        Cursor: BaseColors.Text.Native, SelectionForeground: BaseColors.FormfieldText(ThemeActionState.Selected).Native,
-        SelectionBackground: BaseColors.FormfieldBackground(ThemeActionState.Selected).Native));
+        Cursor: BaseColors.Text.Native));
     private void ThemeFailed(Exception exception) => QueueThemeUpdate(() => { _themeError = exception.Message; return Task.CompletedTask; });
     private void ThemePersistenceRequested(CliThemeSettings settings) => QueueThemeUpdate(async () =>
     {

@@ -106,7 +106,8 @@ public sealed class TuiLayoutEngine
     {
         if (node.Height is int height) return Math.Max(0, height);
         if (node.TagName == "input") return Math.Min(node.MaxHeight, InputLayout(node, Math.Max(1, width)).Lines.Count);
-        if (node.TagName is "text" or "#text") return Math.Max(1, checked((int)TextView(node).Measure(Math.Max(1, width)).LineCount));
+        if (node.TagName is "text" or "#text") return Math.Min(node.TextMaxHeight ?? int.MaxValue,
+            Math.Max(1, checked((int)TextView(node).Measure(Math.Max(1, width)).LineCount)));
         var inset = node.BorderStyle is null or "left" ? 0 : 2;
         var inner = Math.Max(1, Cells((long)width - node.PaddingLeft - node.PaddingRight - (node.BorderStyle == "left" ? 1 : inset)));
         var content = node.Direction == TuiFlexDirection.Column
@@ -301,6 +302,11 @@ public sealed class TuiLayoutEngine
             }
             var selectionFg = node.SelectionForeground ?? Colors.SelectionForeground;
             var selectionBg = node.SelectionBackground ?? Colors.SelectionBackground;
+            // The ancestor canvas is already painted. OpenTUI text/textarea
+            // defaults are transparent unless this view supplies its own bg.
+            // Passing the inherited canvas as an opaque text default changes
+            // native selection inversion (and styled-run background composition).
+            var textBackground = node.Bg ?? new NativeRgba(0, 0, 0, 0);
             if (node.BorderStyle is not null)
             {
                 // Native side flags: left=1, bottom=2, right=4, top=8.
@@ -339,10 +345,10 @@ public sealed class TuiLayoutEngine
                 node.InputTop = Math.Min(node.InputTop, Math.Max(0, input.Lines.Count - node.LayoutHeight));
                 var view = TextView(node);
                 var attributes = (node.Bold ? 1u : 0) | (node.Dim ? 2u : 0);
-                if (!Nullable.Equals(node.NativeForeground, fg) || !Nullable.Equals(node.NativeBackground, bg) || node.NativeAttributes != attributes)
+                if (!Nullable.Equals(node.NativeForeground, fg) || !Nullable.Equals(node.NativeBackground, textBackground) || node.NativeAttributes != attributes)
                 {
-                    view.SetStyle(fg, bg, attributes);
-                    node.NativeForeground = fg; node.NativeBackground = bg; node.NativeAttributes = attributes;
+                    view.SetStyle(fg, textBackground, attributes);
+                    node.NativeForeground = fg; node.NativeBackground = textBackground; node.NativeAttributes = attributes;
                 }
                 if (node.NativeViewportTop != node.InputTop || node.NativeViewportWidth != node.LayoutWidth || node.NativeViewportHeight != node.LayoutHeight)
                 {
@@ -386,11 +392,11 @@ public sealed class TuiLayoutEngine
                 }
                 var view = SelectionView(node);
                 var attributes = (node.Bold ? 1u : 0) | (node.Dim ? 2u : 0);
-                if (!Nullable.Equals(node.NativeForeground, fg) || !Nullable.Equals(node.NativeBackground, bg) || node.NativeAttributes != attributes)
+                if (!Nullable.Equals(node.NativeForeground, fg) || !Nullable.Equals(node.NativeBackground, textBackground) || node.NativeAttributes != attributes)
                 {
-                    view.SetStyle(fg, bg, attributes);
+                    view.SetStyle(fg, textBackground, attributes);
                     node.NativeForeground = fg;
-                    node.NativeBackground = bg;
+                    node.NativeBackground = textBackground;
                     node.NativeAttributes = attributes;
                 }
                 // Selection and paint share this exact viewport. Ancestor scissor

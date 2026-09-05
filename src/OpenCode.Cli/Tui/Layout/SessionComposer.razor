@@ -7,7 +7,7 @@
         @Attachments
         @if (Disabled)
         {
-            <TuiText Value="@(Value.Length == 0 ? "Ask anything…" : Value)" Fg="@Theme.Subdued" />
+            <TuiText Value="@(Value.Length == 0 ? "Ask anything…" : Value)" Fg="@Theme.Subdued" MaxHeight="@Math.Max(6, TerminalHeight / 3)" />
         }
         else
         {

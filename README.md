@@ -27,10 +27,11 @@
 - **Markdig, AngleSharp, and the official MCP SDK** — .NET libraries for Markdown, HTML processing, and Model Context Protocol integration.
 - **SQLite and durable events** — explicit transactions, ordered event history, projections, durable input admission, and restart-recovery markers.
 - **EF Core 11 + SQLite** — persistence mappings and queries preserve the source-owned schema/migration runner, immediate transactions, and named SQLite-specific operations. The source migration and owned analyzer review are complete; runtime database parity remains unverified. [Migration](docs/ef-core-migration.md)
+- **Meziantou.Analyzer** — enabled across owned source. The completed modernization checkpoint builds and packs without warning or error diagnostics, with source-compatible exceptions documented. [Analyzer review](docs/analyzer-migration.md)
 
-### Ecosystem migrations in progress
+### Modernization checkpoint
 
-- **Meziantou.Analyzer** — compile-time quality checks and a full diagnostic cleanup, coordinated with the persistence migration.
+- The selected migrations have a clean, independently exported source/build/package checkpoint. This does not establish runtime or full-port parity.
 - Marten, Fisher, and Wolverine are **not part of the selected persistence stack**.
 
 [Modernization status and completion order](docs/modernization-status.md)

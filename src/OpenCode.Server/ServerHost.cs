@@ -342,6 +342,10 @@ public static class ServerHost
         app.MapProjectEndpoints();
         app.MapWorktreeEndpoints();
         app.MapNativeOpenApi();
+        // Materialize bindings before listener registration/ready publication. A
+        // malformed endpoint must not turn every request, including health, into 500.
+        diagnostics.Phase("routes");
+        foreach (var source in ((IEndpointRouteBuilder)app).DataSources) _ = source.Endpoints;
         return app;
     }
 

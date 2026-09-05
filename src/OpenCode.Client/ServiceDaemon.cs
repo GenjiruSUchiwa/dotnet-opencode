@@ -331,7 +331,12 @@ public static class ServiceDaemon
             using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 return new(null, new ServiceLifecycleException(ServiceFailure.Unauthorized, "The server rejected the supplied service credentials.", "Verify the endpoint and its credentials. Do not delete registration to force replacement."));
-            var health = await response.Content.ReadFromJsonAsync<ServiceIdentityHealth>(ct).ConfigureAwait(false);
+            ServiceIdentityHealth? health;
+            try { health = await response.Content.ReadFromJsonAsync<ServiceIdentityHealth>(ct).ConfigureAwait(false); }
+            catch (JsonException)
+            {
+                return InvalidIdentity($"The health endpoint returned HTTP {(int)response.StatusCode} with an empty or invalid health response.");
+            }
             if (health is not { Healthy: true, Pid: >= 0 } || string.IsNullOrWhiteSpace(health.Version)
                 || (health.BuildId is not null && !IsBuildId(health.BuildId))
                 || (info is not null && (health.Application != Application || health.Channel != OpenCodeChannel.Name
@@ -362,8 +367,8 @@ public static class ServiceDaemon
         }
     }
 
-    private static ProbeResult InvalidIdentity() => new(null, new ServiceLifecycleException(ServiceFailure.InvalidIdentity,
-        "The health response does not match the expected service identity or protocol.", "Verify the server URL, registration, and protocol version. Refusing automatic replacement."));
+    private static ProbeResult InvalidIdentity(string? reason = null) => new(null, new ServiceLifecycleException(ServiceFailure.InvalidIdentity,
+        reason ?? "The health response does not match the expected service identity or protocol.", "Verify the server URL, registration, and protocol version. Refusing automatic replacement."));
 
     private sealed record ProbeResult(ServiceStatus? Status, ServiceLifecycleException? Error);
     private static bool IsBuildId(string value) => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');

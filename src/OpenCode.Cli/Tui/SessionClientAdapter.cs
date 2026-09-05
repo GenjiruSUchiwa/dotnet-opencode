@@ -1146,7 +1146,7 @@ public sealed partial class SessionClientAdapter : IAsyncDisposable
             && payload.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String)
             return payload.TryGetProperty("ref", out var reference) && reference.ValueKind == JsonValueKind.String
                 ? $"{message.GetString()} Reference: {reference.GetString()}." : message.GetString()!;
-        if (exception is ServiceLifecycleException lifecycle) return $"{lifecycle.Message} {lifecycle.Action}";
+        if (exception is ServiceLifecycleException lifecycle) return lifecycle.Message;
         return exception.Message;
     }
 

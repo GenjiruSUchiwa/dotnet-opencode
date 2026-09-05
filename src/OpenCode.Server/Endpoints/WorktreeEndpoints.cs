@@ -1,6 +1,7 @@
 namespace OpenCode.Server.Endpoints;
 
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using OpenCode.Core.Worktrees;
 using OpenCode.Protocol.Groups;
 using OpenCode.Schema;
@@ -26,7 +27,7 @@ public static class WorktreeEndpoints
         routes.MapPost("", async (string projectID, WorktreeCreatePayload input, WorktreeService worktrees, CancellationToken ct) =>
             Results.Json(await worktrees.CreateAsync(new WorktreeCreateInput(ProjectId.FromExisting(projectID), input.Strategy, input.Directory,
                 input.From, input.Branch, input.Name), ct), WorktreeProtocolJsonContext.Default.WorktreeInfo));
-        routes.MapDelete("", async (string projectID, WorktreeRemovePayload input, WorktreeService worktrees, CancellationToken ct) =>
+        routes.MapDelete("", async (string projectID, [FromBody] WorktreeRemovePayload input, WorktreeService worktrees, CancellationToken ct) =>
         {
             await worktrees.RemoveAsync(new WorktreeRemoveInput(ProjectId.FromExisting(projectID), input.Directory, input.Force), ct);
             return Results.NoContent();

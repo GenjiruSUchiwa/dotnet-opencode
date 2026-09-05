@@ -40,12 +40,16 @@ public sealed class ReadInstructionDiscovery
                 if (Same(current, root)) break;
             }
             if (candidates.Count != 0) await _load(session, candidates.AsReadOnly(), ct).ConfigureAwait(true);
+            ct.ThrowIfCancellationRequested();
         }
-        catch (Exception error) when (error is not OperationCanceledException)
+        catch (Exception error) when (error is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             // The source makes discovery/load failures best effort after a successful read, including defects.
             // Missing loader wiring is instead rejected at construction, before the file can be read.
             Trace.TraceWarning("Read instruction discovery failed for {0}: {1}", target.Absolute, error.Message);
+            // A loader's own timeout is best effort, not cancellation of this read. An
+            // actual caller interruption still wins if discovery failed while it arrived.
+            ct.ThrowIfCancellationRequested();
         }
     }
 

@@ -46,52 +46,67 @@ public sealed class EditTool(ToolFilePolicy? policy = null, IToolFileMutation? m
             throw new ToolExecutionException("oldString must not be empty. Use write to create or overwrite a file.");
         if (policy is null || mutation is null)
             throw new NotSupportedException("edit requires Location, permission and file mutation services.");
-        var target = await policy.ResolveAsync(path, ToolPathKind.File, context, ct).ConfigureAwait(true);
-        var transaction = await mutation.LockAsync(target.Absolute, ct).ConfigureAwait(true);
-        await using var transactionLifetime = transaction.ConfigureAwait(true);
-
-        var original = await transaction.ReadAsync(ct).ConfigureAwait(true) ?? throw new ToolExecutionException($"File not found: {path}");
-        var text = original.Text;
-        var ending = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-        oldString = oldString.Replace("\r\n", "\n").Replace("\n", ending);
-        newString = newString.Replace("\r\n", "\n").Replace("\n", ending);
-        var matches = Occurrences(text, oldString);
-        if (matches.Count == 0) matches = Occurrences(Normalize(text), Normalize(oldString));
-        if (matches.Count == 0) matches = LineOccurrences(text, oldString);
-        var count = matches.Count;
-        var selected = replaceAll ? matches : matches.Take(1).ToList();
-        var length = text.Length + selected.Sum(match => (long)newString.Length - (match.End - match.Start));
-        if (length > mutation.MaximumBytes)
-            throw new ToolExecutionException($"Edited content exceeds the configured {mutation.MaximumBytes} byte limit.");
-        var replacement = new StringBuilder((int)length);
-        var position = 0;
-        foreach (var match in selected)
+        try
         {
-            replacement.Append(text.AsSpan(position, match.Start - position)).Append(newString);
-            position = match.End;
-        }
-        var updatedText = replacement.Append(text.AsSpan(position)).ToString();
-        if (Encoding.UTF8.GetByteCount(updatedText) > mutation.MaximumBytes)
-            throw new ToolExecutionException($"Edited content exceeds the configured {mutation.MaximumBytes} byte limit.");
-        var preview = count > 0 && (count == 1 || replaceAll)
-            ? mutation.Diff(target.Resource, text, updatedText, FileDiffStatus.Modified) : null;
-        await policy.AssertAsync("edit", [target.Resource], ["*"], context,
-            preview is null ? null : new Dictionary<string, object> { ["files"] = new[] { preview } }, ct).ConfigureAwait(true);
+            var target = await policy.ResolveAsync(path, ToolPathKind.File, context, ct).ConfigureAwait(true);
+            var transaction = await mutation.LockAsync(target.Absolute, ct).ConfigureAwait(true);
+            await using var transactionLifetime = transaction.ConfigureAwait(true);
 
-        if (count == 0)
+            ToolFileSnapshot original;
+            try
+            {
+                original = await transaction.ReadAsync(ct).ConfigureAwait(true) ?? throw new ToolExecutionException($"File not found: {path}");
+            }
+            catch (ToolFileIsDirectoryException error)
+            {
+                ct.ThrowIfCancellationRequested();
+                throw new ToolExecutionException($"Path is a directory, not a file: {path}", error);
+            }
+            var text = original.Text;
+            var ending = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            oldString = oldString.Replace("\r\n", "\n").Replace("\n", ending);
+            newString = newString.Replace("\r\n", "\n").Replace("\n", ending);
+            var matches = Occurrences(text, oldString);
+            if (matches.Count == 0) matches = Occurrences(Normalize(text), Normalize(oldString));
+            if (matches.Count == 0) matches = LineOccurrences(text, oldString);
+            var count = matches.Count;
+            var selected = replaceAll ? matches : matches.Take(1).ToList();
+            var length = text.Length + selected.Sum(match => (long)newString.Length - (match.End - match.Start));
+            if (length > mutation.MaximumBytes)
+                throw new ToolExecutionException($"Edited content exceeds the configured {mutation.MaximumBytes} byte limit.");
+            var replacement = new StringBuilder((int)length);
+            var position = 0;
+            foreach (var match in selected)
+            {
+                replacement.Append(text.AsSpan(position, match.Start - position)).Append(newString);
+                position = match.End;
+            }
+            var updatedText = replacement.Append(text.AsSpan(position)).ToString();
+            if (Encoding.UTF8.GetByteCount(updatedText) > mutation.MaximumBytes)
+                throw new ToolExecutionException($"Edited content exceeds the configured {mutation.MaximumBytes} byte limit.");
+            var preview = count > 0 && (count == 1 || replaceAll)
+                ? mutation.Diff(target.Resource, text, updatedText, FileDiffStatus.Modified) : null;
+            await policy.AssertAsync("edit", [target.Resource], ["*"], context,
+                preview is null ? null : new Dictionary<string, object> { ["files"] = new[] { preview } }, ct).ConfigureAwait(true);
+
+            if (count == 0)
+                throw new ToolExecutionException($"Could not find oldString in {path}. It must match exactly, including whitespace and indentation.");
+            if (count > 1 && !replaceAll)
+                throw new ToolExecutionException($"Found {count} matches for oldString, but expected exactly one. Add more surrounding context to make oldString unique, or set replaceAll to true to replace every occurrence.");
+
+            var formatted = await transaction.WriteTextAsync(updatedText, ct).ConfigureAwait(true);
+            // Settle the admitted mutation first; cancellation must not expose a completed
+            // model result or abandon formatter/BOM cleanup under the transaction lock.
+            ct.ThrowIfCancellationRequested();
+            var files = new[] { mutation.Diff(target.Resource, text, formatted, FileDiffStatus.Modified) };
+            return new ToolExecutionResult($"Edited {target.Resource} ({count} replacement{(count == 1 ? "" : "s")})",
+                new { files, replacements = count }, new Dictionary<string, object> { ["files"] = files });
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
-            throw new ToolExecutionException($"Could not find oldString in {path}. It must match exactly, including whitespace and indentation.");
+            ct.ThrowIfCancellationRequested();
+            throw new ToolExecutionException($"Unable to edit {path}", error);
         }
-
-        if (count > 1 && !replaceAll)
-        {
-            throw new ToolExecutionException($"Found {count} matches for oldString, but expected exactly one. Add more surrounding context to make oldString unique, or set replaceAll to true to replace every occurrence.");
-        }
-
-        var formatted = await transaction.WriteTextAsync(updatedText, ct).ConfigureAwait(true);
-        var files = new[] { mutation.Diff(target.Resource, text, formatted, FileDiffStatus.Modified) };
-        return new ToolExecutionResult($"Edited {target.Resource} ({count} replacement{(count == 1 ? "" : "s")})",
-            new { files, replacements = count }, new Dictionary<string, object> { ["files"] = files });
     }
 
     private readonly record struct Match(int Start, int End);

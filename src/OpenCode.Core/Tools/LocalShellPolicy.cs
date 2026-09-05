@@ -58,16 +58,21 @@ public sealed class LocalShellPolicy(LocalToolLocation location, IToolPermission
                     ? item.Resource.IndexOfAny(['*', '?']) < 0 ? item.Resource : null
                     : ShellCommandPrefix.Grant(item)).OfType<string>().ToArray(), context, null, ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
-        if (!Directory.Exists(target.Absolute)) throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
+        if (!Directory.Exists(target.Absolute))
+        {
+            if (File.Exists(target.Absolute)) throw new ToolExecutionException($"Working directory is not a directory: {target.Absolute}");
+            throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
+        }
         if (!File.Exists(shell)) throw new FileNotFoundException("Selected shell no longer exists.", shell);
         return new(shell, powershell ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command], target.Absolute);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Preserve the shell configuration error exposed by model/API callers without a CLR parameter suffix.")]
     private string Select()
     {
         if (executable is not null)
         {
-            if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.", nameof(executable));
+            if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.");
             return Require(executable);
         }
         var configured = ConfigLoader.LoadDocument(directory: location.Directory)["shell"]?.GetValue<string>();

@@ -26,7 +26,9 @@ internal static class SkillSources
         {
             RequireLocal([source]);
             var expanded = source.StartsWith("~/", StringComparison.Ordinal) ? Path.Combine(home, source[2..]) : source;
-            roots.Add(Path.IsPathRooted(expanded) ? expanded : Path.Combine(location, expanded));
+            // Source path.join normalizes relative entries before Source.equals deduplicates
+            // them. A later alias such as skills/. must not override an intervening source.
+            roots.Add(Path.IsPathRooted(expanded) ? expanded : Path.GetFullPath(Path.Combine(location, expanded)));
         }
         var skills = new Dictionary<string, SkillInfo>(StringComparer.Ordinal);
         try
@@ -125,7 +127,9 @@ internal static class SkillSources
     {
         if (value is not IDictionary<object, object?> map || !map.TryGetValue(key, out var field)) return null;
         if (field is bool boolean) return boolean;
-        return field is string text ? text.Trim().ToLowerInvariant() switch { "true" => true, "false" => false, _ => null } : null;
+        // Match JS trim (including BOM, excluding .NET's U+0085) for metadata flags.
+        const string whitespace = "\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF";
+        return field is string text ? text.Trim(whitespace.ToCharArray()).ToLowerInvariant() switch { "true" => true, "false" => false, _ => null } : null;
     }
 
     private static IReadOnlyList<string> Files(string root, CancellationToken ct)

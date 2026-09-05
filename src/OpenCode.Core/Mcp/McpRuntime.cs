@@ -267,7 +267,9 @@ public sealed partial class McpRuntime : IAsyncDisposable
                     args.EnumerateObject().ToDictionary(property => property.Name, property => (object?)property.Value.Clone()),
                     options: new() { Meta = new JsonObject { ["sessionID"] = context.SessionId.Value } }, cancellationToken: execution.Token).ConfigureAwait(true);
             }
-            catch (Exception error) when (error is ModelContextProtocol.McpException or HttpRequestException or IOException or McpServerNotFoundException or McpNotConnectedException or McpOAuthRequiredException)
+            catch (McpServerNotFoundException error)
+            { throw new ToolExecutionException($"MCP server \"{error.Server}\" is not available", error); }
+            catch (Exception error) when (error is ModelContextProtocol.McpException or HttpRequestException or IOException or McpNotConnectedException or McpOAuthRequiredException)
             { throw new ToolExecutionException(error.Message, error); }
             catch (OperationCanceledException error) when (!ct.IsCancellationRequested && execution.IsCancellationRequested)
             { throw new ToolExecutionException("MCP tool execution timed out", error); }
@@ -306,18 +308,47 @@ public sealed partial class McpRuntime : IAsyncDisposable
 
     public async Task<GetPromptResult> PromptAsync(string server, string name, IReadOnlyDictionary<string, object?>? arguments = null, CancellationToken ct = default)
     {
-        var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
-        using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
-        return await entry.Client.GetPromptAsync(name, arguments, cancellationToken: timeout.Token).ConfigureAwait(false);
+        try
+        {
+            var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
+            using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
+            var result = await entry.Client.GetPromptAsync(name, arguments, cancellationToken: timeout.Token).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { throw new McpPromptNotFoundException(server, name); }
+        catch (Exception error) when (error is McpNotConnectedException or ModelContextProtocol.McpException or HttpRequestException or IOException or JsonException)
+        {
+            ct.ThrowIfCancellationRequested();
+            // Source MCP.prompt drops request failures; its actual command consumer then
+            // reports this exact missing-prompt error. Keep the non-null native API and do
+            // not return empty messages that CommandRuntime could admit as a new prompt.
+            throw new McpPromptNotFoundException(server, name);
+        }
     }
 
-    public async Task<ReadResourceResult> ReadResourceAsync(string server, string uri, CancellationToken ct = default)
+    /// <summary>Source MCP.readResource: null means no available resource result, not a successful empty contents list.</summary>
+    public async Task<ReadResourceResult?> ReadResourceAsync(string server, string uri, CancellationToken ct = default)
     {
-        var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
-        using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
-        return await entry.Client.ReadResourceAsync(uri, cancellationToken: timeout.Token).ConfigureAwait(false);
+        try
+        {
+            var entry = await ConnectedAsync(server, ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            if (entry.Client.ServerCapabilities.Resources is null) return null;
+            using var timeout = _registry.Clock.CreateLinkedCancellationTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromMilliseconds(Timeout(entry.Config)?.Execution ?? 43_200_000));
+            var result = await entry.Client.ReadResourceAsync(uri, cancellationToken: timeout.Token).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return null; }
+        catch (Exception error) when (error is McpNotConnectedException or ModelContextProtocol.McpException or HttpRequestException or IOException or JsonException)
+        {
+            ct.ThrowIfCancellationRequested();
+            return null;
+        }
     }
 
     private static bool CodeMode(McpServerConfig config) => config switch { McpLocalConfig local => local.CodeMode != false, McpRemoteConfig remote => remote.CodeMode != false, _ => true };

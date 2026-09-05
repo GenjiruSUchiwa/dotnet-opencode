@@ -53,12 +53,16 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
             output = await ReadLocalAsync(target, offset, limit,
                 input.TryGetProperty("offset", out _) || input.TryGetProperty("limit", out _), ct).ConfigureAwait(true);
         }
-        catch (FileNotFoundException error) { throw new ToolExecutionException($"File not found: {path}", error); }
-        catch (DirectoryNotFoundException error) { throw new ToolExecutionException($"File not found: {path}", error); }
-        catch (IOException error) { throw new ToolExecutionException($"Unable to read {path}: {error.Message}", error); }
-        catch (UnauthorizedAccessException error) { throw new ToolExecutionException($"Unable to read {path}: {error.Message}", error); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+        { throw Missing(path, target.Absolute, error, ct); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            ct.ThrowIfCancellationRequested();
+            throw new ToolExecutionException($"Unable to read {path}", error);
+        }
 
         await instructions.AfterReadAsync(context.SessionId, target, output is ToolReadListPage, ct).ConfigureAwait(true);
+        ct.ThrowIfCancellationRequested();
 
         if (output is ToolReadFile { Encoding: "base64" } media)
             return new ToolExecutionResult
@@ -83,6 +87,26 @@ public sealed class ReadTool(ToolFilePolicy? policy = null, ReadInstructionDisco
         foreach (var line in lines.Select((value, index) => $"{(long)start + index}: {value}")) rendered.Append('\n').Append(line);
         if (output is ToolReadTextPage { Next: { } continuation }) rendered.Append(System.Globalization.CultureInfo.InvariantCulture, $"\n[Output truncated. Continue reading with offset: {continuation}]");
         return new(rendered.ToString(), output, new Dictionary<string, object> { ["truncated"] = output is ToolReadTextPage { Truncated: true } });
+    }
+
+    private static ToolExecutionException Missing(string path, string absolute, Exception cause, CancellationToken ct)
+    {
+        var suggestions = new List<string>();
+        try
+        {
+            var name = Path.GetFileName(path).ToLowerInvariant();
+            foreach (var entry in Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(absolute)!))
+            {
+                ct.ThrowIfCancellationRequested();
+                var candidate = Path.GetFileName(entry).ToLowerInvariant();
+                if (!candidate.Contains(name, StringComparison.Ordinal) && !name.Contains(candidate, StringComparison.Ordinal)) continue;
+                suggestions.Add(Path.Combine(Path.GetDirectoryName(path) ?? "", Path.GetFileName(entry)));
+                if (suggestions.Count == 3) break;
+            }
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { suggestions.Clear(); }
+        ct.ThrowIfCancellationRequested();
+        return new ToolExecutionException($"File not found: {path}" + (suggestions.Count == 0 ? "" : "\n\nDid you mean one of these?\n" + string.Join('\n', suggestions)), cause);
     }
 
     private static async Task<object> ReadLocalAsync(ToolPath target, int offset, int limit, bool explicitPage, CancellationToken ct)

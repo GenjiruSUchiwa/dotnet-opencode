@@ -22,6 +22,9 @@ public sealed class McpNotConnectedException(string server) : InvalidOperationEx
     public string Server { get; } = server;
 }
 
+/// <summary>Command-facing form of the source MCP.prompt undefined result. Never substitute an empty prompt.</summary>
+public sealed class McpPromptNotFoundException(string server, string name) : Exception($"MCP prompt not found: {server}:{name}");
+
 public sealed partial class McpRuntime
 {
     private McpConfiguration _configuration = new();

@@ -48,6 +48,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
         public bool Removed;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Preserve the existing shell setup failure text without a CLR-only parameter suffix.")]
     public ShellRuntime(LocationRef location, string outputDirectory,
         Func<ShellCreateInput, CancellationToken, Task<PreparedToolShell>> prepareUser,
         Func<CancellationToken, Task> beforeCreate,
@@ -55,7 +56,7 @@ public sealed partial class ShellRuntime : IAsyncDisposable
     {
         Clock = clock ?? TimeProvider.System;
         if (location.WorkspaceId is not null) throw new NotSupportedException("Native shell processes support implicit-local Locations only.");
-        if (!Path.IsPathFullyQualified(outputDirectory)) throw new ArgumentException("Shell output directory must be absolute.", nameof(outputDirectory));
+        if (!Path.IsPathFullyQualified(outputDirectory)) throw new ArgumentException("Shell output directory must be absolute.");
         _location = location;
         _directory = outputDirectory;
         _prepareUser = prepareUser;
@@ -101,11 +102,12 @@ public sealed partial class ShellRuntime : IAsyncDisposable
             .ToDictionary(item => (string)item.Key, item => (string)item.Value!, StringComparer.Ordinal);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "The prepared-shell failure crosses model/API boundaries; retain its original text and exception class.")]
     private async Task<ShellInfo> StartAsync(ShellCreateInput input, PreparedToolShell prepared, IReadOnlyDictionary<string, string>? environment, CancellationToken ct)
     {
         var duration = Duration(input.Timeout);
         if (!Path.IsPathFullyQualified(prepared.Executable) || !Path.IsPathFullyQualified(prepared.WorkingDirectory))
-            throw new ArgumentException("Prepared shell executable and working directory must be absolute.", nameof(prepared));
+            throw new ArgumentException("Prepared shell executable and working directory must be absolute.");
         await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {

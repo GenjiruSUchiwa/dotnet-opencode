@@ -215,3 +215,107 @@ The Core build's remaining diagnostics are outside ownership:
 The Server build was incremental and reused that compiled Core/Schema output; its zero emitted warnings is not a separate clean rebuild claim for the whole graph. Earlier `build-final-core.log` also saw `Forms/FormService.cs:68:22` MA0004 and `Reference/ReferenceSources.cs:23:46` MA0009; those were cleared by other owners before the final integration build.
 
 Supporting source-only diagnostic manifests and await review are in the same artifact directory. No tests were added, edited, or run. No app/CLI/SDK/DI/EF model/DB/SQL/migration/native/WASM/codec/clipboard/provider/MCP/PTY/process runtime verification, production data/credential reads, Git operation, publication, global install, or delegation was performed. Source inspection and compilation do not establish runtime interoperability.
+
+## Pass 2 — whole-flow parity follow-up
+
+### Outcome and scope
+
+Pass 2 is implemented and frozen for the next parent push. It changes only the assigned Core paths and this appended report. Core and Server builds pass with **0 warnings and 0 errors**. No new dependency, package/project setting, generated asset, persistence/query implementation, or other package was changed.
+
+The pass-1 `WebSearchToolBinding`, shared-runtime eligibility semantics, non-recursive direct ServerReady callback contract, and `dotnet-opencode` User-Agent behavior are unchanged. This pass received no network confirmation that changes the Server glue status, so it does not revise that handoff or claim the callback was mounted.
+
+### Read, write, and edit: results, errors, and cleanup
+
+Source references: `packages/core/src/tool/plugin/{read,write,edit}.ts`, `tool/read-filesystem.ts`, `file-mutation.ts`, and `packages/util/src/bom.ts`.
+
+- **Read instruction cancellation:** discovery/load still occurs only after a successful authorized read, skips external reads, excludes Location-root instructions, and calls the existing Session-owned durable loader. A loader's own cancelled operation/timeout no longer cancels a read whose caller token remains active; it is best effort like the source. Actual caller interruption propagates, including cancellation arriving while discovery fails or while the loader ignores its token. No second instruction ledger, inbox admission, synthetic-message writer, or empty-prompt workaround was added.
+- **Missing-file suggestions:** after the normal read/external-directory approval and an actual missing-path error, read now uses the source case-insensitive basename containment rule to offer at most three sibling suggestions. Directory failures remain best effort, cancellation is checked, and no extra read/discovery request is made. This is the production missing-read path, not a separate preview helper.
+- **Read failure text:** ordinary I/O/access failures now use source `Unable to read {inputPath}` instead of exposing OS-specific exception text in the model message. Existing explicit binary/media/offset failures and their messages remain intact.
+- **Write/edit failure conversion:** expected filesystem/access failures across resolution, locking, reading, writing, formatting, and async transaction disposal become declared `ToolExecutionException` failures. This lets the existing `ToolSnapshot` error hook and Session error settlement handle them instead of treating ordinary I/O errors as uncaught implementation defects. Source write/edit messages are `Unable to write {inputPath}` and `Unable to edit {inputPath}`. Programmer/contract faults and permission decline are not swept into a broad catch.
+- **Edit directory errors:** the local mutation reader now provides a typed `ToolFileIsDirectoryException` instead of requiring message parsing. The initial edit read maps it to source `Path is a directory, not a file: {inputPath}`. Later write/formatter failures still use the normal edit-failure path; they are not misreported as initial-read failures.
+- **Interruption settlement:** once an authorized mutation starts, the existing transaction continues its write, formatting, and BOM repair with its existing non-cancellable settlement token and retains its lock. Only after that settlement do write/edit recheck caller cancellation before building a successful tool result. Unwinding still awaits transaction disposal. There is no rollback claim, fabricated completion, early lock release, or cancellation token inserted into an already-admitted write.
+
+The source `write.ts:41–44`, `edit.ts:104–107`, and `file-mutation.ts:128–135` explicitly defer snapshot/undo, watcher, and LSP callbacks. They do not contain a current callback contract to port. This pass therefore does **not** invent one or call the separately owned Snapshot subsystem. BOM normalization already matches `Bom.split/join` (including stripping repeated leading BOMs and emitting at most one); it was reviewed and retained.
+
+### Shell lifecycle and permission boundary
+
+Source references: `packages/core/src/tool/plugin/shell.ts`, `shell.ts`, `shell/scan.ts`, and `shell/result.ts`.
+
+The scanned and explicitly limited literal shell policies now distinguish a file supplied as cwd from a missing cwd, using source `Working directory is not a directory: ...` for the former. This validation remains **after** scanning and permission approval and **before** process creation. It does not add an execution fallback or weaken dynamic executable/directory, wildcard-grant, redirect, or opaque-syntax guards.
+
+Foreground/background orchestration was reviewed through Job start, counted block, explicit background/promotion, cancellation, retained output, and completion admission. Existing behavior is retained:
+
+- one host-wide `JobRuntime`, with no duplicate process/job/subagent registry;
+- committed background identity before handing off ownership;
+- foreground promotion clears the timeout, while explicit background retains an explicitly supplied timeout;
+- progress/admission failure cleans up only the owned shell;
+- completion admission precedes durable marker removal;
+- missing capture is already an explicit failure in `ShellToolOutput.Completed`, not a completed empty-output result;
+- removed commands retain the source killed/unavailable-capture behavior.
+
+No shell/parser/evaluator/process was executed to assess this code. No grammar files were changed. Existing bounded scanner/platform limitations remain explicit.
+
+### MCP prompt, resource, and tool-error flow
+
+Source references: `packages/core/src/mcp/{client,index}.ts`, `tool/mcp.ts`, and `plugin/command.ts:55–79`.
+
+- Failed/disconnected prompt retrieval now reaches the existing native command consumer as the source error **`MCP prompt not found: {server}:{name}`**. The new `McpPromptNotFoundException` preserves the non-null command-facing API. It never returns an empty message list that the existing CommandRuntime could admit as a new prompt. Unknown-server errors remain distinct, and caller cancellation still propagates. No Commands or Server file was edited.
+- `McpRuntime.ReadResourceAsync` now explicitly returns `Task<ReadResourceResult?>`. As in the source, a known disconnected server, absent resources capability, expected request/decoding failure, or operation-local timeout produces **null**, not a successful empty `contents` result. Unknown-server errors and real caller interruption remain errors. No wire Schema/Protocol was changed; consumers of this Core method must distinguish absence from a resource result.
+- Captured MCP tool calls whose server was removed now use source **`MCP server "{server}" is not available`** rather than leaking the service-level lookup wording. Existing disconnected, timeout, declared MCP error, and structured-output validation paths remain separate.
+- Existing client ownership, hard operation timeouts, current-connection lookup, independent prompt/resource catalog refresh, and catalog flush are preserved. No reconnect-on-call, duplicate MCP client, new provider credential, or auth forwarding was introduced.
+- Elicitation was reviewed: actual host Form callbacks, global owner, cancel-versus-answer conversion, URL completion correlation, explicit invalid-schema errors, and the source zero-field case remain intact. No automatic approval or replacement form registry was added.
+
+The nullable resource contract is intentional source parity. There were no other source-tree callers of that Core method to update. The prompt method retains its non-null signature because the real native command consumer already expects a concrete result or failure.
+
+### Local skill discovery and precedence
+
+Source references: `packages/core/src/config/plugin/{skill,skill-file}.ts` and `packages/schema/src/skill.ts`.
+
+- Configured **relative** directory sources are normalized like source `path.join` before first-occurrence source deduplication. Repeating an earlier relative source as `skills/.` can no longer rerun it after an intervening source and incorrectly override that later source. Configured-source order, first-source deduplication, later-skill-ID wins, and explicit absolute-source identity are otherwise unchanged.
+- `metadata["opencode/slash"]` and `metadata["opencode/autoinvoke"]` string booleans now use the source ECMAScript trim alphabet, including BOM and excluding .NET-only U+0085 whitespace. Metadata still takes precedence over the legacy slash flag. No textual boolean is invented for unsupported metadata types.
+- The existing local discovery forms, lexicographic file ordering, symlink cycle protection, YAML/frontmatter parsing, transient-unavailable observation, and guidance/load capability boundary remain intact.
+
+Remote skill pull and npm-backed formatter readiness remain unsupported. No dependency policy was changed and no Bun/Node application dependency was introduced. Any future installer/runtime policy needs a separate parent decision; explicitly configured external formatter commands retain their existing behavior.
+
+### Stable public errors and precise analyzer suppressions
+
+Pass 2 removes the pass-1 CLR parameter suffix additions from source-facing permission request, shell configuration, and literal-parser errors while retaining their original exception classes. MA0015 is suppressed only at the relevant methods, with contract-specific justifications:
+
+- `LocalShellPolicy.Select`;
+- `LocalLiteralShellPolicy.PrepareAsync` and `Parse`;
+- `ShellRuntime` constructor and `StartAsync`;
+- `PermissionService.Request`.
+
+There is no global suppression or changed analyzer severity. Other argument-identity fixes remain. Callback orchestration retains its reviewed explicit await context; no new broad `ConfigureAwait(false)` conversion was made.
+
+### Pass-2 files
+
+Relative to `src/OpenCode.Core/`:
+
+```text
+Tools/Builtins/ReadTool.cs
+Tools/Builtins/WriteTool.cs
+Tools/Builtins/EditTool.cs
+Tools/ReadInstructionDiscovery.cs
+Tools/LocalFileMutation.cs
+Tools/LocalShellPolicy.cs
+Tools/LocalLiteralShellPolicy.cs
+Mcp/McpRuntime.cs
+Mcp/McpRuntime.Operations.cs
+Skill/SkillSources.cs
+Shell/ShellRuntime.cs
+Permissions/PermissionService.cs
+```
+
+Only this pass-2 section was appended to the report. The three EF reservations and every other direct persistence/query/mapping file remain untouched. No Server, Schema/Protocol, project/global analyzer, central documentation, generated asset, or other owner's package was edited.
+
+### Pass-2 build verification
+
+Pinned SDK: `.dotnet/dotnet.exe`, `11.0.100-preview.7.26381.103`. Unique artifacts: `C:/tmp/opencode/tools-pass2-f945b861/`. Both builds use `OpenApiGenerateDocuments=false`:
+
+```powershell
+.\.dotnet\dotnet.exe build src\OpenCode.Core\OpenCode.Core.csproj --artifacts-path C:\tmp\opencode\tools-pass2-f945b861 --no-restore -p:OpenApiGenerateDocuments=false -v:minimal
+.\.dotnet\dotnet.exe build src\OpenCode.Server\OpenCode.Server.csproj --artifacts-path C:\tmp\opencode\tools-pass2-f945b861 --no-restore -p:OpenApiGenerateDocuments=false -v:minimal
+```
+
+Final logs: `core-final.log` and `server-final.log`, each **0 warnings / 0 errors**. Core compilation includes the complete owned area; Server is build-only consumer validation. No application, DI, EF model, API, DB/SQL, migration, parser/evaluator, native/WASM/codec, clipboard, provider/MCP/PTY, process, or other runtime probe was performed. No tests added/edited/run, production data/credentials, Git/staging/commit/push, installs/publication, or delegation. Compilation is not runtime interoperability verification.

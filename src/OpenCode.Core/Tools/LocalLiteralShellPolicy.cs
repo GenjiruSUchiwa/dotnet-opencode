@@ -8,9 +8,10 @@ using OpenCode.Schema;
 /// This is not a replacement for the source tree-sitter/portable scanner. Unsupported syntax fails before approval.</summary>
 public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPermission permission, string executable) : IToolShellPolicy
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Keep the existing model-facing shell configuration error text; the host executable is not a tool-input parameter.")]
     public async Task<PreparedToolShell> PrepareAsync(string command, string? workdir, ToolContext context, CancellationToken ct)
     {
-        if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.", nameof(executable));
+        if (!Path.IsPathFullyQualified(executable)) throw new ArgumentException("The host must supply an absolute shell executable.");
         var name = Path.GetFileNameWithoutExtension(executable).ToLowerInvariant();
         var powershell = name is "powershell" or "pwsh";
         if (!powershell && name is not ("bash" or "dash" or "ksh" or "sh" or "zsh"))
@@ -40,11 +41,16 @@ public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPer
             await permission.AssertAsync("shell", [command.Trim()], [ShellCommandPrefix.Save(words.Select(word => word.Raw).ToArray())], context, null, ct).ConfigureAwait(true);
         }
         ct.ThrowIfCancellationRequested();
-        if (!Directory.Exists(target.Absolute)) throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
+        if (!Directory.Exists(target.Absolute))
+        {
+            if (File.Exists(target.Absolute)) throw new ToolExecutionException($"Working directory is not a directory: {target.Absolute}");
+            throw new DirectoryNotFoundException($"Working directory does not exist: {target.Absolute}");
+        }
         if ((File.GetAttributes(executable) & FileAttributes.Directory) != (FileAttributes)0) throw new IOException("Selected shell is not a file.");
         return new(executable, powershell ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command] : ["-c", command], target.Absolute);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Preserve the existing literal-scanner failure text without appending a CLR parameter suffix.")]
     private static List<(string Raw, string Value)> Parse(string command, bool powershell)
     {
         var words = new List<(string Raw, string Value)>();
@@ -81,7 +87,7 @@ public sealed class LocalLiteralShellPolicy(LocalToolLocation location, IToolPer
                 else value.Append(character);
                 index++;
             }
-            if (quote != '\0') throw new ArgumentException("Unterminated shell quote.", nameof(command));
+            if (quote != '\0') throw new ArgumentException("Unterminated shell quote.");
             words.Add((command[start..index], value.ToString()));
         }
         if (words.Count == 0 || words[0].Value.Length == 0 || words[0].Raw != words[0].Value || words[0].Value.Contains('='))

@@ -4,6 +4,9 @@ using Transport;
 using System.Text;
 using OpenCode.Schema;
 
+/// <summary>Typed local counterpart of Environment.WrongKind, without parsing filesystem exception text.</summary>
+internal sealed class ToolFileIsDirectoryException(string path) : IOException($"Path is a directory, not a file: {path}");
+
 /// <summary>Local cooperating mutation transactions. Not an OS sandbox or an atomic transaction with external writers.</summary>
 public sealed class LocalFileMutation : IToolFileMutation
 {
@@ -117,7 +120,7 @@ public sealed class LocalFileMutation : IToolFileMutation
 
         private async Task<byte[]?> ReadBytesAsync(CancellationToken ct)
         {
-            if (Directory.Exists(path)) throw new IOException($"Path is a directory, not a file: {path}");
+            if (Directory.Exists(path)) throw new ToolFileIsDirectoryException(path);
             try
             {
                 var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);

@@ -230,19 +230,20 @@ public sealed class PermissionService : IToolPermission, IAsyncDisposable
             Metadata: metadata?.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value)),
             Source: new PermissionSource("tool", context.RequireMessageId().Value, context.CallId));
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Keep permission request-validation messages stable for model/API callers; do not append CLR parameter details.")]
     private static PermissionRequest Request(PermissionAskInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Action);
         ArgumentNullException.ThrowIfNull(input.Resources);
-        if (!input.SessionId.IsInitialized()) throw new ArgumentException("Session ID is required.", nameof(input));
-        if (input.Agent is { } agent && !agent.IsInitialized()) throw new ArgumentException("Agent ID must be a string.", nameof(input));
+        if (!input.SessionId.IsInitialized()) throw new ArgumentException("Session ID is required.");
+        if (input.Agent is { } agent && !agent.IsInitialized()) throw new ArgumentException("Agent ID must be a string.");
         if (input.Id is { } id && (!id.IsInitialized() || !id.Value.StartsWith("per", StringComparison.Ordinal)))
-            throw new ArgumentException("Permission ID must start with per.", nameof(input));
+            throw new ArgumentException("Permission ID must start with per.");
         if (input.Source is { } source && (source.Type != "tool" || source.MessageId is null || source.Id is null))
-            throw new ArgumentException("Permission source must be a tool source with messageID and id strings.", nameof(input));
+            throw new ArgumentException("Permission source must be a tool source with messageID and id strings.");
         if (input.Resources.Any(resource => resource is null) || input.Save?.Any(resource => resource is null) == true)
-            throw new ArgumentException("Permission resources must be strings.", nameof(input));
+            throw new ArgumentException("Permission resources must be strings.");
         return new(input.Id ?? PermissionId.Create(), input.SessionId, input.Action, Array.AsReadOnly(input.Resources.ToArray()),
             input.Save is null ? null : Array.AsReadOnly(input.Save.ToArray()),
             input.Metadata is null ? null : new ReadOnlyDictionary<string, JsonElement>(input.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value.Clone())),

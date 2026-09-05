@@ -43,30 +43,30 @@ internal static class ForkProjector
             _ => throw new JsonException("Unknown fork boundary.")
         };
         var boundarySeq = await transaction.Db.Messages.Where(row => row.session_id == data.ParentId.Value && row.id == boundaryId.Value)
-            .Select(row => (long?)row.seq).FirstOrDefaultAsync(ct) ?? throw new SessionForkMessageNotFoundException(data.ParentId, boundaryId);
+            .Select(row => (long?)row.seq).FirstOrDefaultAsync(ct).ConfigureAwait(true) ?? throw new SessionForkMessageNotFoundException(data.ParentId, boundaryId);
         var exclusive = data.Boundary is ForkBoundaryBefore;
         var copiedSeq = await transaction.Db.Messages.Where(row => row.session_id == data.ParentId.Value && (exclusive ? row.seq < boundarySeq : row.seq <= boundarySeq))
-            .MaxAsync(row => (long?)row.seq, ct);
-        var parent = await transaction.Db.Sessions.Where(row => row.id == data.ParentId.Value).Select(row => new { row.title }).FirstOrDefaultAsync(ct)
+            .MaxAsync(row => (long?)row.seq, ct).ConfigureAwait(true);
+        var parent = await transaction.Db.Sessions.Where(row => row.id == data.ParentId.Value).Select(row => new { row.title }).FirstOrDefaultAsync(ct).ConfigureAwait(true)
             ?? throw new SessionMutationNotFoundException(data.ParentId);
         var title = parent.title;
         if (title is not null)
         {
-            var match = Regex.Match(title, @"^(.+) \(fork #([0-9]+)\)$", RegexOptions.CultureInvariant);
+            var match = Regex.Match(title, @"^(?<title>.+) \(fork #(?<number>[0-9]+)\)$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
             title = match.Success
-                ? $"{match.Groups[1].Value} (fork #{BigInteger.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) + 1})"
+                ? $"{match.Groups["title"].Value} (fork #{BigInteger.Parse(match.Groups["number"].Value, CultureInfo.InvariantCulture) + 1})"
                 : $"{title} (fork #1)";
         }
         if (await SqliteIntrinsics.ForkSessionAsync(transaction.Db, data.SessionId.Value, data.ParentId.Value,
             JsonSerializer.Serialize(data.Boundary, OpenCodeJsonContext.Default.ForkBoundary),
-            $"{Adjectives[Random.Shared.Next(Adjectives.Length)]}-{Nouns[Random.Shared.Next(Nouns.Length)]}", title, committed.Created, ct) != 1)
+            $"{Adjectives[Random.Shared.Next(Adjectives.Length)]}-{Nouns[Random.Shared.Next(Nouns.Length)]}", title, committed.Created, ct).ConfigureAwait(true) != 1)
             throw new InvalidOperationException("Fork session was already projected or its parent is missing.");
 
         if (data.InstructionEntries is not null)
             foreach (var entry in data.InstructionEntries)
             {
                 await SqliteIntrinsics.ForkInstructionEntryAsync(transaction.Db, data.SessionId.Value, entry.Key,
-                    entry.Value.ValueKind == JsonValueKind.Null ? null : InstructionJson.Stringify(entry.Value), entry.Removed, committed.Created, ct);
+                    entry.Value.ValueKind == JsonValueKind.Null ? null : InstructionJson.Stringify(entry.Value), entry.Removed, committed.Created, ct).ConfigureAwait(true);
             }
 
         if (copiedSeq is { } last)
@@ -74,14 +74,14 @@ internal static class ForkProjector
             // This is the event's projection, not an independent clone operation.
             // Preserve seq gaps and embedded payload references; only the row ID changes.
             await SqliteIntrinsics.ForkMessagesAsync(transaction.Db, data.SessionId.Value, data.ParentId.Value,
-                "msg_" + committed.Id.Value[EventId.Prefix.Length..], last, ct);
+                "msg_" + committed.Id.Value[EventId.Prefix.Length..], last, ct).ConfigureAwait(true);
             // Reserve the selected high-water mark even when its message was unsettled.
-            await transaction.ReserveSequenceAsync(data.SessionId.Value, last, ct);
+            await transaction.ReserveSequenceAsync(data.SessionId.Value, last, ct).ConfigureAwait(true);
         }
         if (data.Instructions is not null)
         {
             await SqliteIntrinsics.ForkInstructionStateAsync(transaction.Db, data.SessionId.Value, checked((long)committed.Durable!.Seq),
-                JsonSerializer.Serialize(data.Instructions, TransferJsonContext.Default.IReadOnlyDictionaryStringString), ct);
+                JsonSerializer.Serialize(data.Instructions, TransferJsonContext.Default.IReadOnlyDictionaryStringString), ct).ConfigureAwait(true);
         }
     }
 }

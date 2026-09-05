@@ -1,6 +1,7 @@
 namespace OpenCode.Core.Session.Statistics;
 
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using OpenCode.Core.Persistence;
@@ -16,6 +17,7 @@ public sealed class SessionStatistics(IDatabase database)
 {
     private const double Window = 31d * 24 * 60 * 60 * 1000;
 
+    [SuppressMessage("Design", "MA0015", Justification = "Statistics validation messages and existing inferred field names are exposed by the API and must not gain new parameter suffixes during the persistence migration.")]
     public async Task<SessionStatsInfo> GetAsync(SessionStatisticsInput? input = null, CancellationToken ct = default)
     {
         input ??= new();
@@ -27,15 +29,17 @@ public sealed class SessionStatistics(IDatabase database)
         if (input.From is { } start && start >= to) throw new ArgumentException("Stats range must end after it starts");
         if (!Enum.IsDefined(input.Tools)) throw new ArgumentException("Unknown stats tools mode.");
         var endTime = Time(to);
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
         var project = input.ProjectId?.Value;
         var messages = db.Messages.Join(db.Sessions, message => message.session_id, session => session.id,
             (message, session) => new { Message = message, Session = session })
             .Where(row => (row.Message.type == "user" || row.Message.type == "assistant")
                 && (row.Session.fork_session_id == null || row.Message.time_created >= row.Session.time_created)
                 && (project == null || row.Session.project_id == project));
-        var earliest = input.From is null ? await messages.Where(row => row.Message.time_created < to)
+        var earliest = input.From is null ? await messages.Where(row => SqliteFunctions.Before(row.Message.time_created, to))
             .MinAsync(row => (double?)row.Message.time_created, ct).ConfigureAwait(false) : null;
         var from = input.From ?? earliest ?? to;
         var startTime = Time(from);
@@ -52,14 +56,14 @@ public sealed class SessionStatistics(IDatabase database)
         {
             ct.ThrowIfCancellationRequested();
             var upper = Math.Min(to, lower + Window);
-            var rows = await messages.Where(row => row.Message.time_created >= lower && row.Message.time_created < upper)
+            var rows = messages.Where(row => SqliteFunctions.AtOrAfter(row.Message.time_created, lower) && SqliteFunctions.Before(row.Message.time_created, upper))
                 .Select(row => new { row.Message.session_id, row.Session.parent_id, row.Message.type, Created = (double)row.Message.time_created,
                     Provider = SqliteFunctions.JsonText(row.Message.data, "$.model.providerID"), Model = SqliteFunctions.JsonText(row.Message.data, "$.model.id"),
                     Variant = SqliteFunctions.JsonText(row.Message.data, "$.model.variant"), Input = SqliteFunctions.JsonNumber(row.Message.data, "$.tokens.input"),
                     Output = SqliteFunctions.JsonNumber(row.Message.data, "$.tokens.output"), Reasoning = SqliteFunctions.JsonNumber(row.Message.data, "$.tokens.reasoning"),
                     Read = SqliteFunctions.JsonNumber(row.Message.data, "$.tokens.cache.read"), Write = SqliteFunctions.JsonNumber(row.Message.data, "$.tokens.cache.write"),
-                    Cost = SqliteFunctions.JsonNumber(row.Message.data, "$.cost") }).ToListAsync(ct).ConfigureAwait(false);
-            foreach (var row in rows)
+                    Cost = SqliteFunctions.JsonNumber(row.Message.data, "$.cost") });
+            await foreach (var row in rows.ReadAsync(-1, ct).ConfigureAwait(false))
             {
                 (row.parent_id is null ? sessions : subagents).Add(row.session_id);
                 if (row.type == "user")
@@ -119,14 +123,14 @@ public sealed class SessionStatistics(IDatabase database)
         {
             // Intentional source compatibility: stats.ts queries the unversioned
             // definition.Type, although the writer stores version-suffixed types.
-            var rows = await db.Events.Where(row => batch.Contains(row.aggregate_id) && row.type == eventType
+            var rows = db.Events.Where(row => batch.Contains(row.aggregate_id) && row.type == eventType
                 && SqliteFunctions.JsonText(row.data, "$.source") == "compaction" && row.created >= from && row.created < to)
-                .Select(row => row.data).ToListAsync(ct).ConfigureAwait(false);
-            foreach (var row in rows)
-                {
-                    var usage = DecodeUsage(row);
-                    if (usage is not null) totals.Add(usage.Tokens, usage.Cost.Amount);
-                }
+                .Select(row => row.data);
+            await foreach (var row in rows.ReadAsync(-1, ct).ConfigureAwait(false))
+            {
+                var usage = DecodeUsage(row);
+                if (usage is not null) totals.Add(usage.Tokens, usage.Cost.Amount);
+            }
         }
         var streak = 0;
         var current = 0;
@@ -150,12 +154,14 @@ public sealed class SessionStatistics(IDatabase database)
                 model.Steps, model.Usage.Tokens, Money.FromExisting(model.Usage.Cost))).ToArray(), toolResult);
     }
 
+    [SuppressMessage("Design", "MA0015", Justification = "Preserve the existing source-compatible calendar-range error text.")]
     private static DateTimeOffset Time(double value)
     {
         if (!double.IsFinite(value) || value < -62135596800000d || value >= 253402300800000d)
             throw new ArgumentException("Stats timestamps exceed the supported .NET calendar range (years 1–9999).");
         return DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Truncate(value));
     }
+    [SuppressMessage("Design", "MA0015", Justification = "Preserve timezone validation messages and exception causes rather than appending a new parameter suffix.")]
     private static TimeZoneInfo Zone(string id)
     {
         if (id != "UTC" && !TimeZoneInfo.TryConvertIanaIdToWindowsId(id, out _)) throw new ArgumentException($"Invalid time zone: {id}");

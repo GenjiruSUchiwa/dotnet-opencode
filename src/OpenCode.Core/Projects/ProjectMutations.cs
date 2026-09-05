@@ -22,7 +22,8 @@ public sealed class ProjectMutations(IDatabase database, Action<OpenCodeEvent> p
         var start = commands?.Start;
         var project = await database.RunInTransactionAsync(async (connection, transaction) =>
         {
-            await using var db = new PersistenceContext(connection, transaction);
+            var db = new PersistenceContext(connection, transaction);
+            await using var dbLifetime = db.ConfigureAwait(true);
             var storedName = string.IsNullOrEmpty(name) ? null : name;
             var storedOverride = string.IsNullOrEmpty(iconOverride) ? null : iconOverride;
             var storedColor = string.IsNullOrEmpty(color) ? null : color;
@@ -33,9 +34,9 @@ public sealed class ProjectMutations(IDatabase database, Action<OpenCodeEvent> p
                 .SetProperty(row => row.icon_url_override, row => iconOverride != null ? storedOverride : row.icon_url_override)
                 .SetProperty(row => row.icon_color, row => color != null ? storedColor : row.icon_color)
                 .SetProperty(row => row.commands, row => start != null ? storedCommands : row.commands)
-                .SetProperty(row => row.time_updated, now), ct) != 1) throw new ProjectNotFoundException(id);
-            return ProjectQueries.FromRow(await db.Set<ProjectRow>().FirstAsync(row => row.id == id.Value, ct));
-        }, ct);
+                .SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true) != 1) throw new ProjectNotFoundException(id);
+            return ProjectQueries.FromRow(await db.Set<ProjectRow>().FirstAsync(row => row.id == id.Value, ct).ConfigureAwait(true));
+        }, ct).ConfigureAwait(true);
         // The generated icon URL, canonical directory, VCS and sandbox fields are
         // not writable here. A publication failure cannot roll back a committed row.
         publish(ProjectEventDefinitions.Updated.Create(EventId.Create(), database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), project));

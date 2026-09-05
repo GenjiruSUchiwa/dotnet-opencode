@@ -15,12 +15,12 @@ The full CLI dependency graph is built with:
 
 ```powershell
 .\.dotnet\dotnet.exe build src/OpenCode.Cli/OpenCode.Cli.csproj `
-  --artifacts-path C:\tmp\opencode\ef-migration `
-  -p:OpenApiGenerateDocuments=false
+  --artifacts-path C:\tmp\opencode\ef-final-20260905-f914 `
+  -p:OpenApiGenerateDocuments=false -p:OpenCodePackagePersistentPty=false
 ```
 
 Build logs are outside the repository at
-`C:\tmp\opencode\ef-migration\build.log`. Analyzer completion is tracked
+`C:\tmp\opencode\ef-final-20260905-f914\build.log`. Analyzer completion is tracked
 separately in [analyzer-migration.md](./analyzer-migration.md). A successful build
 with enabled warnings is not analyzer sign-off. Runtime validation remains
 explicitly unauthorized and has not been substituted with model-only probes.
@@ -42,6 +42,65 @@ Metadata inspected:
 
 - <https://api.nuget.org/v3-flatcontainer/microsoft.entityframeworkcore.sqlite/11.0.0-preview.7.26381.103/microsoft.entityframeworkcore.sqlite.nuspec>
 - <https://api.nuget.org/v3-flatcontainer/microsoft.entityframeworkcore.sqlite.core/11.0.0-preview.7.26381.103/microsoft.entityframeworkcore.sqlite.core.nuspec>
+
+## Pinned-provider source review
+
+The review uses Microsoft's package source commit
+[`e2c1e00b3d0f96afb892fb261d5921565b400246`](https://github.com/dotnet/dotnet/tree/e2c1e00b3d0f96afb892fb261d5921565b400246/src/efcore/src),
+not assumptions from SQL Server or a different EF release. Paths below are under
+that commit's `src/efcore/src/` unless stated otherwise.
+
+| Source | Mechanism reviewed |
+| --- | --- |
+| EFCore.Sqlite.Core/Storage/Internal/SqliteTypeMappingSource.cs | CLR mapping is selected first; a declared INTEGER store type does not replace the double reader/parameter mapping for event creation times |
+| EFCore.Relational/Query/RelationalSqlTranslatingExpressionVisitor.cs | VisitUnary introduces a SQL cast for a C# numeric conversion; nullable wrappers of the same underlying type do not require a cast |
+| EFCore.Relational/Query/RelationalMethodCallTranslatorProvider.cs | HasTranslation receives independently mapped operands; custom numeric comparisons therefore retain native INTEGER/REAL comparisons |
+| EFCore.Relational/Query/SqlExpressionFactory.cs | Existing operand mappings are retained; comparison results receive the Boolean mapping |
+| EFCore.Relational/Query/Internal/Translators/ComparisonTranslator.cs | Two-argument string.Compare translates to SQL comparisons, retaining the stored BINARY collation rather than executing a culture-sensitive CLR comparison |
+| EFCore.Relational/Query/RelationalQueryableMethodTranslatingExpressionVisitor.cs | Where/Any, nullable aggregates, ordering, joins, Concat/UNION ALL and collection membership have relational translations |
+| EFCore.Relational/Query/RelationalQueryableMethodTranslatingExpressionVisitor.ExecuteUpdate.cs | Single-table property setters, including EF.Property for the selected Session field, remain set-based database mutations |
+| EFCore.Sqlite.Core/Query/Internal/SqliteQueryableMethodTranslatingExpressionVisitor.cs | Ordering restrictions do not include the string/long/double columns used here |
+| EFCore.Sqlite.Core/Query/Internal/SqliteSqlTranslatingExpressionVisitor.cs | Math.Max translates to SQLite's scalar max; no provider DateTimeOffset/decimal ordering is used |
+| EFCore.Relational/Query/Internal/RelationalProjectionBindingExpressionVisitor.cs and EFCore/Query/ReplacingExpressionVisitor.cs | Member-initializer projections and subsequent member access support the explicit SessionDetails read column selection |
+| EFCore.Relational/Query/SqlNullabilityProcessor.cs | Conditional JSON-validity guards remain CASE expressions; missing JSON fields are not treated as non-null solely because the document is non-null |
+| EFCore.Relational/Query/QuerySqlGenerator.cs and Query/Internal/FromSqlQueryingEnumerable.cs | Uncomposed raw queries execute the supplied statement; typed results use column-name binding. DML RETURNING is enumerated directly, without composing a SELECT around it |
+| EFCore.Relational/Storage/RelationalConnection.cs and RelationalTransaction.cs | UseTransaction attaches with transactionOwned=false; disposal does not own the externally opened native connection or transaction |
+| EFCore.Relational/Update/Internal/BatchExecutor.cs | SaveChanges may use a savepoint inside the external transaction; it does not commit that transaction |
+| EFCore.Relational/Storage/RelationalExecutionStrategyFactory.cs and EFCore.Sqlite.Core/Extensions/SqliteServiceCollectionExtensions.cs | The unconfigured SQLite service graph uses the non-retrying relational execution strategy |
+| Microsoft.Data.Sqlite.Core/SqliteTransaction.cs | Non-deferred Serializable transactions issue BEGIN IMMEDIATE; native Commit remains the actual commit operation |
+| Microsoft.Data.Sqlite.Core/SqliteValueReader.cs | GetInt32 performs checked narrowing; GetInt64 and GetDouble follow SQLite conversions, while GetValue preserves the storage class |
+
+The matching runtime source
+`src/runtime/src/libraries/System.Data.Common/src/System/Data/Common/DbTransaction.cs`
+implements the inherited CommitAsync by checking its token and then calling the
+synchronous Commit. Passing CancellationToken.None after the existing admission
+cancellation check preserves the original commit window; notifications still
+follow successful native commit, with the publication gate held.
+
+This is source evidence for the chosen mechanisms, not a claim that a runtime
+model or translated query was executed. Provider source copies and source-only
+refactoring scratch files live under the isolated artifacts directory, not in the
+repository or application package.
+
+### Regressions corrected during review
+
+- Replaced mixed long/double LINQ operators with mapped SQL operators in Session
+  pagination, durable replay/log paging, and statistics filters. C# promotion had
+  introduced CAST(column AS REAL), losing Int64 distinctions at large boundaries.
+- Restored root-independent, single-statement projected-sequence checks. Requiring
+  a Session row before reading projections was not equivalent to the original SQL.
+- Restored overflow rejection for direct message sequence allocation. Restart
+  UPDATE RETURNING now also reads typeof(resume_attempts), preserving the original
+  ExecuteScalar `is long` rule instead of accepting an overflowed REAL through a
+  typed Int64 reader.
+- SessionDetails and credential reads materialize only the columns read by the
+  original adapters. Credential active-state validation retains checked Int32
+  narrowing before the NULL/zero/one check.
+- Message, instruction, credential, project, and log decoding occurs during row
+  enumeration rather than after buffering the entire result. This preserves the
+  original decode-failure/cancellation order and opaque JSON payload handling.
+- Incoming IDs in direct query adapters are extracted before the EF expression,
+  avoiding query-parameter evaluation wrapping the existing Vogen validation error.
 
 ## Ownership and transactions
 
@@ -225,12 +284,14 @@ queries. These are supported boundaries, not temporary legacy adapters.
 | ClaimExecutionAsync | conditional local claim with unrounded event time |
 | ClearCurrentRetryAsync | JSON key removal on only the newest incomplete assistant |
 | CompleteExecutionAsync | monotonic idle time and replay-sensitive operational-claim preservation |
-| IncrementResumeAsync | UPDATE RETURNING count drives the same transaction's next durable event |
+| IncrementResumeAsync | UPDATE RETURNING count drives the same transaction's next durable event; typeof preserves integer-only result acceptance |
 | RestoreArchiveAsync | exact numeric usage/time restoration and existing outcome serialization |
 | ForkSessionAsync | INSERT SELECT preserves parent fields and source conflict behavior |
 | ForkMessagesAsync | INSERT SELECT preserves sequence gaps, timestamps, JSON, and settled filters |
 | ForkInstructionEntryAsync | preserve double event time and SQL NULL versus JSON text |
 | ForkInstructionStateAsync | inherited initial/current values, insert-on-conflict-no-op |
+| HighestProjectionAsync | one-snapshot maximum over messages/inbox, independent of Session-row presence |
+| HasUnsequencedProjectionAsync | one-snapshot comparison with the aggregate watermark, without a Session-table root |
 | StatisticsSql.SummaryAsync | MATERIALIZED CTE, json_each, aggregate FILTER and SQL null behavior |
 | StatisticsSql.DetailAsync | json_each plus source duration CASE/coalesce behavior |
 
@@ -238,6 +299,49 @@ Source migration SQL and bootstrap PRAGMAs are additionally retained unchanged i
 their existing database-owner files. SQL scalar JSON functions used by LINQ are
 explicitly mapped (`json_extract`, `json_valid`); there is no assumption
 that SQL Server JSON features apply to SQLite.
+
+`SqliteFunctions.After`, `Before`, `AtOrAfter`, and `At` are SQL-expression
+translations, not SQLite user-defined functions. Their bodies are never intended
+for client evaluation. They preserve the independently mapped INTEGER column and
+REAL bound instead of introducing an implicit C# numeric promotion.
+
+## Owned analyzer cleanup
+
+No package-wide NoWarn or new global analyzer exemption was added.
+
+- Implicit continuation capture is now explicit ConfigureAwait(true) in the
+  owned Core files, including resource disposal and async enumeration. Existing
+  ConfigureAwait(false) calls remain false. Resource acquisition, disposal scope,
+  native immediate transactions, and the commit/notify boundary retain their order.
+- SDK drain retirement and the server boot Task.Run explicitly use
+  CancellationToken.None where the source previously used the default token.
+  Passing an already-cancelled host/request token would change lifecycle behavior.
+- Windows storage-prefix recognition now uses bounded ASCII/character checks.
+  Remaining owned regexes use NonBacktracking and named captures where applicable;
+  their patterns use no backreferences/lookarounds or repeated capture histories.
+- Native enum-zero comparisons use FileAttributes.None / UnixFileMode.None, not
+  a different flag. Previously implicit culture-sensitive parsing/comparison uses
+  CurrentCulture explicitly; it was not silently changed to Invariant or Ordinal.
+- Source migrations retain their exact SQL/journal authority. Their changes here
+  are explicit disposal continuation, equivalent schema-text matching, and the
+  narrowly scoped restoration-failure exception below.
+
+The following method-level exceptions are explicit compatibility decisions:
+
+| Rule | Scope | Reason |
+| --- | --- | --- |
+| MA0015 | DurableLogItemJsonConverter.Write | Preserve the existing inferred aggregate-field parameter name |
+| MA0015 | ReadInstructionLoader.LoadAsync | Compound paths/project-root validation retains its original message |
+| MA0015 | SessionStatistics.GetAsync, Time, Zone | API-visible validation text, field names, and causes remain unchanged |
+| MA0015 | WebSearchSelectionStore.SaveAsync | Preserve provider-selection error text |
+| MA0015 | AuthCommands.RunAsync, ChooseAsync, OpenBrowser | Preserve login validation errors; noninteractive process state must not be relabelled as an invalid title argument |
+| MA0015 | ServerHost.CreateAppCore, ParsePort | Preserve startup diagnostic messages and selected-port field identity |
+| MA0072 | SourceMigrationRunner.ApplyAsync | Restoration failure must remain observable, with original and restoration failures retained together; a committed batch must not be presented as safe to retry |
+| MA0042 | ServiceLifetime.StoppingAsync | Preserve synchronous monitor cancellation before returning the completed lifecycle task |
+
+Whole-graph diagnostics can include other workers' disjoint modernization work.
+The final build report distinguishes those from diagnostics in this owned scope;
+compilation is not runtime or schema-parity sign-off.
 
 ## Compatibility details and remaining limitations
 

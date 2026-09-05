@@ -26,13 +26,13 @@ internal sealed class SessionRevertPersistence(IDatabase database)
     internal Task<IReadOnlyDictionary<string, SnapshotId>> PlanAsync(SessionId sessionId, MessageId messageId, CancellationToken ct) =>
         new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
-            await RequireProjectedAsync(transaction, sessionId, token);
+            await RequireProjectedAsync(transaction, sessionId, token).ConfigureAwait(true);
             if (await transaction.Db.Messages.Where(row => row.session_id == sessionId.Value && row.id == messageId.Value)
-                .Select(row => (long?)row.seq).FirstOrDefaultAsync(token) is not { } sequence) throw new SessionRevertMessageNotFoundException(sessionId, messageId);
-            var rows = await transaction.Db.Messages.Where(row => row.session_id == sessionId.Value && row.type == "assistant" && row.seq > sequence)
-                .OrderBy(row => row.seq).Select(row => new { row.id, row.data }).ToListAsync(token);
+                .Select(row => (long?)row.seq).FirstOrDefaultAsync(token).ConfigureAwait(true) is not { } sequence) throw new SessionRevertMessageNotFoundException(sessionId, messageId);
+            var rows = transaction.Db.Messages.Where(row => row.session_id == sessionId.Value && row.type == "assistant" && row.seq > sequence)
+                .OrderBy(row => row.seq).Select(row => new { row.id, row.data });
             var result = new Dictionary<string, SnapshotId>(StringComparer.Ordinal);
-            foreach (var row in rows)
+            await foreach (var row in rows.ReadAsync(-1, token).ConfigureAwait(true))
             {
                 var message = (AssistantMessage)SessionQueries.Decode(sessionId, MessageId.FromExisting(row.id), "assistant", row.data);
                 if (message.Snapshot?.Start is not { } start) continue;
@@ -48,14 +48,14 @@ internal sealed class SessionRevertPersistence(IDatabase database)
     private Task PublishAsync<T>(SessionId id, DurableEventDefinition<T> definition, T data, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token)) throw new SessionMutationNotFoundException(id);
-            await RequireProjectedAsync(transaction, id, token);
-            return await transaction.AppendAsync(definition, data, token);
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token).ConfigureAwait(true)) throw new SessionMutationNotFoundException(id);
+            await RequireProjectedAsync(transaction, id, token).ConfigureAwait(true);
+            return await transaction.AppendAsync(definition, data, token).ConfigureAwait(true);
         }, ct);
 
     private static async Task RequireProjectedAsync(EventTransaction transaction, SessionId id, CancellationToken ct)
     {
-        if (await transaction.Db.HighestProjectionAsync(id.Value, ct) > await transaction.LatestSequenceAsync(id.Value, ct))
+        if (await transaction.Db.HighestProjectionAsync(id.Value, ct).ConfigureAwait(true) > await transaction.LatestSequenceAsync(id.Value, ct).ConfigureAwait(true))
             throw new NotSupportedException("Unsequenced projections require canonical migration before revert.");
     }
 
@@ -65,14 +65,14 @@ internal sealed class SessionRevertPersistence(IDatabase database)
         if (committed.Type == "session.revert.committed")
         {
             var to = committed.Data.GetProperty("to").GetString()!;
-            if (await transaction.Db.Messages.Where(row => row.session_id == id && row.id == to).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct) is not { } sequence)
+            if (await transaction.Db.Messages.Where(row => row.session_id == id && row.id == to).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct).ConfigureAwait(true) is not { } sequence)
                 throw new InvalidOperationException("Revert boundary message not found: " + to);
-            await transaction.Db.Messages.Where(row => row.session_id == id && row.seq >= sequence).ExecuteDeleteAsync(ct);
-            await transaction.Db.Inbox.Where(row => row.session_id == id && row.enqueued_seq >= sequence).ExecuteDeleteAsync(ct);
-            await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == id).ExecuteDeleteAsync(ct);
+            await transaction.Db.Messages.Where(row => row.session_id == id && row.seq >= sequence).ExecuteDeleteAsync(ct).ConfigureAwait(true);
+            await transaction.Db.Inbox.Where(row => row.session_id == id && row.enqueued_seq >= sequence).ExecuteDeleteAsync(ct).ConfigureAwait(true);
+            await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == id).ExecuteDeleteAsync(ct).ConfigureAwait(true);
         }
         var revert = committed.Type == "session.revert.staged" ? committed.Data.GetProperty("revert").GetRawText() : null;
-        await transaction.Db.Sessions.Where(row => row.id == id).ExecuteUpdateAsync(setters => setters.SetProperty(row => row.revert, revert), ct);
-        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, id, committed.Created, ct);
+        await transaction.Db.Sessions.Where(row => row.id == id).ExecuteUpdateAsync(setters => setters.SetProperty(row => row.revert, revert), ct).ConfigureAwait(true);
+        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, id, committed.Created, ct).ConfigureAwait(true);
     }
 }

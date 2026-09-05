@@ -50,39 +50,39 @@ internal sealed class SessionMutationProjector(IDatabase database)
     internal Task RequireRemovalReadyAsync(SessionId id, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            await RequireRemovableAsync(transaction, id, token);
+            await RequireRemovableAsync(transaction, id, token).ConfigureAwait(true);
             return true;
         }, ct);
 
     internal Task RemoveAsync(SessionId id, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            await RequireRemovableAsync(transaction, id, token);
-            await transaction.AppendAsync(Deleted, new SessionDeletionData(id), token);
+            await RequireRemovableAsync(transaction, id, token).ConfigureAwait(true);
+            await transaction.AppendAsync(Deleted, new SessionDeletionData(id), token).ConfigureAwait(true);
             // Bus.remove purges the entire aggregate, including its deletion event.
             // Purge AFTER AppendAsync reserves its sequence, in the same transaction
             // as projection; the committed envelope still reaches post-commit observers.
-            await transaction.Db.Sequences.Where(row => row.aggregate_id == id.Value).ExecuteDeleteAsync(token);
-            await transaction.Db.Events.Where(row => row.aggregate_id == id.Value).ExecuteDeleteAsync(token);
+            await transaction.Db.Sequences.Where(row => row.aggregate_id == id.Value).ExecuteDeleteAsync(token).ConfigureAwait(true);
+            await transaction.Db.Events.Where(row => row.aggregate_id == id.Value).ExecuteDeleteAsync(token).ConfigureAwait(true);
             return true;
         }, ct);
 
     private static async Task RequireRemovableAsync(EventTransaction transaction, SessionId id, CancellationToken ct)
     {
-        var session = await transaction.Db.Sessions.Where(row => row.id == id.Value).Select(row => new { row.workspace_id }).FirstOrDefaultAsync(ct)
+        var session = await transaction.Db.Sessions.Where(row => row.id == id.Value).Select(row => new { row.workspace_id }).FirstOrDefaultAsync(ct).ConfigureAwait(true)
             ?? throw new SessionMutationNotFoundException(id);
         if (session.workspace_id is not null) throw new NotSupportedException("Workspace session deletion requires its Location transport lifecycle.");
-        if (await transaction.Db.Sessions.AnyAsync(row => row.parent_id == id.Value, ct))
+        if (await transaction.Db.Sessions.AnyAsync(row => row.parent_id == id.Value, ct).ConfigureAwait(true))
             throw new NotSupportedException("Recursive session deletion requires child and background-job lifecycle integration. No session was deleted.");
         // Job.background records are not session foreign keys. Do not leave a
         // recoverable shell/subagent notification pointing at a deleted Session.
         if (await transaction.Db.Set<KvRow>().AnyAsync(row => string.Compare(row.key, "job.background/") >= 0 && string.Compare(row.key, "job.background0") < 0
             && (SqliteFunctions.JsonValid(row.value) ? SqliteFunctions.JsonText(row.value, "$.recovery.sessionID") == id.Value
                 || SqliteFunctions.JsonText(row.value, "$.recovery.parentSessionID") == id.Value
-                || SqliteFunctions.JsonText(row.value, "$.recovery.childSessionID") == id.Value : false), ct))
+                || SqliteFunctions.JsonText(row.value, "$.recovery.childSessionID") == id.Value : false), ct).ConfigureAwait(true))
             throw new NotSupportedException("Session deletion requires the related background-job cancellation and notification lifecycle.");
-        if (await transaction.Db.Messages.Where(row => row.session_id == id.Value).MaxAsync(row => (long?)row.seq, ct) is { } seq
-            && seq > await transaction.LatestSequenceAsync(id.Value, ct))
+        if (await transaction.Db.Messages.Where(row => row.session_id == id.Value).MaxAsync(row => (long?)row.seq, ct).ConfigureAwait(true) is { } seq
+            && seq > await transaction.LatestSequenceAsync(id.Value, ct).ConfigureAwait(true))
             throw new NotSupportedException("Unsequenced history requires canonical migration before durable session deletion.");
     }
 
@@ -90,16 +90,16 @@ internal sealed class SessionMutationProjector(IDatabase database)
         long? expectedSequence = null)
         where T : class => new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            if (expectedSequence is { } expected && await transaction.LatestSequenceAsync(id.Value, token) + 1 != expected) return false;
-            var session = SessionStore.ReadSession(await transaction.Db.Sessions.FirstOrDefaultAsync(row => row.id == id.Value, token)
+            if (expectedSequence is { } expected && await transaction.LatestSequenceAsync(id.Value, token).ConfigureAwait(true) + 1 != expected) return false;
+            var session = SessionStore.ReadSession(await transaction.Db.SessionDetails.FirstOrDefaultAsync(row => row.id == id.Value, token).ConfigureAwait(true)
                 ?? throw new SessionMutationNotFoundException(id));
             var data = select(session);
             if (data is null) return false;
             // Do not let a new mutation disguise pre-event, unsequenced message history.
-            if (await transaction.Db.Messages.Where(row => row.session_id == id.Value).MaxAsync(row => (long?)row.seq, token) is { } seq
-                && seq > await transaction.LatestSequenceAsync(id.Value, token))
+            if (await transaction.Db.Messages.Where(row => row.session_id == id.Value).MaxAsync(row => (long?)row.seq, token).ConfigureAwait(true) is { } seq
+                && seq > await transaction.LatestSequenceAsync(id.Value, token).ConfigureAwait(true))
                 throw new NotSupportedException("Unsequenced history requires canonical migration before durable session mutation.");
-            await transaction.AppendAsync(definition, data, token);
+            await transaction.AppendAsync(definition, data, token).ConfigureAwait(true);
             return true;
         }, ct);
 
@@ -111,14 +111,14 @@ internal sealed class SessionMutationProjector(IDatabase database)
             // Canonical foreign keys remove messages, pending/inbox, instruction
             // entries/state, and the row-owned execution claim. Shared instruction
             // blobs, projects, fork provenance, and filesystem artifacts are retained.
-            await transaction.Db.Sessions.Where(row => row.id == id).ExecuteDeleteAsync(ct);
+            await transaction.Db.Sessions.Where(row => row.id == id).ExecuteDeleteAsync(ct).ConfigureAwait(true);
             return;
         }
         if (committed.Type == Viewed.Type)
         {
             var data = committed.Data.Deserialize(SessionMutationEventJsonContext.Default.SessionViewData)!;
             await transaction.Db.Sessions.Where(row => row.id == data.SessionId.Value).ExecuteUpdateAsync(setters => setters
-                .SetProperty(row => row.time_viewed, row => Math.Max(data.Idle, row.time_viewed ?? data.Idle)), ct);
+                .SetProperty(row => row.time_viewed, row => Math.Max(data.Idle, row.time_viewed ?? data.Idle)), ct).ConfigureAwait(true);
             return;
         }
 
@@ -166,10 +166,10 @@ internal sealed class SessionMutationProjector(IDatabase database)
             encoded.Remove("id");
             encoded.Remove("type");
             await SqliteIntrinsics.InsertMessageAsync(transaction.Db, message.Id.Value, committed.Durable!.AggregateId, message.Type,
-                checked((long)committed.Durable.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), encoded.ToJsonString(), ct);
+                checked((long)committed.Durable.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), encoded.ToJsonString(), ct).ConfigureAwait(true);
         }
         await transaction.Db.Sessions.Where(row => row.id == committed.Durable!.AggregateId)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => EF.Property<string?>(row, column), value), ct);
-        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, committed.Durable!.AggregateId, committed.Created, ct);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => EF.Property<string?>(row, column), value), ct).ConfigureAwait(true);
+        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, committed.Durable!.AggregateId, committed.Created, ct).ConfigureAwait(true);
     }
 }

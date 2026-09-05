@@ -34,22 +34,24 @@ public sealed class SqlitePermissionGrantStore : IPermissionSavedStore
     public async ValueTask<IReadOnlyList<PermissionRule>> ListAsync(string projectId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(projectId);
-        return (await ListSavedAsync(ProjectId.FromExisting(projectId), ct))
+        return (await ListSavedAsync(ProjectId.FromExisting(projectId), ct).ConfigureAwait(true))
             .Select(item => new PermissionRule(item.Action, item.Resource, PermissionEffect.Allow)).ToArray();
     }
 
     public async ValueTask<IReadOnlyList<PermissionSavedInfo>> ListSavedAsync(ProjectId? projectId = null, CancellationToken ct = default)
     {
         if (projectId is { } project && !project.IsInitialized()) throw new ArgumentException("Project ID must be an initialized string.", nameof(projectId));
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ct.ThrowIfCancellationRequested();
-            await using var connection = _database.CreateConnection();
-            await using var db = new PersistenceContext(connection);
+            var connection = _database.CreateConnection();
+            await using var connectionLifetime = connection.ConfigureAwait(true);
+            var db = new PersistenceContext(connection);
+            await using var dbLifetime = db.ConfigureAwait(true);
             var projectValue = projectId?.Value;
             var rows = await db.Set<PermissionRow>().Where(row => projectValue == null || row.project_id == EF.Functions.Collate(projectValue, "BINARY"))
-                .Select(row => new { row.id, row.project_id, row.action, row.resource }).ToListAsync(ct);
+                .Select(row => new { row.id, row.project_id, row.action, row.resource }).ToListAsync(ct).ConfigureAwait(true);
             return Array.AsReadOnly(rows.Select(row => new PermissionSavedInfo(PermissionSavedId.FromExisting(row.id),
                 ProjectId.FromExisting(row.project_id), row.action, row.resource)).ToArray());
         }
@@ -65,22 +67,23 @@ public sealed class SqlitePermissionGrantStore : IPermissionSavedStore
         if (saved.Any(resource => resource is null)) throw new ArgumentException("Saved permission resources must be strings.", nameof(resources));
         ct.ThrowIfCancellationRequested();
         if (saved.Length == 0) return;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ct.ThrowIfCancellationRequested();
             await _database.RunInTransactionAsync(async (connection, transaction) =>
             {
-                await using var db = new PersistenceContext(connection, transaction);
+                var db = new PersistenceContext(connection, transaction);
+                await using var dbLifetime = db.ConfigureAwait(true);
                 var now = _database.Clock.GetUtcNow().ToUnixTimeMilliseconds();
                 foreach (var value in saved)
                 {
                     ct.ThrowIfCancellationRequested();
-                    await SqliteIntrinsics.AddPermissionAsync(db, PermissionSavedId.Create().Value, projectId, action, value, now, ct);
+                    await SqliteIntrinsics.AddPermissionAsync(db, PermissionSavedId.Create().Value, projectId, action, value, now, ct).ConfigureAwait(true);
                 }
                 // Commit the whole batch before PermissionService completes an "always" reply.
                 return true;
-            }, ct);
+            }, ct).ConfigureAwait(true);
         }
         finally { _gate.Release(); }
     }
@@ -88,15 +91,16 @@ public sealed class SqlitePermissionGrantStore : IPermissionSavedStore
     public async ValueTask RemoveAsync(PermissionSavedId id, CancellationToken ct = default)
     {
         if (!id.IsInitialized()) throw new ArgumentException("Saved permission ID must be initialized.", nameof(id));
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ct.ThrowIfCancellationRequested();
             await _database.RunInTransactionAsync(async (connection, transaction) =>
             {
-                await using var db = new PersistenceContext(connection, transaction);
-                return await db.Set<PermissionRow>().Where(row => row.id == EF.Functions.Collate(id.Value, "BINARY")).ExecuteDeleteAsync(ct);
-            }, ct);
+                var db = new PersistenceContext(connection, transaction);
+                await using var dbLifetime = db.ConfigureAwait(true);
+                return await db.Set<PermissionRow>().Where(row => row.id == EF.Functions.Collate(id.Value, "BINARY")).ExecuteDeleteAsync(ct).ConfigureAwait(true);
+            }, ct).ConfigureAwait(true);
         }
         finally { _gate.Release(); }
     }

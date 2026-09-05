@@ -30,11 +30,11 @@ public sealed class WorktreeService(IDatabase database, Action<OpenCodeEvent>? p
     {
         var id = WorktreeTrimmedStringConverter.Normalize(input.Strategy);
         var strategy = Strategy(id);
-        var source = input.From ?? await _store.PrimaryAsync(input.ProjectId, ct)
+        var source = input.From ?? await _store.PrimaryAsync(input.ProjectId, ct).ConfigureAwait(true)
             ?? throw new WorktreeException($"Worktree source not found for project: {input.ProjectId.Value}");
         source = WorktreePaths.Canonical(source);
-        if (await _store.FindAsync(input.ProjectId, source, ct) is null) throw new WorktreeException($"Worktree source not found: {source}");
-        await RequirePluginsAsync(source, ct);
+        if (await _store.FindAsync(input.ProjectId, source, ct).ConfigureAwait(true) is null) throw new WorktreeException($"Worktree source not found: {source}");
+        await RequirePluginsAsync(source, ct).ConfigureAwait(true);
         Directory.CreateDirectory(input.Directory);
         var name = input.Name ?? WorktreePaths.Slug();
         var suffix = 1;
@@ -45,40 +45,40 @@ public sealed class WorktreeService(IDatabase database, Action<OpenCodeEvent>? p
             directory = WorktreePaths.Join(input.Directory, name + "-" + suffix);
         }
         var result = await strategy.CreateAsync(source, directory,
-            input.Branch is null ? null : WorktreeTrimmedStringConverter.Normalize(input.Branch), ct);
-        if (await _store.PutAsync(input.ProjectId, result.Directory, id, ct)) Changed(input.ProjectId);
-        var startup = Trim(await _store.StartupAsync(input.ProjectId, ct) ?? "");
-        if (startup.Length > 0) await RunStartupAsync(startup, source, result.Directory, ct);
+            input.Branch is null ? null : WorktreeTrimmedStringConverter.Normalize(input.Branch), ct).ConfigureAwait(true);
+        if (await _store.PutAsync(input.ProjectId, result.Directory, id, ct).ConfigureAwait(true)) Changed(input.ProjectId);
+        var startup = Trim(await _store.StartupAsync(input.ProjectId, ct).ConfigureAwait(true) ?? "");
+        if (startup.Length > 0) await RunStartupAsync(startup, source, result.Directory, ct).ConfigureAwait(true);
         return result;
     }
 
     public async Task RemoveAsync(WorktreeRemoveInput input, CancellationToken ct = default)
     {
         var directory = WorktreePaths.Canonical(input.Directory);
-        var stored = await _store.FindAsync(input.ProjectId, directory, ct);
+        var stored = await _store.FindAsync(input.ProjectId, directory, ct).ConfigureAwait(true);
         if (string.IsNullOrEmpty(stored?.Strategy)) throw new WorktreeException($"Invalid worktree directory: {directory}");
         var strategy = Strategy(stored.Strategy);
-        await RequirePluginsAsync(directory, ct);
+        await RequirePluginsAsync(directory, ct).ConfigureAwait(true);
         // Source Worktree.remove does not interrupt Sessions, delete their data,
         // or force-dispose Locations. Git decides whether --force is required.
-        await strategy.RemoveAsync(directory, input.Force, ct);
-        if (await _store.RemoveAsync(input.ProjectId, directory, ct)) Changed(input.ProjectId);
+        await strategy.RemoveAsync(directory, input.Force, ct).ConfigureAwait(true);
+        if (await _store.RemoveAsync(input.ProjectId, directory, ct).ConfigureAwait(true)) Changed(input.ProjectId);
     }
 
     public async Task<WorktreeRefreshResult> RefreshAsync(ProjectId project, CancellationToken ct = default)
     {
-        var stored = await _store.ListAsync(project, ct);
+        var stored = await _store.ListAsync(project, ct).ConfigureAwait(true);
         var checkedRows = stored.Select(row => (Row: row, Exists: Directory.Exists(row.Directory))).ToArray();
         KeyValuePair<string, IWorktreeStrategy>[] strategies;
         lock (_registry) strategies = _strategies.ToArray();
         var discovered = new Dictionary<string, WorktreeDirectory>(StringComparer.Ordinal);
         foreach (var source in checkedRows.Where(row => row.Row.Strategy is null && row.Exists))
         {
-            await RequirePluginsAsync(source.Row.Directory, ct);
+            await RequirePluginsAsync(source.Row.Directory, ct).ConfigureAwait(true);
             foreach (var strategy in strategies)
             {
                 IReadOnlyList<WorktreeListEntry> entries;
-                try { entries = await strategy.Value.ListAsync(source.Row.Directory, ct); }
+                try { entries = await strategy.Value.ListAsync(source.Row.Directory, ct).ConfigureAwait(true); }
                 catch (WorktreeException error) when (error.Message.StartsWith("Worktree directory unavailable: ", StringComparison.Ordinal)) { continue; }
                 foreach (var entry in entries) discovered[entry.Directory] = new(entry.Directory, entry.Root ? null : strategy.Key);
             }
@@ -88,11 +88,11 @@ public sealed class WorktreeService(IDatabase database, Action<OpenCodeEvent>? p
             var updated = new List<string>();
             var removed = new List<string>();
             foreach (var row in discovered.Values)
-                if (await WorktreeStore.PutAsync(connection, transaction, project, row.Directory, row.Strategy, ct, database.Clock)) updated.Add(row.Directory);
+                if (await WorktreeStore.PutAsync(connection, transaction, project, row.Directory, row.Strategy, ct, database.Clock).ConfigureAwait(true)) updated.Add(row.Directory);
             foreach (var row in checkedRows.Where(row => !row.Exists))
-                if (await WorktreeStore.RemoveAsync(connection, transaction, project, row.Row.Directory, ct)) removed.Add(row.Row.Directory);
+                if (await WorktreeStore.RemoveAsync(connection, transaction, project, row.Row.Directory, ct).ConfigureAwait(true)) removed.Add(row.Row.Directory);
             return new WorktreeRefreshResult(updated, removed);
-        }, ct);
+        }, ct).ConfigureAwait(true);
         if (changes.Updated.Count > 0 || changes.Removed.Count > 0) Changed(project);
         return changes;
     }
@@ -110,7 +110,7 @@ public sealed class WorktreeService(IDatabase database, Action<OpenCodeEvent>? p
 
     internal static async Task RequirePluginsAsync(string directory, CancellationToken ct)
     {
-        foreach (var source in (await ConfigLoader.LoadSnapshotAsync(directory, ct)).Sources)
+        foreach (var source in (await ConfigLoader.LoadSnapshotAsync(directory, ct).ConfigureAwait(true)).Sources)
         {
             if (source is ConfigSource.Document document)
                 foreach (var name in new[] { "plugin", "plugins" })
@@ -147,7 +147,7 @@ public sealed class WorktreeService(IDatabase database, Action<OpenCodeEvent>? p
         if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux()) start.KillOnParentExit = true;
         try
         {
-            var result = await Process.RunAndCaptureTextAsync(start, ct);
+            var result = await Process.RunAndCaptureTextAsync(start, ct).ConfigureAwait(true);
             ct.ThrowIfCancellationRequested();
             if (result.ExitStatus.Canceled) throw new OperationCanceledException(ct);
             if (result.ExitStatus.ExitCode == 0 && result.ExitStatus.Signal is null) return;

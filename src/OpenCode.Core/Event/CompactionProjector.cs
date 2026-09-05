@@ -29,7 +29,7 @@ internal static class CompactionProjector
         {
             var row = await transaction.Db.Messages.Where(row => row.session_id == session && row.type == "compaction"
                 && SqliteFunctions.JsonText(row.data, "$.status") == "running").OrderByDescending(row => row.seq)
-                .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct);
+                .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
             if (row is not null) { currentId = row.id; current = JsonNode.Parse(row.data)!.AsObject(); }
         }
         var id = currentId ?? (data.TryGetProperty("inputID", out var input) ? input.GetString()! : "msg_" + committed.Id.Value[4..]);
@@ -60,21 +60,21 @@ internal static class CompactionProjector
         _ = complete.Deserialize(OpenCodeJsonContext.Default.SessionMessage) ?? throw new JsonException("Missing compaction message.");
         if (currentId is null)
             await SqliteIntrinsics.InsertMessageAsync(transaction.Db, id, session, "compaction", checked((long)committed.Durable!.Seq),
-                message["time"]!["created"]!.GetValue<double>(), transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), message.ToJsonString(), ct);
+                message["time"]!["created"]!.GetValue<double>(), transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), message.ToJsonString(), ct).ConfigureAwait(true);
         else
             await SqliteIntrinsics.SaveCompactionAsync(transaction.Db, session, id, message.ToJsonString(), message["time"]!["created"]!.GetValue<double>(),
-                transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct);
+                transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true);
         if (committed.Type != Ended.Type) return;
         var sequence = checked((long)committed.Durable!.Seq);
         await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == session).ExecuteUpdateAsync(setters => setters
             .SetProperty(row => row.epoch_start, sequence).SetProperty(row => row.through_seq, sequence)
-            .SetProperty(row => row.initial_values, row => row.current_values), ct);
+            .SetProperty(row => row.initial_values, row => row.current_values), ct).ConfigureAwait(true);
     }
 
     private static async Task ProjectUsageAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var usage = committed.Data.Deserialize(OpenCodeJsonContext.Default.SessionUsageRecordedEventData)!;
         await SqliteIntrinsics.AddUsageAsync(transaction.Db, usage.SessionId.Value, usage.Cost.Amount, usage.Tokens.Input, usage.Tokens.Output,
-            usage.Tokens.Reasoning, usage.Tokens.Cache.Read, usage.Tokens.Cache.Write, ct);
+            usage.Tokens.Reasoning, usage.Tokens.Cache.Read, usage.Tokens.Cache.Write, ct).ConfigureAwait(true);
     }
 }

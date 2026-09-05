@@ -3,6 +3,9 @@ namespace OpenCode.Core.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
+using Microsoft.EntityFrameworkCore.Query.SqlExpressions;
+using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 
 /// <summary>Operation-scoped mapping over an owner-opened connection. Never a schema owner.</summary>
 internal sealed class PersistenceContext : DbContext
@@ -21,17 +24,29 @@ internal sealed class PersistenceContext : DbContext
     internal IQueryable<EventSequenceRow> Sequences => Set<EventSequenceRow>();
     internal IQueryable<EventRow> Events => Set<EventRow>();
 
-    internal async Task<long> HighestProjectionAsync(string session, CancellationToken ct) =>
-        await Sessions.Where(row => row.id == session).Select(row => (long?)Math.Max(
-            Messages.Where(message => message.session_id == row.id).Max(message => (long?)message.seq) ?? -1,
-            Inbox.Where(inbox => inbox.session_id == row.id).Max(inbox => (long?)inbox.enqueued_seq) ?? -1)).FirstOrDefaultAsync(ct) ?? -1;
+    // Match the old SessionInfo reader: do not materialize unused numeric columns
+    // (summary, claims, compaction) and introduce new decode failures for them.
+    internal IQueryable<SessionRow> SessionDetails => Sessions.Select(row => new SessionRow
+    {
+        id = row.id, project_id = row.project_id, slug = row.slug, directory = row.directory, version = row.version,
+        parent_id = row.parent_id, fork_session_id = row.fork_session_id, fork_boundary = row.fork_boundary,
+        time_created = row.time_created, time_updated = row.time_updated, time_idle = row.time_idle,
+        time_viewed = row.time_viewed, time_archived = row.time_archived,
+        tokens_input = row.tokens_input, tokens_output = row.tokens_output, tokens_reasoning = row.tokens_reasoning,
+        tokens_cache_read = row.tokens_cache_read, tokens_cache_write = row.tokens_cache_write, cost = row.cost,
+        title = row.title, agent = row.agent, model = row.model, idle_outcome = row.idle_outcome,
+        workspace_id = row.workspace_id, path = row.path, metadata = row.metadata, revert = row.revert,
+    });
+
+    internal Task<long> HighestProjectionAsync(string session, CancellationToken ct) =>
+        SqliteIntrinsics.HighestProjectionAsync(this, session, ct);
 
     // Inserts are flushed before a following projector/query can observe them.
     // Detach immediately: subsequent set-based writes must not leave stale rows.
     internal async Task InsertAsync<T>(T row, CancellationToken ct) where T : class
     {
         Add(row);
-        try { await SaveChangesAsync(ct); }
+        try { await SaveChangesAsync(ct).ConfigureAwait(true); }
         catch (DbUpdateException error) when (error.InnerException is SqliteException sqlite)
         {
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(sqlite).Throw();
@@ -123,6 +138,17 @@ internal sealed class PersistenceContext : DbContext
         modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.JsonText))!).HasName("json_extract").IsBuiltIn();
         modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.JsonNumber))!).HasName("json_extract").IsBuiltIn();
         modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.JsonValid))!).HasName("json_valid").IsBuiltIn();
+        // C# long/double comparisons otherwise promote the column to double and
+        // EF emits CAST(column AS REAL). Keep SQLite's native INTEGER/REAL
+        // comparison, with independently mapped operands and no loss of Int64 bits.
+        modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.After))!)
+            .HasTranslation(args => new SqlBinaryExpression(ExpressionType.GreaterThan, args[0], args[1], typeof(bool), null));
+        modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.Before))!)
+            .HasTranslation(args => new SqlBinaryExpression(ExpressionType.LessThan, args[0], args[1], typeof(bool), null));
+        modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.AtOrAfter))!)
+            .HasTranslation(args => new SqlBinaryExpression(ExpressionType.GreaterThanOrEqual, args[0], args[1], typeof(bool), null));
+        modelBuilder.HasDbFunction(typeof(SqliteFunctions).GetMethod(nameof(SqliteFunctions.At))!)
+            .HasTranslation(args => new SqlBinaryExpression(ExpressionType.Equal, args[0], args[1], typeof(bool), null));
     }
 }
 
@@ -131,21 +157,26 @@ internal static class SqliteFunctions
     public static string? JsonText(string json, string path) => throw new InvalidOperationException("SQL-only JSON function.");
     public static double? JsonNumber(string json, string path) => throw new InvalidOperationException("SQL-only JSON function.");
     public static bool JsonValid(string json) => throw new InvalidOperationException("SQL-only JSON function.");
+    public static bool After(long value, double boundary) => throw new InvalidOperationException("SQL-only numeric comparison.");
+    public static bool Before(long value, double boundary) => throw new InvalidOperationException("SQL-only numeric comparison.");
+    public static bool AtOrAfter(long value, double boundary) => throw new InvalidOperationException("SQL-only numeric comparison.");
+    public static bool At(long value, double boundary) => throw new InvalidOperationException("SQL-only numeric comparison.");
 }
 
 internal static class PersistenceQuery
 {
     // SQLite treats a negative LIMIT as unbounded. Queryable.Take only accepts
     // Int32; stream the exceptional larger limit without narrowing it.
-    internal static async Task<List<T>> LimitAsync<T>(this IQueryable<T> query, long limit, CancellationToken ct)
+    internal static async IAsyncEnumerable<T> ReadAsync<T>(this IQueryable<T> query, long limit, [EnumeratorCancellation] CancellationToken ct)
     {
-        if (limit is >= 0 and <= int.MaxValue) return await query.Take((int)limit).ToListAsync(ct);
-        var result = new List<T>();
-        await foreach (var row in query.AsAsyncEnumerable().WithCancellation(ct))
+        if (limit is >= 0 and <= int.MaxValue) query = query.Take((int)limit);
+        long read = 0;
+        await foreach (var row in query.AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(true))
         {
-            result.Add(row);
-            if (limit >= 0 && result.Count >= limit) break;
+            // Decode at the caller before reading the next row, matching the
+            // source reader's failure/cancellation order without buffering JSON.
+            yield return row;
+            if (limit >= 0 && ++read >= limit) yield break;
         }
-        return result;
     }
 }

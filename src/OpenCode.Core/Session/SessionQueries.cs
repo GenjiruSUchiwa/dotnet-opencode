@@ -37,22 +37,31 @@ public sealed class SessionQueries(IDatabase database)
     /// <summary>Session.message: another Session's message is indistinguishable from a missing ID.</summary>
     public async Task<SessionMessage?> MessageAsync(SessionId sessionId, MessageId messageId, CancellationToken ct = default)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        var row = await db.Messages.Where(row => row.session_id == sessionId.Value && row.id == messageId.Value)
-            .Select(row => new { row.id, row.type, row.data }).FirstOrDefaultAsync(ct);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var session = sessionId.Value;
+        var message = messageId.Value;
+        var row = await db.Messages.Where(row => row.session_id == session && row.id == message)
+            .Select(row => new { row.id, row.type, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         return row is null ? null : Decode(sessionId, MessageId.FromExisting(row.id), row.type, row.data);
     }
 
     /// <summary>SessionHistory.load: inclusive latest completed checkpoint, then all later projected messages.</summary>
     public async Task<IReadOnlyList<SessionMessage>> ContextAsync(SessionId sessionId, CancellationToken ct = default)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        if (!await db.Sessions.AnyAsync(row => row.id == sessionId.Value, ct)) throw new SessionMutationNotFoundException(sessionId);
-        var rows = await Context(db, sessionId.Value).OrderBy(row => row.seq)
-            .Select(row => new { row.id, row.type, row.data }).ToListAsync(ct);
-        return rows.Select(row => Decode(sessionId, MessageId.FromExisting(row.id), row.type, row.data)).ToArray();
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var session = sessionId.Value;
+        if (!await db.Sessions.AnyAsync(row => row.id == session, ct).ConfigureAwait(true)) throw new SessionMutationNotFoundException(sessionId);
+        var rows = new List<SessionMessage>();
+        await foreach (var row in Context(db, session).OrderBy(row => row.seq)
+            .Select(row => new { row.id, row.type, row.data }).ReadAsync(-1, ct).ConfigureAwait(true))
+            rows.Add(Decode(sessionId, MessageId.FromExisting(row.id), row.type, row.data));
+        return rows;
     }
 
     internal static IQueryable<MessageRow> Context(PersistenceContext db, string sessionId) =>
@@ -65,9 +74,11 @@ public sealed class SessionQueries(IDatabase database)
     {
         var previous = input.Anchor?.Direction == SessionPageDirection.Previous;
         var ascending = (input.Order == SessionQueryOrder.Ascending) != previous;
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        var query = db.Sessions;
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var query = db.SessionDetails;
         if (input.Directory is not null) query = query.Where(row => row.directory == input.Directory);
         if (!string.IsNullOrEmpty(input.Workspace)) query = query.Where(row => row.workspace_id == input.Workspace);
         if (input.Project is not null)
@@ -82,17 +93,20 @@ public sealed class SessionQueries(IDatabase database)
         }
         if (input.FilterParent)
         {
-            query = input.ParentId is { } parent ? query.Where(row => row.parent_id == parent.Value) : query.Where(row => row.parent_id == null);
+            var parent = input.ParentId?.Value;
+            query = parent is not null ? query.Where(row => row.parent_id == parent) : query.Where(row => row.parent_id == null);
         }
         if (input.Anchor is { } anchor)
         {
+            var id = anchor.Id.Value;
             query = ascending
-                ? query.Where(row => row.time_updated > anchor.Time || (row.time_updated == anchor.Time && string.Compare(row.id, anchor.Id.Value) > 0))
-                : query.Where(row => row.time_updated < anchor.Time || (row.time_updated == anchor.Time && string.Compare(row.id, anchor.Id.Value) < 0));
+                ? query.Where(row => SqliteFunctions.After(row.time_updated, anchor.Time) || (SqliteFunctions.At(row.time_updated, anchor.Time) && string.Compare(row.id, id) > 0))
+                : query.Where(row => SqliteFunctions.Before(row.time_updated, anchor.Time) || (SqliteFunctions.At(row.time_updated, anchor.Time) && string.Compare(row.id, id) < 0));
         }
         var ordered = ascending ? query.OrderBy(row => row.time_updated).ThenBy(row => row.id)
             : query.OrderByDescending(row => row.time_updated).ThenByDescending(row => row.id);
-        var rows = (await ordered.LimitAsync(input.Limit, ct)).Select(SessionStore.ReadSession).ToList();
+        var rows = new List<SessionInfo>();
+        await foreach (var row in ordered.ReadAsync(input.Limit, ct).ConfigureAwait(true)) rows.Add(SessionStore.ReadSession(row));
         if (previous) rows.Reverse();
         return rows;
     }
@@ -102,20 +116,25 @@ public sealed class SessionQueries(IDatabase database)
     {
         var previous = anchor?.Direction == SessionPageDirection.Previous;
         var ascending = (order == SessionQueryOrder.Ascending) != previous;
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var session = sessionId.Value;
         long? sequence = null;
         if (anchor is not null)
         {
-            if (await db.Messages.Where(row => row.session_id == sessionId.Value && row.id == anchor.Id.Value)
-                .Select(row => (long?)row.seq).FirstOrDefaultAsync(ct) is not { } found) return [];
+            var id = anchor.Id.Value;
+            if (await db.Messages.Where(row => row.session_id == session && row.id == id)
+                .Select(row => (long?)row.seq).FirstOrDefaultAsync(ct).ConfigureAwait(true) is not { } found) return [];
             sequence = found;
         }
-        var query = db.Messages.Where(row => row.session_id == sessionId.Value);
+        var query = db.Messages.Where(row => row.session_id == session);
         if (sequence is not null) query = ascending ? query.Where(row => row.seq > sequence) : query.Where(row => row.seq < sequence);
         var ordered = ascending ? query.OrderBy(row => row.seq) : query.OrderByDescending(row => row.seq);
-        var rows = (await ordered.Select(row => new { row.id, row.type, row.data }).LimitAsync(limit, ct))
-            .Select(row => Decode(sessionId, MessageId.FromExisting(row.id), row.type, row.data)).ToList();
+        var rows = new List<SessionMessage>();
+        await foreach (var row in ordered.Select(row => new { row.id, row.type, row.data }).ReadAsync(limit, ct).ConfigureAwait(true))
+            rows.Add(Decode(sessionId, MessageId.FromExisting(row.id), row.type, row.data));
         if (previous) rows.Reverse();
         return rows;
     }

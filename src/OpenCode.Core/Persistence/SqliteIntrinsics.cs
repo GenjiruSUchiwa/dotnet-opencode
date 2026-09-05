@@ -8,6 +8,21 @@ using OpenCode.Schema;
 /// <summary>Reviewed SQLite operations whose conflict/returning behavior is part of the source contract.</summary>
 internal static class SqliteIntrinsics
 {
+    // These scalar reads deliberately have no Session-table root. Projections
+    // are checked even if the Session row is absent, using one SQLite snapshot.
+    internal static Task<long> HighestProjectionAsync(PersistenceContext db, string session, CancellationToken ct) =>
+        db.Database.SqlQuery<long>($"""
+            SELECT max((SELECT coalesce(max(seq), -1) FROM session_message WHERE session_id = {session}),
+                       (SELECT coalesce(max(enqueued_seq), -1) FROM session_inbox WHERE session_id = {session})) AS Value
+            """).SingleAsync(ct);
+
+    internal static Task<bool> HasUnsequencedProjectionAsync(PersistenceContext db, string session, CancellationToken ct) =>
+        db.Database.SqlQuery<bool>($"""
+            SELECT max((SELECT coalesce(max(seq), -1) FROM session_message WHERE session_id = {session}),
+                       (SELECT coalesce(max(enqueued_seq), -1) FROM session_inbox WHERE session_id = {session}))
+                > coalesce((SELECT seq FROM event_sequence WHERE aggregate_id = {session}), -1) AS Value
+            """).SingleAsync(ct);
+
     internal static Task<int> ForkSessionAsync(PersistenceContext db, string id, string parent, string boundary, string slug, string? title, double created, CancellationToken ct) =>
         db.Database.ExecuteSqlAsync($"""
             INSERT INTO session_v2 (id, parent_id, fork_session_id, fork_boundary, project_id, workspace_id,
@@ -82,10 +97,13 @@ internal static class SqliteIntrinsics
 
     internal static async Task<long?> IncrementResumeAsync(PersistenceContext db, string session, CancellationToken ct)
     {
-        await foreach (var attempts in db.Database.SqlQuery<long>($"""
+        await foreach (var row in db.Database.SqlQuery<ResumeCounterRow>($"""
             UPDATE session_v2 SET resume_attempts = resume_attempts + 1, time_updated = time_updated
-            WHERE id = {session} RETURNING resume_attempts
-            """).AsAsyncEnumerable().WithCancellation(ct)) return attempts;
+            WHERE id = {session} RETURNING resume_attempts AS Attempts, typeof(resume_attempts) AS StorageType
+            """).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(true))
+            // ExecuteScalar's original `is long` must not start accepting a REAL
+            // value produced by SQLite arithmetic overflow through GetInt64.
+            return row.StorageType == "integer" ? row.Attempts : null;
         return null;
     }
 
@@ -148,7 +166,7 @@ internal static class SqliteIntrinsics
     {
         await foreach (var row in db.Database.SqlQuery<ConsumedInbox>($"""
             DELETE FROM session_inbox WHERE id = {id} AND session_id = {session} RETURNING type, payload
-            """).AsAsyncEnumerable().WithCancellation(ct)) return row;
+            """).AsAsyncEnumerable().WithCancellation(ct).ConfigureAwait(true)) return row;
         return null;
     }
 
@@ -205,4 +223,10 @@ internal sealed class ConsumedInbox
 {
     public string type { get; set; } = "";
     public string payload { get; set; } = "";
+}
+
+internal sealed class ResumeCounterRow
+{
+    public long? Attempts { get; set; }
+    public string StorageType { get; set; } = "";
 }

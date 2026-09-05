@@ -33,25 +33,25 @@ internal sealed partial class SessionAdmission(IDatabase database)
             };
             if (delivery is not (InboxDeliveryMode.Steer or InboxDeliveryMode.Queue))
                 throw new ArgumentOutOfRangeException(nameof(delivery));
-            await RequireSessionAsync(transaction, sessionId, token);
+            await RequireSessionAsync(transaction, sessionId, token).ConfigureAwait(true);
 
             // First admission wins before serializing or validating a retried payload.
             // Delivered identities are reconciled from messages, not retained events.
-            var existing = await ReconcileAsync(transaction, sessionId, id, type, delivery, token);
+            var existing = await ReconcileAsync(transaction, sessionId, id, type, delivery, token).ConfigureAwait(true);
             if (existing is not null) return existing;
 
-            var messageSeq = await transaction.Db.Messages.Where(row => row.session_id == sessionId.Value).MaxAsync(row => (long?)row.seq, token);
-            if (messageSeq is { } seq && seq > await transaction.LatestSequenceAsync(sessionId.Value, token))
+            var messageSeq = await transaction.Db.Messages.Where(row => row.session_id == sessionId.Value).MaxAsync(row => (long?)row.seq, token).ConfigureAwait(true);
+            if (messageSeq is { } seq && seq > await transaction.LatestSequenceAsync(sessionId.Value, token).ConfigureAwait(true))
                 throw new NotSupportedException("Unsequenced direct-SQL history requires a canonical migration before durable admission.");
             if (payload is UserInboxPayload)
             {
-                if (await transaction.Db.Sessions.Where(row => row.id == sessionId.Value).Select(row => row.revert).FirstOrDefaultAsync(token) is not null)
+                if (await transaction.Db.Sessions.Where(row => row.id == sessionId.Value).Select(row => row.revert).FirstOrDefaultAsync(token).ConfigureAwait(true) is not null)
                     throw new NotSupportedException("Commit the staged revert through its durable domain operation before admitting new input.");
             }
 
             RequireSupportedPayload(payload);
             var data = new SessionInboxEnqueuedEventData(sessionId, id, new InboxItem(delivery, payload));
-            var committed = await transaction.AppendAsync(Enqueued, data, token);
+            var committed = await transaction.AppendAsync(Enqueued, data, token).ConfigureAwait(true);
             return new SessionInboxItem(id, sessionId, delivery,
                 committed.Data.Deserialize(OpenCodeJsonContext.Default.SessionInboxEnqueuedEventData)!.Item.Payload,
                 DateTimeOffset.FromUnixTimeMilliseconds(checked((long)committed.Created)));
@@ -60,21 +60,22 @@ internal sealed partial class SessionAdmission(IDatabase database)
     private static async Task<SessionInboxItem?> ReconcileAsync(EventTransaction transaction, SessionId sessionId,
         MessageId id, string type, InboxDeliveryMode delivery, CancellationToken ct)
     {
-        var pending = await transaction.Db.Inbox.FirstOrDefaultAsync(row => row.id == id.Value, ct);
+        var pending = await transaction.Db.Inbox.Where(row => row.id == id.Value)
+            .Select(row => new { row.session_id, row.type, row.delivery, row.payload, row.time_created }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         if (pending is not null)
         {
-                if (pending.session_id != sessionId.Value || pending.type != type)
-                    throw new InboxLifecycleConflictException(id);
-                using var document = JsonDocument.Parse(pending.payload);
-                return new SessionInboxItem(id, sessionId, pending.delivery switch
-                {
-                    "steer" => InboxDeliveryMode.Steer,
-                    "queue" => InboxDeliveryMode.Queue,
-                    _ => throw new JsonException("Invalid persisted inbox delivery.")
-                }, DecodePayload(type, document.RootElement), DateTimeOffset.FromUnixTimeMilliseconds(pending.time_created));
+            if (pending.session_id != sessionId.Value || pending.type != type)
+                throw new InboxLifecycleConflictException(id);
+            using var document = JsonDocument.Parse(pending.payload);
+            return new SessionInboxItem(id, sessionId, pending.delivery switch
+            {
+                "steer" => InboxDeliveryMode.Steer,
+                "queue" => InboxDeliveryMode.Queue,
+                _ => throw new JsonException("Invalid persisted inbox delivery.")
+            }, DecodePayload(type, document.RootElement), DateTimeOffset.FromUnixTimeMilliseconds(pending.time_created));
         }
 
-        var delivered = await transaction.Db.Messages.Where(row => row.id == id.Value).Select(row => new { row.session_id, row.type, row.data }).FirstOrDefaultAsync(ct);
+        var delivered = await transaction.Db.Messages.Where(row => row.id == id.Value).Select(row => new { row.session_id, row.type, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         if (delivered is null) return null;
         if (delivered.session_id != sessionId.Value || delivered.type != type)
             throw new InboxLifecycleConflictException(id);
@@ -110,11 +111,11 @@ internal sealed partial class SessionAdmission(IDatabase database)
     private static async Task ProjectEnqueuedAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var data = committed.Data.Deserialize(OpenCodeJsonContext.Default.SessionInboxEnqueuedEventData)!;
-        if (await transaction.Db.Messages.AnyAsync(row => row.id == data.InboxId.Value, ct)) throw new InboxLifecycleConflictException(data.InboxId);
+        if (await transaction.Db.Messages.AnyAsync(row => row.id == data.InboxId.Value, ct).ConfigureAwait(true)) throw new InboxLifecycleConflictException(data.InboxId);
         if (await SqliteIntrinsics.InsertInboxAsync(transaction.Db, data.InboxId.Value, data.SessionId.Value, data.Item.Type,
             JsonSerializer.Serialize(data.Item.Payload, OpenCodeJsonContext.Default.InboxPayload),
-            data.Item.Delivery == InboxDeliveryMode.Steer ? "steer" : "queue", checked((long)committed.Durable!.Seq), committed.Created, ct) != 1)
+            data.Item.Delivery == InboxDeliveryMode.Steer ? "steer" : "queue", checked((long)committed.Durable!.Seq), committed.Created, ct).ConfigureAwait(true) != 1)
             throw new InboxLifecycleConflictException(data.InboxId);
-        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, data.SessionId.Value, committed.Created, ct);
+        await SqliteIntrinsics.TouchSessionAsync(transaction.Db, data.SessionId.Value, committed.Created, ct).ConfigureAwait(true);
     }
 }

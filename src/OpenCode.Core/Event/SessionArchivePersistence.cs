@@ -31,37 +31,37 @@ public sealed class SessionArchivePersistence(IDatabase database, string version
                 throw new JsonException("Archive contains duplicate settled message IDs.");
             var metadata = input.Metadata?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal);
             // Source resolution/upsert is outside the Session commit, but never trusts archive project/location bindings.
-            var destination = await ProjectDiscovery.ResolveAsync(database, input.Location.Directory, input.Location.WorkspaceId?.Value, ct);
+            var destination = await ProjectDiscovery.ResolveAsync(database, input.Location.Directory, input.Location.WorkspaceId?.Value, ct).ConfigureAwait(true);
             var location = new LocationRef(Path.GetFullPath(input.Location.Directory), input.Location.WorkspaceId);
             var subpath = Path.GetRelativePath(destination.Project.Directory, location.Directory).Replace('\\', '/');
             return await new EventStore(database).TransactAsync(input.Id.Value, async (transaction, token) =>
             {
-                if (await transaction.Db.Sessions.AnyAsync(row => row.id == input.Id.Value, token)) throw new SessionArchiveConflictException(input.Id);
+                if (await transaction.Db.Sessions.AnyAsync(row => row.id == input.Id.Value, token).ConfigureAwait(true)) throw new SessionArchiveConflictException(input.Id);
                 // A removed/unreconciled aggregate is not a fresh archive destination.
-                if (await transaction.LatestSequenceAsync(input.Id.Value, token) >= 0) throw new SessionArchiveConflictException(input.Id);
+                if (await transaction.LatestSequenceAsync(input.Id.Value, token).ConfigureAwait(true) >= 0) throw new SessionArchiveConflictException(input.Id);
                 if (input.ParentId is { } parent)
                 {
-                    if (!await transaction.Db.Sessions.AnyAsync(row => row.id == parent.Value, token)) throw new SessionMutationNotFoundException(parent);
+                    if (!await transaction.Db.Sessions.AnyAsync(row => row.id == parent.Value, token).ConfigureAwait(true)) throw new SessionMutationNotFoundException(parent);
                 }
                 foreach (var message in messages)
                 {
                     if (await transaction.Db.Messages.Where(row => row.id == message.Id.Value).Select(row => row.id)
-                        .Concat(transaction.Db.Inbox.Where(row => row.id == message.Id.Value).Select(row => row.id)).AnyAsync(token))
+                        .Concat(transaction.Db.Inbox.Where(row => row.id == message.Id.Value).Select(row => row.id)).AnyAsync(token).ConfigureAwait(true))
                         throw new InvalidOperationException($"Archive message ID already exists: {message.Id}");
                 }
                 var created = await transaction.AppendAsync(SessionCreation.Created, new SessionCreatedEventData(input.Id, destination.Project.Id,
                     $"{Adjectives[Random.Shared.Next(Adjectives.Length)]}-{Nouns[Random.Shared.Next(Nouns.Length)]}", version, location,
-                    input.Title, input.Agent, input.Model, input.ParentId, metadata, subpath == "." ? "" : subpath), token, location: location);
+                    input.Title, input.Agent, input.Model, input.ParentId, metadata, subpath == "." ? "" : subpath), token, location: location).ConfigureAwait(true);
                 for (var index = 0; index < messages.Length; index++)
                 {
                     var message = messages[index];
                     await transaction.Db.InsertAsync(new MessageRow { id = message.Id.Value, session_id = input.Id.Value, type = message.Type,
-                        seq = index + 1, time_created = message.Created, time_updated = database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), data = message.Data }, token);
+                        seq = index + 1, time_created = message.Created, time_updated = database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), data = message.Data }, token).ConfigureAwait(true);
                 }
-                if (messages.Length > 0) await transaction.ReserveSequenceAsync(input.Id.Value, checked((long)created.Durable!.Seq + messages.Length), token);
-                await SqliteIntrinsics.RestoreArchiveAsync(transaction.Db, input, token);
-                return SessionStore.ReadSession(await transaction.Db.Sessions.FirstOrDefaultAsync(row => row.id == input.Id.Value, token)
+                if (messages.Length > 0) await transaction.ReserveSequenceAsync(input.Id.Value, checked((long)created.Durable!.Seq + messages.Length), token).ConfigureAwait(true);
+                await SqliteIntrinsics.RestoreArchiveAsync(transaction.Db, input, token).ConfigureAwait(true);
+                return SessionStore.ReadSession(await transaction.Db.SessionDetails.FirstOrDefaultAsync(row => row.id == input.Id.Value, token).ConfigureAwait(true)
                     ?? throw new InvalidOperationException("Import projection did not create its Session."));
-            }, ct);
+            }, ct).ConfigureAwait(true);
         }, ct);
 }

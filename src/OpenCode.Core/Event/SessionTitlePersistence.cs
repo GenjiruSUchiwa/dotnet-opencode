@@ -10,10 +10,12 @@ internal sealed class SessionTitlePersistence(IDatabase database)
 {
     internal async Task<UserMessage?> FirstUserAsync(SessionId id, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
         var row = await db.Messages.Where(row => row.session_id == id.Value && row.type == "user").OrderBy(row => row.seq)
-            .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct);
+            .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         if (row is null) return null;
         try { return SessionQueries.Decode(id, MessageId.FromExisting(row.id), "user", row.data) as UserMessage; }
         catch (SessionMessageReadException) { return null; }
@@ -21,16 +23,18 @@ internal sealed class SessionTitlePersistence(IDatabase database)
 
     internal async Task<long> ExpectedSequenceAsync(SessionId id, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return (await db.Sequences.Where(row => row.aggregate_id == id.Value).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct) ?? -1) + 1;
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        return (await db.Sequences.Where(row => row.aggregate_id == id.Value).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct).ConfigureAwait(true) ?? -1) + 1;
     }
 
     internal Task UsageAsync(SessionId id, Money cost, TokenUsageInfo tokens, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token)) return false;
-            await transaction.AppendAsync(CompactionProjector.Usage, new SessionUsageRecordedEventData(id, "title", cost, tokens), token);
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token).ConfigureAwait(true)) return false;
+            await transaction.AppendAsync(CompactionProjector.Usage, new SessionUsageRecordedEventData(id, "title", cost, tokens), token).ConfigureAwait(true);
             return true;
         }, ct);
 

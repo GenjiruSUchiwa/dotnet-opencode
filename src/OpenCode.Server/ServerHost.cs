@@ -1,6 +1,8 @@
 namespace OpenCode.Server;
 
 using System.Net;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Security.AccessControl;
@@ -78,6 +80,7 @@ public static class ServerHost
         catch (Exception error) { diagnostics.Fail(error); throw; }
     }
 
+    [SuppressMessage("Design", "MA0015", Justification = "Server startup diagnostics retain their established validation messages and selected-port field name; schema composition must not change public failure text.")]
     private static WebApplication CreateAppCore(string[] args, int port, string? registrationFile, StartupDiagnostics diagnostics, PersistentPtyOptions? persistentPty,
         string? standalonePassword = null, TimeProvider? clock = null)
     {
@@ -216,6 +219,7 @@ public static class ServerHost
         builder.Services.AddSingleton<FormLocationServices>();
         builder.Services.AddHostedService<FormLocationServices>(services => services.GetRequiredService<FormLocationServices>());
         builder.Services.AddIntegrationServices();
+        builder.Services.AddNativeWebSearch();
         builder.Services.AddPersistentPty(persistentPty);
         builder.Services.AddShellServices(new ShellHostOptions(
             ResolveShell: (location, ct) => { ct.ThrowIfCancellationRequested(); return Task.FromResult(PtyShellSelection.Resolve(location)); },
@@ -331,6 +335,7 @@ public static class ServerHost
         app.MapMcpEndpoints();
         app.MapFormEndpoints();
         app.MapIntegrationEndpoints();
+        app.MapWebSearchEndpoints();
         app.MapCredentialEndpoints();
         app.MapShellEndpoints();
         app.MapVcsEndpoints();
@@ -340,7 +345,8 @@ public static class ServerHost
         return app;
     }
 
-    private static int ParsePort(string value) => int.TryParse(value, out var port) && port is >= 1 and <= 65535
+    [SuppressMessage("Design", "MA0015", Justification = "Keep the existing service-port validation message without adding a new parameter suffix.")]
+    private static int ParsePort(string value) => int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out var port) && port is >= 1 and <= 65535
         ? port : throw new ArgumentException("The service port must be between 1 and 65535.");
 
     private static LocalToolOptions LocalToolOptionsFor(LocationInfo location, IServiceProvider services)
@@ -403,7 +409,7 @@ public static class ServerHost
     {
         if (!File.Exists(path)) return false;
         if (OperatingSystem.IsWindows()) return Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase);
-        return (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+        return (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != UnixFileMode.None;
     }
 }
 
@@ -550,7 +556,7 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
             if (_monitorCancellation.IsCancellationRequested) return;
             try
             {
-                using var connection = Application.Services.GetRequiredService<IDatabase>().CreateConnection();
+                await using var connection = Application.Services.GetRequiredService<IDatabase>().CreateConnection();
                 _diagnostics.Phase("session-recovery");
                 await Application.Services.GetRequiredService<SessionExecutionService>().StartRecovery();
                 if (_monitorCancellation.IsCancellationRequested) return;
@@ -563,7 +569,7 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
                 Interlocked.CompareExchange(ref _state, "failed", "starting");
                 Application.Logger.LogError(error, "The .NET service could not initialize; health remains failed.");
             }
-        });
+        }, CancellationToken.None);
     }
 
     private async Task WritePrivateAsync(string path, string content, CancellationToken ct)
@@ -572,7 +578,7 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
         var temp = path + "." + Id + ".tmp";
         try
         {
-            using (var stream = CreatePrivateFile(temp))
+            await using (var stream = CreatePrivateFile(temp))
             {
                 await stream.WriteAsync(Encoding.UTF8.GetBytes(content), ct);
                 stream.Flush(flushToDisk: true);
@@ -641,6 +647,7 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
     }
 
+    [SuppressMessage("Usage", "MA0042", Justification = "The lifecycle contract cancels monitor callbacks synchronously before returning the completed stopping task; CancelAsync would move those callbacks to another execution context.")]
     public Task StoppingAsync(CancellationToken cancellationToken)
     {
         Interlocked.Exchange(ref _state, "stopping");

@@ -42,7 +42,7 @@ public static class CatalogLocation
         string id;
         if (marker == ".git")
         {
-            var discovery = await RunAsync("git", root, ["rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"], ct);
+            var discovery = await RunAsync("git", root, ["rev-parse", "--git-dir", "--git-common-dir", "--show-toplevel"], ct).ConfigureAwait(true);
             var lines = discovery?.Split('\n').Select(line => OperatingSystem.IsWindows() && line.EndsWith('\r') ? line[..^1] : line).ToArray();
             if (lines is null || lines.Length < 3)
                 throw new CatalogLocationUnavailableException("Git repository discovery failed; project identity is unavailable.");
@@ -52,16 +52,16 @@ public static class CatalogLocation
             canonical = root;
             if (!PathEquals(gitDirectory, commonDirectory))
             {
-                var worktrees = await RunAsync("git", root, ["worktree", "list", "--porcelain", "-z"], ct);
+                var worktrees = await RunAsync("git", root, ["worktree", "list", "--porcelain", "-z"], ct).ConfigureAwait(true);
                 var main = worktrees?.Split('\0').FirstOrDefault(record => record.StartsWith("worktree ", StringComparison.Ordinal));
                 if (main is null) throw new CatalogLocationUnavailableException("The main Git worktree could not be resolved.");
                 canonical = RealPath(Path.GetFullPath(main[9..], root));
             }
-            var remote = await RunAsync("git", root, ["remote", "get-url", "origin"], ct);
+            var remote = await RunAsync("git", root, ["remote", "get-url", "origin"], ct).ConfigureAwait(true);
             var origin = remote is null ? null : NormalizeRemote(remote);
-            var cached = await CachedAsync(commonDirectory, ct);
+            var cached = await CachedAsync(commonDirectory, ct).ConfigureAwait(true);
             var roots = origin is null && cached is null
-                ? await RunAsync("git", root, ["rev-list", "--max-parents=0", "HEAD"], ct) : null;
+                ? await RunAsync("git", root, ["rev-list", "--max-parents=0", "HEAD"], ct).ConfigureAwait(true) : null;
             id = origin is not null ? Hash("git-remote:" + origin) : cached
                 ?? roots?.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal).FirstOrDefault()
                 ?? "global";
@@ -69,8 +69,8 @@ public static class CatalogLocation
         }
         else if (marker == ".hg")
         {
-            var cached = await CachedAsync(Path.Combine(root, ".hg"), ct);
-            var roots = cached is null ? await RunAsync("hg", root, ["log", "-r", "roots(all())", "-T", "{node}\n"], ct) : null;
+            var cached = await CachedAsync(Path.Combine(root, ".hg"), ct).ConfigureAwait(true);
+            var roots = cached is null ? await RunAsync("hg", root, ["log", "-r", "roots(all())", "-T", "{node}\n"], ct).ConfigureAwait(true) : null;
             id = cached ?? roots?.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Order(StringComparer.Ordinal).FirstOrDefault() ?? "global";
             vcs = "hg";
         }
@@ -78,9 +78,11 @@ public static class CatalogLocation
 
         // Identity persistence is followed by ProjectDiscovery's durable worktree
         // announcement/adoption. This internal step does not publish a second event.
-        await using var connection = database.CreateConnection();
-        await using var db = new OpenCode.Core.Persistence.PersistenceContext(connection);
-        await OpenCode.Core.Persistence.SqliteIntrinsics.PutProjectAsync(db, id, StoragePath(canonical), vcs, database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new OpenCode.Core.Persistence.PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await OpenCode.Core.Persistence.SqliteIntrinsics.PutProjectAsync(db, id, StoragePath(canonical), vcs, database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true);
         return new LocationInfo(requested, new LocationProjectInfo(ProjectId.FromExisting(id), root, canonical));
     }
 
@@ -109,7 +111,7 @@ public static class CatalogLocation
     {
         var file = Path.Combine(store, "opencode");
         if (!File.Exists(file)) return null;
-        var value = (await File.ReadAllTextAsync(file, ct)).Trim();
+        var value = (await File.ReadAllTextAsync(file, ct).ConfigureAwait(true)).Trim();
         return value.Length == 0 ? null : value;
     }
 
@@ -126,12 +128,12 @@ public static class CatalogLocation
         }
         else
         {
-            var match = Regex.Match(value, @"^([^@/:]+@)?([^/:]+):(.+)$", RegexOptions.CultureInvariant);
+            var match = Regex.Match(value, @"^(?:[^@/:]+@)?(?<host>[^/:]+):(?<path>.+)$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
             if (!match.Success) return null;
-            host = match.Groups[2].Value;
-            path = match.Groups[3].Value;
+            host = match.Groups["host"].Value;
+            path = match.Groups["path"].Value;
         }
-        path = Regex.Replace(path.TrimStart('/'), @"\.git/?$", "").TrimEnd('/');
+        path = Regex.Replace(path.TrimStart('/'), @"\.git/?$", "", RegexOptions.NonBacktracking).TrimEnd('/');
         return host.Length == 0 || path.Length == 0 ? null : host.ToLowerInvariant() + "/" + path;
     }
 
@@ -152,7 +154,7 @@ public static class CatalogLocation
         if (executable == "hg") start.Environment["HGPLAIN"] = "1";
         try
         {
-            var output = await Process.RunAndCaptureTextAsync(start, ct);
+            var output = await Process.RunAndCaptureTextAsync(start, ct).ConfigureAwait(true);
             // Cancellation while reading throws; cancellation during the final
             // exit wait can instead return a canceled status. Neither is VCS failure.
             ct.ThrowIfCancellationRequested();

@@ -20,10 +20,10 @@ public sealed class SessionSkillPublisher(IDatabase database) : ISessionSkillPub
         {
             // Resolve existence in the current aggregate, not the skill file's original Location.
             // Like source Session.skill, the event is Session-ID based and is not pinned to a stale directory.
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == data.SessionId.Value, token)) throw new SessionMutationNotFoundException(data.SessionId);
-            if (await transaction.Db.HighestProjectionAsync(data.SessionId.Value, token) > await transaction.LatestSequenceAsync(data.SessionId.Value, token))
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == data.SessionId.Value, token).ConfigureAwait(true)) throw new SessionMutationNotFoundException(data.SessionId);
+            if (await transaction.Db.HighestProjectionAsync(data.SessionId.Value, token).ConfigureAwait(true) > await transaction.LatestSequenceAsync(data.SessionId.Value, token).ConfigureAwait(true))
                 throw new NotSupportedException("Unsequenced projections require canonical migration before skill activation.");
-            return await transaction.AppendAsync(Activated, data, token, eventId);
+            return await transaction.AppendAsync(Activated, data, token, eventId).ConfigureAwait(true);
         }, ct), ct);
 
     private static async Task ProjectAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
@@ -36,6 +36,6 @@ public sealed class SessionSkillPublisher(IDatabase database) : ISessionSkillPub
         };
         if (committed.Metadata is not null) message["metadata"] = JsonSerializer.SerializeToNode(committed.Metadata);
         await SqliteIntrinsics.InsertMessageAsync(transaction.Db, "msg_" + committed.Id.Value[4..], data.SessionId.Value, "skill",
-            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), message.ToJsonString(), ct);
+            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), message.ToJsonString(), ct).ConfigureAwait(true);
     }
 }

@@ -3,6 +3,7 @@ namespace OpenCode.Cli.Auth;
 using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using OpenCode.Core.Database;
 using OpenCode.Core.Llm;
 
@@ -13,6 +14,7 @@ public sealed record AuthLoginOptions(string? Target = null, string? Method = nu
 public static class AuthCommands
 {
     private sealed class SelectionCancelledException : Exception;
+    [SuppressMessage("Design", "MA0015", Justification = "Keep source login validation errors unchanged; the command deliberately projects them to a fixed redacted result.")]
     public static async Task<AuthCommandResult> RunAsync(AuthLoginOptions input, CancellationToken ct = default, TimeProvider? clock = null)
     {
         clock ??= TimeProvider.System;
@@ -26,17 +28,17 @@ public static class AuthCommands
             {
                 if (server is not null && (!Uri.TryCreate(server, UriKind.Absolute, out var url)
                     || url.Scheme is not ("https" or "http") || url.UserInfo.Length != 0 || url.Query.Length != 0 || url.Fragment.Length != 0))
-                    throw new ArgumentException("Console URL must be HTTP(S), without credentials, query, or fragment.", nameof(input));
+                    throw new ArgumentException("Console URL must be HTTP(S), without credentials, query, or fragment.");
             }
             target ??= await ChooseAsync("Select integration", "OpenCode", "OpenAI", ct, clock).ConfigureAwait(true) == 1 ? "opencode" : "openai";
             target = target.ToLowerInvariant() switch
             {
                 "opencode" => "opencode",
                 "openai" => "openai",
-                _ => throw new ArgumentException("Only opencode and openai OAuth login are implemented.", nameof(input))
+                _ => throw new ArgumentException("Only opencode and openai OAuth login are implemented.")
             };
             if (target == "opencode" && method is not (null or "device"))
-                throw new ArgumentException("OpenCode login supports only --method device.", nameof(input));
+                throw new ArgumentException("OpenCode login supports only --method device.");
             if (target == "openai")
             {
                 method ??= await ChooseAsync("Select login method", "ChatGPT Pro/Plus (browser)", "ChatGPT Pro/Plus (headless)", ct, clock).ConfigureAwait(true) == 1
@@ -45,7 +47,7 @@ public static class AuthCommands
                 {
                     "chatgpt-browser" or "chatgpt pro/plus (browser)" => OpenAiOAuthService.BrowserMethodId,
                     "chatgpt-headless" or "chatgpt pro/plus (headless)" => OpenAiOAuthService.HeadlessMethodId,
-                    _ => throw new ArgumentException("Choose --method chatgpt-browser or --method chatgpt-headless.", nameof(input))
+                    _ => throw new ArgumentException("Choose --method chatgpt-browser or --method chatgpt-headless.")
                 };
             }
 
@@ -113,10 +115,11 @@ public static class AuthCommands
         }
     }
 
+    [SuppressMessage("Design", "MA0015", Justification = "Noninteractive-terminal rejection is process state, not an invalid title/choice parameter; retain the original error without a misleading parameter name.")]
     private static async Task<int> ChooseAsync(string title, string first, string second, CancellationToken ct, TimeProvider clock)
     {
         if (Console.IsInputRedirected || Console.IsOutputRedirected)
-            throw new ArgumentException("Explicit target and method are required without an interactive terminal.", nameof(title));
+            throw new ArgumentException("Explicit target and method are required without an interactive terminal.");
         Console.WriteLine($"{title}:\n  1. {first}\n  2. {second}\nPress 1 or 2 (Esc to cancel).");
         // ReadLine on Console.In can block synchronously despite its async API.
         // Poll keys instead so cancellation never leaves a background reader alive.
@@ -131,10 +134,11 @@ public static class AuthCommands
         }
     }
 
+    [SuppressMessage("Design", "MA0015", Justification = "Preserve the existing browser-URL validation error text.")]
     internal static void OpenBrowser(Uri uri, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (uri.Scheme is not ("https" or "http")) throw new ArgumentException("Browser URL must be HTTP(S).", nameof(uri));
+        if (uri.Scheme is not ("https" or "http")) throw new ArgumentException("Browser URL must be HTTP(S).");
         try
         {
             // .NET 11 StartAndForget rejects UseShellExecute. URL activation may

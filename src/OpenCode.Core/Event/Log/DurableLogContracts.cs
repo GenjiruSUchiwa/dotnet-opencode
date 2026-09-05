@@ -1,6 +1,7 @@
 namespace OpenCode.Core.Event.Log;
 
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 using OpenCode.Schema;
 
@@ -48,6 +49,7 @@ public sealed class DurableLogItemJsonConverter : JsonConverter<DurableLogItem>
         return new DurableLogItem.Entry(item);
     }
 
+    [SuppressMessage("Design", "MA0015", Justification = "Retain the existing serialized-log validation error and inferred aggregate-field parameter name.")]
     public override void Write(Utf8JsonWriter writer, DurableLogItem value, JsonSerializerOptions options)
     {
         if (value is DurableLogItem.Entry entry)

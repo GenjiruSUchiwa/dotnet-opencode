@@ -30,6 +30,6 @@ internal static class SessionSyntheticProjector
         if (data.Description is not null) encoded["description"] = data.Description;
         if (data.Metadata is not null) encoded["metadata"] = JsonSerializer.SerializeToNode(data.Metadata, OpenCodeJsonContext.Default.Options);
         await SqliteIntrinsics.InsertMessageAsync(transaction.Db, "msg_" + committed.Id.Value[4..], data.SessionId.Value, "synthetic",
-            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), encoded.ToJsonString(), ct);
+            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), encoded.ToJsonString(), ct).ConfigureAwait(true);
     }
 }

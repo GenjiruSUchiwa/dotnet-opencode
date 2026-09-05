@@ -24,8 +24,8 @@ internal static class InboxSerialization
         }
         try
         {
-            await entry.Gate.WaitAsync(ct);
-            try { return await action(); }
+            await entry.Gate.WaitAsync(ct).ConfigureAwait(true);
+            try { return await action().ConfigureAwait(true); }
             finally { entry.Gate.Release(); }
         }
         finally

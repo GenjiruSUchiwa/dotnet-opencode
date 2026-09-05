@@ -26,10 +26,10 @@
 - **Jint + Acornima** — managed JavaScript execution and parsing for Code Mode, with captured tool bindings and explicit compatibility limits.
 - **Markdig, AngleSharp, and the official MCP SDK** — .NET libraries for Markdown, HTML processing, and Model Context Protocol integration.
 - **SQLite and durable events** — explicit transactions, ordered event history, projections, durable input admission, and restart-recovery markers.
+- **EF Core 11 + SQLite** — persistence mappings and queries preserve the source-owned schema/migration runner, immediate transactions, and named SQLite-specific operations. The source migration and owned analyzer review are complete; runtime database parity remains unverified. [Migration](docs/ef-core-migration.md)
 
 ### Ecosystem migrations in progress
 
-- **EF Core 11 + SQLite** — full persistence migration to fluent mappings and LINQ, preserving the existing schema, source migration runner, transaction boundaries, and explicit SQLite-specific operations.
 - **Meziantou.Analyzer** — compile-time quality checks and a full diagnostic cleanup, coordinated with the persistence migration.
 - Marten, Fisher, and Wolverine are **not part of the selected persistence stack**.
 

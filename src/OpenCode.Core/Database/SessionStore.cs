@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using OpenCode.Core.Persistence;
+using OpenCode.Core.Projects;
 using OpenCode.Core.Event;
 using OpenCode.Core.Instructions;
 using OpenCode.Core.Locations;
@@ -33,24 +34,31 @@ public sealed class SessionStore : IDisposable
 
     public async Task<IReadOnlyList<SessionInfo>> ListSessionsAsync(int limit = 50, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
-        await using var db = new PersistenceContext(conn);
-        return (await db.Sessions.OrderByDescending(row => row.time_updated).ThenByDescending(row => row.id).LimitAsync(limit, ct))
-            .Select(ReadSession).ToArray();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
+        var db = new PersistenceContext(conn);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var sessions = new List<SessionInfo>();
+        await foreach (var row in db.SessionDetails.OrderByDescending(row => row.time_updated).ThenByDescending(row => row.id).ReadAsync(limit, ct).ConfigureAwait(true))
+            sessions.Add(ReadSession(row));
+        return sessions;
     }
 
     public async Task<SessionInfo?> GetSessionAsync(SessionId id, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
-        await using var db = new PersistenceContext(conn);
-        var row = await db.Sessions.FirstOrDefaultAsync(row => row.id == id.Value, ct);
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
+        var db = new PersistenceContext(conn);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var key = id.Value;
+        var row = await db.SessionDetails.FirstOrDefaultAsync(row => row.id == key, ct).ConfigureAwait(true);
         return row is null ? null : ReadSession(row);
     }
 
     internal static SessionInfo ReadSession(SessionRow row)
     {
         static DateTimeOffset? Time(long? value) => value is { } time ? DateTimeOffset.FromUnixTimeMilliseconds(time) : null;
-        var directory = OperatingSystem.IsWindows() && System.Text.RegularExpressions.Regex.IsMatch(row.directory, @"^(?:[A-Za-z]:/|//)")
+        var directory = OperatingSystem.IsWindows() && ProjectPaths.IsWindowsStorage(row.directory)
             ? row.directory.Replace('/', '\\') : row.directory;
         var model = row.model is { } modelJson ? JsonSerializer.Deserialize(modelJson, OpenCodeJsonContext.Default.ModelRef) : null;
         return new SessionInfo(
@@ -95,12 +103,14 @@ public sealed class SessionStore : IDisposable
 
     private async Task<IReadOnlyList<JsonElement>> ReadMessagesAsync(SessionId sessionId, int limit, bool context, CancellationToken ct)
     {
-        await using var conn = _database.CreateConnection();
-        await using var db = new PersistenceContext(conn);
-        var query = context ? SessionQueries.Context(db, sessionId.Value) : db.Messages.Where(row => row.session_id == sessionId.Value);
-        var rows = await query.OrderBy(row => row.seq).Select(row => new { row.id, row.type, row.data }).LimitAsync(limit, ct);
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
+        var db = new PersistenceContext(conn);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var session = sessionId.Value;
+        var query = context ? SessionQueries.Context(db, session) : db.Messages.Where(row => row.session_id == session);
         var list = new List<JsonElement>();
-        foreach (var row in rows)
+        await foreach (var row in query.OrderBy(row => row.seq).Select(row => new { row.id, row.type, row.data }).ReadAsync(limit, ct).ConfigureAwait(true))
         {
             var data = new JsonObject
             {
@@ -122,57 +132,65 @@ public sealed class SessionStore : IDisposable
 
     public async Task<ProjectId> EnsureProjectAsync(string directory, CancellationToken ct = default)
     {
-        var location = await CatalogLocation.ResolveAsync(_database, directory, ct: ct);
+        var location = await CatalogLocation.ResolveAsync(_database, directory, ct: ct).ConfigureAwait(true);
         return location.Project.Id;
     }
 
     public async Task DeleteSessionAsync(SessionId id, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
         using var transaction = conn.BeginTransaction(deferred: false);
-        await using var db = new PersistenceContext(conn, transaction);
-        await RequireDirectMutationAsync(db, id, ct);
-        await db.Sessions.Where(row => row.id == id.Value).ExecuteDeleteAsync(ct);
+        var db = new PersistenceContext(conn, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await RequireDirectMutationAsync(db, id, ct).ConfigureAwait(true);
+        await db.Sessions.Where(row => row.id == id.Value).ExecuteDeleteAsync(ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateTitleAsync(SessionId id, string title, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
         using var transaction = conn.BeginTransaction(deferred: false);
-        await using var db = new PersistenceContext(conn, transaction);
-        await RequireDirectMutationAsync(db, id, ct);
+        var db = new PersistenceContext(conn, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await RequireDirectMutationAsync(db, id, ct).ConfigureAwait(true);
         var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
         await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
-            .SetProperty(row => row.title, title).SetProperty(row => row.time_updated, now), ct);
+            .SetProperty(row => row.title, title).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateAgentAsync(SessionId id, string agent, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
         using var transaction = conn.BeginTransaction(deferred: false);
-        await using var db = new PersistenceContext(conn, transaction);
-        await RequireDirectMutationAsync(db, id, ct);
+        var db = new PersistenceContext(conn, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await RequireDirectMutationAsync(db, id, ct).ConfigureAwait(true);
         var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
         await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
-            .SetProperty(row => row.agent, agent).SetProperty(row => row.time_updated, now), ct);
+            .SetProperty(row => row.agent, agent).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateModelAsync(SessionId id, ModelRef model, CancellationToken ct = default)
     {
-        await using var conn = _database.CreateConnection();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
         using var transaction = conn.BeginTransaction(deferred: false);
-        await using var db = new PersistenceContext(conn, transaction);
-        await RequireDirectMutationAsync(db, id, ct);
+        var db = new PersistenceContext(conn, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await RequireDirectMutationAsync(db, id, ct).ConfigureAwait(true);
         var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize(model, OpenCodeJsonContext.Default.ModelRef);
         await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
-            .SetProperty(row => row.model, json).SetProperty(row => row.time_updated, now), ct);
+            .SetProperty(row => row.model, json).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
@@ -193,10 +211,10 @@ public sealed class SessionStore : IDisposable
     {
         directory = location?.Directory ?? directory;
         var id = sessionId ?? SessionId.Create();
-        if (sessionId is not null && await GetSessionAsync(id, ct) is { } existing) return existing;
+        if (sessionId is not null && await GetSessionAsync(id, ct).ConfigureAwait(true) is { } existing) return existing;
         if (fork is not null) throw new NotSupportedException("Fork creation requires the canonical fork event and history-copying projector.");
         var resolved = projectId is null
-            ? await CatalogLocation.ResolveAsync(_database, directory, location?.WorkspaceId?.Value, ct)
+            ? await CatalogLocation.ResolveAsync(_database, directory, location?.WorkspaceId?.Value, ct).ConfigureAwait(true)
             : null;
         var prjId = projectId ?? resolved!.Project.Id;
         if (resolved is not null)
@@ -207,7 +225,7 @@ public sealed class SessionStore : IDisposable
             subpath ??= relative == "." ? "" : relative;
         }
         return await new SessionCreation(_database).CreateAsync(new SessionCreatedEventData(id, prjId,
-            Guid.NewGuid().ToString("N")[..8], "2", location ?? new LocationRef(directory), title, agent, model, parentId, metadata, subpath), ct);
+            Guid.NewGuid().ToString("N")[..8], "2", location ?? new LocationRef(directory), title, agent, model, parentId, metadata, subpath), ct).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -224,9 +242,9 @@ public sealed class SessionStore : IDisposable
             _ => throw new NotSupportedException("Control admission requires its dedicated lifecycle.")
         };
         var admission = new SessionAdmission(_database);
-        var existing = await admission.ReconcileAsync(sessionId, id, type, delivery, ct);
+        var existing = await admission.ReconcileAsync(sessionId, id, type, delivery, ct).ConfigureAwait(true);
         if (existing is not null) return existing;
-        return await SessionRunCoordinator.AdmitAsync(sessionId, () => admission.AdmitAsync(sessionId, id, payload, delivery, ct), ct);
+        return await SessionRunCoordinator.AdmitAsync(sessionId, () => admission.AdmitAsync(sessionId, id, payload, delivery, ct), ct).ConfigureAwait(true);
     }
 
     /// <summary>Operation-specific compaction admission; one unconsumed compaction per Session.</summary>
@@ -241,8 +259,8 @@ public sealed class SessionStore : IDisposable
     internal Task<OpenCodeEvent> PublishCompactionAsync<T>(SessionId id, OpenCode.Core.Event.DurableEventDefinition<T> definition, T data, CancellationToken ct) =>
         new EventStore(_database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token)) throw new InvalidOperationException("Session not found.");
-            return await transaction.AppendAsync(definition, data, token);
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token).ConfigureAwait(true)) throw new InvalidOperationException("Session not found.");
+            return await transaction.AppendAsync(definition, data, token).ConfigureAwait(true);
         }, ct);
 
     /// <summary>Reconcile identity before preparing a retried user/synthetic payload.</summary>
@@ -286,8 +304,8 @@ public sealed class SessionStore : IDisposable
     public async IAsyncEnumerable<OpenCode.Core.Event.Log.DurableLogItem> LogAsync(SessionId sessionId, double? after = null, bool follow = false,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (await GetSessionAsync(sessionId, ct) is null) throw new SessionMutationNotFoundException(sessionId);
-        await foreach (var item in new OpenCode.Core.Event.Log.DurableEventLog(_database).LogAsync(sessionId.Value, after ?? -1, follow, ct))
+        if (await GetSessionAsync(sessionId, ct).ConfigureAwait(true) is null) throw new SessionMutationNotFoundException(sessionId);
+        await foreach (var item in new OpenCode.Core.Event.Log.DurableEventLog(_database).LogAsync(sessionId.Value, after ?? -1, follow, ct).ConfigureAwait(true))
             yield return item;
     }
 
@@ -313,8 +331,8 @@ public sealed class SessionStore : IDisposable
         JsonObject configuration, bool preview, CancellationToken ct, AgentInfo? selection = null,
         IReadOnlyList<string>? toolNames = null, string? projectDirectory = null, InstructionSource? mcp = null, InstructionSource? codeMode = null)
     {
-        var instructions = await ObserveInstructionsAsync(session, agent, configuration, ct, selection, toolNames, projectDirectory, mcp, codeMode);
-        await new InstructionPersistence(_database).PrepareAsync(session.Id, instructions.Sources, preview, ct);
+        var instructions = await ObserveInstructionsAsync(session, agent, configuration, ct, selection, toolNames, projectDirectory, mcp, codeMode).ConfigureAwait(true);
+        await new InstructionPersistence(_database).PrepareAsync(session.Id, instructions.Sources, preview, ct).ConfigureAwait(true);
         return instructions;
     }
 
@@ -331,7 +349,7 @@ public sealed class SessionStore : IDisposable
                 _instructionScopes.Add(directory, observations = new InstructionLocationState(directory));
         }
         var persistence = new InstructionPersistence(_database);
-        return await LocalInstructions.ReadAsync(session, agent, configuration, await persistence.EntriesAsync(session.Id, ct), observations, Clock, ct, selection, toolNames, projectDirectory, mcp, codeMode);
+        return await LocalInstructions.ReadAsync(session, agent, configuration, await persistence.EntriesAsync(session.Id, ct).ConfigureAwait(true), observations, Clock, ct, selection, toolNames, projectDirectory, mcp, codeMode).ConfigureAwait(true);
     }
 
     /// <summary>Invalidates only this host's Location observation scope; durable instruction epochs are unchanged.</summary>
@@ -372,15 +390,14 @@ public sealed class SessionStore : IDisposable
 
     internal async Task RequireExecutionReadyAsync(SessionId id, CancellationToken ct, bool recovering = false)
     {
-        await using var connection = _database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        if (await db.Sessions.Where(row => row.id == id.Value).Select(row => Math.Max(
-            db.Messages.Where(message => message.session_id == row.id).Max(message => (long?)message.seq) ?? -1,
-            db.Inbox.Where(inbox => inbox.session_id == row.id).Max(inbox => (long?)inbox.enqueued_seq) ?? -1)
-            > (db.Sequences.Where(sequence => sequence.aggregate_id == row.id).Select(sequence => (long?)sequence.seq).FirstOrDefault() ?? -1)).FirstOrDefaultAsync(ct))
+        var connection = _database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        if (await SqliteIntrinsics.HasUnsequencedProjectionAsync(db, id.Value, ct).ConfigureAwait(true))
             throw new NotSupportedException("Unsequenced projections require canonical migration before execution.");
         if (recovering) return;
-        if (await db.Sessions.AnyAsync(row => row.id == id.Value && row.time_suspended != null, ct))
+        if (await db.Sessions.AnyAsync(row => row.id == id.Value && row.time_suspended != null, ct).ConfigureAwait(true))
             throw new NotSupportedException("A surviving execution claim requires startup recovery; this runner will not overwrite or release it.");
     }
 
@@ -390,14 +407,19 @@ public sealed class SessionStore : IDisposable
         var type = data["type"]!.GetValue<string>();
         data.Remove("id");
         data.Remove("type");
-        await using var conn = _database.CreateConnection();
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
         using var transaction = conn.BeginTransaction(deferred: false);
-        await using var db = new PersistenceContext(conn, transaction);
-        await RequireDirectMutationAsync(db, sessionId, ct);
-        var nextSeq = (await db.Messages.Where(row => row.session_id == sessionId.Value).MaxAsync(row => (long?)row.seq, ct) ?? -1) + 1;
+        var db = new PersistenceContext(conn, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        await RequireDirectMutationAsync(db, sessionId, ct).ConfigureAwait(true);
+        // The old Convert.ToInt64(SQL max + 1) rejected overflow instead of
+        // wrapping to a negative sequence or clamping through GetInt64.
+        var nextSeq = checked((await db.Messages.Where(row => row.session_id == sessionId.Value)
+            .MaxAsync(row => (long?)row.seq, ct).ConfigureAwait(true) ?? -1) + 1);
         var nowMs = message.Time.Created.ToUnixTimeMilliseconds();
         await db.InsertAsync(new MessageRow { id = message.Id.Value, session_id = sessionId.Value, type = type,
-            seq = nextSeq, time_created = nowMs, time_updated = nowMs, data = data.ToJsonString() }, ct);
+            seq = nextSeq, time_created = nowMs, time_updated = nowMs, data = data.ToJsonString() }, ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
@@ -405,7 +427,8 @@ public sealed class SessionStore : IDisposable
     private static async Task RequireDirectMutationAsync(PersistenceContext db,
         SessionId id, CancellationToken ct)
     {
-        if (await db.Sequences.AnyAsync(row => row.aggregate_id == id.Value, ct))
+        var aggregate = id.Value;
+        if (await db.Sequences.AnyAsync(row => row.aggregate_id == aggregate, ct).ConfigureAwait(true))
             throw new NotSupportedException("Durable aggregates require event-driven domain operations, not direct session mutation.");
     }
 }

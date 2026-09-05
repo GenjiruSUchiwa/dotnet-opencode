@@ -28,8 +28,8 @@ internal sealed class ExecutionProjector(IDatabase database)
         }
         return new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token)) throw new InvalidOperationException("Session not found.");
-            return await transaction.AppendAsync(Definition(type), JsonSerializer.SerializeToElement(data), token);
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token).ConfigureAwait(true)) throw new InvalidOperationException("Session not found.");
+            return await transaction.AppendAsync(Definition(type), JsonSerializer.SerializeToElement(data), token).ConfigureAwait(true);
         }, ct);
     }
 
@@ -42,19 +42,19 @@ internal sealed class ExecutionProjector(IDatabase database)
         if (committed.Type == "session.execution.started")
         {
             if (transaction.Replaying) return; // Source started projection is void; local claim is an operational commit hook.
-            if (await transaction.Db.HighestProjectionAsync(id, ct) >= committed.Durable!.Seq)
+            if (await transaction.Db.HighestProjectionAsync(id, ct).ConfigureAwait(true) >= committed.Durable!.Seq)
                 throw new NotSupportedException("Unsequenced projections require canonical migration before execution.");
-            await SqliteIntrinsics.ClaimExecutionAsync(transaction.Db, id, committed.Created, ct);
+            await SqliteIntrinsics.ClaimExecutionAsync(transaction.Db, id, committed.Created, ct).ConfigureAwait(true);
             return;
         }
         // SessionMessageUpdater.clearCurrentRetry only considers the newest assistant.
-        await SqliteIntrinsics.ClearCurrentRetryAsync(transaction.Db, id, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct);
+        await SqliteIntrinsics.ClearCurrentRetryAsync(transaction.Db, id, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true);
         if (committed.Type == "session.execution.interrupted" && committed.Data.GetProperty("reason").GetString() == "shutdown") return;
         await SqliteIntrinsics.CompleteExecutionAsync(transaction.Db, id, committed.Created, committed.Type switch
         {
             "session.execution.succeeded" => "succeeded",
             "session.execution.failed" => "failed",
             _ => "interrupted"
-        }, transaction.Replaying, ct);
+        }, transaction.Replaying, ct).ConfigureAwait(true);
     }
 }

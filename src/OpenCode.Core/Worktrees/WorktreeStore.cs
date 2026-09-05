@@ -12,36 +12,48 @@ internal sealed class WorktreeStore(IDatabase database)
 {
     internal async Task<IReadOnlyList<WorktreeDirectory>> ListAsync(ProjectId project, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return (await db.Set<WorktreeRow>().Where(row => row.project_id == project.Value).OrderByDescending(row => row.time_created)
-            .ThenBy(row => row.directory).Select(row => new { row.directory, row.strategy }).ToListAsync(ct))
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var id = project.Value;
+        return (await db.Set<WorktreeRow>().Where(row => row.project_id == id).OrderByDescending(row => row.time_created)
+            .ThenBy(row => row.directory).Select(row => new { row.directory, row.strategy }).ToListAsync(ct).ConfigureAwait(true))
             .Select(row => new WorktreeDirectory(ProjectPaths.Platform(row.directory), row.strategy)).ToArray();
     }
 
     internal async Task<WorktreeDirectory?> FindAsync(ProjectId project, string directory, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
         var stored = ProjectPaths.Storage(directory);
-        var row = await db.Set<WorktreeRow>().Where(row => row.project_id == project.Value && row.directory == stored)
-            .Select(row => new { row.directory, row.strategy }).FirstOrDefaultAsync(ct);
+        var id = project.Value;
+        var row = await db.Set<WorktreeRow>().Where(row => row.project_id == id && row.directory == stored)
+            .Select(row => new { row.directory, row.strategy }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         return row is null ? null : new(ProjectPaths.Platform(row.directory), row.strategy);
     }
 
     internal async Task<string?> PrimaryAsync(ProjectId project, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return await db.Set<ProjectRow>().Where(row => row.id == project.Value).Select(row => row.worktree).FirstOrDefaultAsync(ct) is { } path
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var id = project.Value;
+        return await db.Set<ProjectRow>().Where(row => row.id == id).Select(row => row.worktree).FirstOrDefaultAsync(ct).ConfigureAwait(true) is { } path
             ? ProjectPaths.Platform(path) : null;
     }
 
     internal async Task<string?> StartupAsync(ProjectId project, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return await db.Set<ProjectRow>().Where(row => row.id == project.Value).Select(row => row.commands).FirstOrDefaultAsync(ct) is { } json
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var id = project.Value;
+        return await db.Set<ProjectRow>().Where(row => row.id == id).Select(row => row.commands).FirstOrDefaultAsync(ct).ConfigureAwait(true) is { } json
             ? JsonSerializer.Deserialize(json, OpenCodeJsonContext.Default.ProjectCommands)?.Start : null;
     }
 
@@ -53,15 +65,18 @@ internal sealed class WorktreeStore(IDatabase database)
     internal static async Task<bool> PutAsync(SqliteConnection connection, SqliteTransaction transaction, ProjectId project, string directory,
         string? strategy, CancellationToken ct, TimeProvider clock)
     {
-        await using var db = new PersistenceContext(connection, transaction);
+        var db = new PersistenceContext(connection, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
         return await SqliteIntrinsics.PutWorktreeAsync(db, project.Value, ProjectPaths.Storage(directory), strategy,
-            clock.GetUtcNow().ToUnixTimeMilliseconds(), ct) != 0;
+            clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true) != 0;
     }
 
     internal static async Task<bool> RemoveAsync(SqliteConnection connection, SqliteTransaction transaction, ProjectId project, string directory, CancellationToken ct)
     {
-        await using var db = new PersistenceContext(connection, transaction);
+        var db = new PersistenceContext(connection, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
         var stored = ProjectPaths.Storage(directory);
-        return await db.Set<WorktreeRow>().Where(row => row.project_id == project.Value && row.directory == stored).ExecuteDeleteAsync(ct) != 0;
+        var id = project.Value;
+        return await db.Set<WorktreeRow>().Where(row => row.project_id == id && row.directory == stored).ExecuteDeleteAsync(ct).ConfigureAwait(true) != 0;
     }
 }

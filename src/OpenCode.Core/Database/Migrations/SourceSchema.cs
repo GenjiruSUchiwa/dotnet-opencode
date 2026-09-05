@@ -91,7 +91,7 @@ internal static partial class SourceSchema
                 if (specification.Predicate is not null)
                 {
                     var definition = objects.SingleOrDefault(item => item.Type == "index" && item.Name == index.Name)?.Sql ?? "";
-                    var where = Regex.Match(definition, @"\bWHERE\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                    var where = Regex.Match(definition, @"\bWHERE\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
                     if (!where.Success || CanonicalSql(definition[(where.Index + where.Length)..]) != CanonicalSql(specification.Predicate))
                         throw Rejected($"Partial index predicate differs from the source: {index.Name}.");
                 }
@@ -115,7 +115,7 @@ internal static partial class SourceSchema
         if (kind == MigrationJournalKind.Canonical)
         {
             Column[] expected = [new("id", "TEXT", Primary: 1), new("time_completed", "INTEGER", true)];
-            if (!columns.OrderBy(column => column.Name).SequenceEqual(expected.OrderBy(column => column.Name)))
+            if (!columns.OrderBy(column => column.Name, StringComparer.CurrentCulture).SequenceEqual(expected.OrderBy(column => column.Name, StringComparer.CurrentCulture)))
                 throw new MigrationRejectedException("invalid_journal", "The canonical migration journal has an unrecognized schema.");
             return;
         }
@@ -216,6 +216,6 @@ internal static partial class SourceSchema
         return result.ToString();
     }
 
-    [GeneratedRegex(@"\b(?:CHECK|COLLATE|GENERATED|AUTOINCREMENT|WITHOUT|STRICT|VIRTUAL|DEFERRABLE)\b|--|/\*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\b(?:CHECK|COLLATE|GENERATED|AUTOINCREMENT|WITHOUT|STRICT|VIRTUAL|DEFERRABLE)\b|--|/\*", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex ExtraTableFeatures();
 }

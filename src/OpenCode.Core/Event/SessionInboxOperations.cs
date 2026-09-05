@@ -43,13 +43,13 @@ internal sealed partial class SessionAdmission
                 throw new NotSupportedException("Only user and synthetic admission reconciliation is implemented.");
             if (delivery is not (InboxDeliveryMode.Steer or InboxDeliveryMode.Queue))
                 throw new ArgumentOutOfRangeException(nameof(delivery));
-            await RequireSessionAsync(transaction, sessionId, token);
-            return await ReconcileAsync(transaction, sessionId, id, type, delivery, token);
+            await RequireSessionAsync(transaction, sessionId, token).ConfigureAwait(true);
+            return await ReconcileAsync(transaction, sessionId, id, type, delivery, token).ConfigureAwait(true);
         }, ct);
 
     internal async Task<IReadOnlyList<SessionInboxItem>> ListAsync(SessionId sessionId, CancellationToken ct)
     {
-        var rows = await ReadPendingAsync(sessionId, null, false, ct);
+        var rows = await ReadPendingAsync(sessionId, null, false, ct).ConfigureAwait(true);
         return rows.Select(row => new SessionInboxItem(row.Id, sessionId, row.Delivery,
             DecodePayload(row.Type, row.Payload),
             DateTimeOffset.FromUnixTimeMilliseconds(row.Created))).ToArray();
@@ -59,9 +59,9 @@ internal sealed partial class SessionAdmission
     {
         if (scope is not (InboxPromotable.Steer or InboxPromotable.Input))
             throw new ArgumentOutOfRangeException(nameof(scope));
-        var steers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, true, ct);
+        var steers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, true, ct).ConfigureAwait(true);
         var row = steers.FirstOrDefault() ?? (scope == InboxPromotable.Input
-            ? (await ReadPendingAsync(sessionId, InboxDeliveryMode.Queue, true, ct)).FirstOrDefault()
+            ? (await ReadPendingAsync(sessionId, InboxDeliveryMode.Queue, true, ct).ConfigureAwait(true)).FirstOrDefault()
             : null);
         return row is null ? null : new SessionInboxItem(row.Id, sessionId, row.Delivery,
             DecodePayload(row.Type, row.Payload), DateTimeOffset.FromUnixTimeMilliseconds(row.Created));
@@ -70,8 +70,8 @@ internal sealed partial class SessionAdmission
     internal Task CancelAsync(SessionId sessionId, MessageId id, CancellationToken ct) =>
         InboxSerialization.RunAsync(sessionId, () => new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
-            await RequireSessionAsync(transaction, sessionId, token);
-            return await transaction.AppendAsync(Cancelled, new InboxRefData(sessionId, id), token);
+            await RequireSessionAsync(transaction, sessionId, token).ConfigureAwait(true);
+            return await transaction.AppendAsync(Cancelled, new InboxRefData(sessionId, id), token).ConfigureAwait(true);
         }, ct), ct);
 
     internal Task ChangeDeliveryAsync(SessionId sessionId, MessageId id, InboxDeliveryMode delivery, CancellationToken ct)
@@ -80,8 +80,8 @@ internal sealed partial class SessionAdmission
             throw new ArgumentOutOfRangeException(nameof(delivery));
         return InboxSerialization.RunAsync(sessionId, () => new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
-            await RequireSessionAsync(transaction, sessionId, token);
-            return await transaction.AppendAsync(DeliveryChanged, new InboxDeliveryChangedData(sessionId, id, delivery), token);
+            await RequireSessionAsync(transaction, sessionId, token).ConfigureAwait(true);
+            return await transaction.AppendAsync(DeliveryChanged, new InboxDeliveryChangedData(sessionId, id, delivery), token).ConfigureAwait(true);
         }, ct), ct);
     }
 
@@ -91,20 +91,20 @@ internal sealed partial class SessionAdmission
             throw new ArgumentOutOfRangeException(nameof(scope));
         return InboxSerialization.RunAsync(sessionId, async () =>
         {
-            var steers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, false, ct);
+            var steers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, false, ct).ConfigureAwait(true);
             if (steers.Count > 0 || scope == InboxPromotable.Steer)
-                return await PublishAsync(sessionId, steers.TakeWhile(row => row.Type is not ("compaction" or "move")), ct);
+                return await PublishAsync(sessionId, steers.TakeWhile(row => row.Type is not ("compaction" or "move")), ct).ConfigureAwait(true);
 
-            var queued = await ReadPendingAsync(sessionId, InboxDeliveryMode.Queue, true, ct);
+            var queued = await ReadPendingAsync(sessionId, InboxDeliveryMode.Queue, true, ct).ConfigureAwait(true);
             if (queued.Count == 0) return 0;
             // Control completion belongs to its domain operation, not generic input promotion.
             // In particular, consuming a move here would lose the requested move.
             if (queued[0].Type is "compaction" or "move")
                 throw new NotSupportedException("The queued control requires its compaction or move domain operation before input can advance.");
-            var promoted = await PublishAsync(sessionId, queued, ct);
-            var arrivedSteers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, false, ct);
+            var promoted = await PublishAsync(sessionId, queued, ct).ConfigureAwait(true);
+            var arrivedSteers = await ReadPendingAsync(sessionId, InboxDeliveryMode.Steer, false, ct).ConfigureAwait(true);
             return promoted + await PublishAsync(sessionId,
-                arrivedSteers.TakeWhile(row => row.Type is not ("compaction" or "move")), ct);
+                arrivedSteers.TakeWhile(row => row.Type is not ("compaction" or "move")), ct).ConfigureAwait(true);
         }, ct);
     }
 
@@ -115,24 +115,24 @@ internal sealed partial class SessionAdmission
         {
             await new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
             {
-                await RequireSessionAsync(transaction, sessionId, token);
+                await RequireSessionAsync(transaction, sessionId, token).ConfigureAwait(true);
                 // A delivery retry reconciles from the projected message, without
                 // publishing a second delivery event or retaining a consumed row.
                 var pending = await transaction.Db.Inbox.Where(item => item.id == row.Id.Value)
-                    .Select(item => new { item.session_id, item.type }).FirstOrDefaultAsync(token);
+                    .Select(item => new { item.session_id, item.type }).FirstOrDefaultAsync(token).ConfigureAwait(true);
                 if (pending is not null)
                 {
                     if (pending.session_id != sessionId.Value || pending.type != row.Type) throw new InboxLifecycleConflictException(row.Id);
                 }
                 else
                 {
-                    if (await ReconcileAsync(transaction, sessionId, row.Id, row.Type, row.Delivery, token) is null)
+                    if (await ReconcileAsync(transaction, sessionId, row.Id, row.Type, row.Delivery, token).ConfigureAwait(true) is null)
                         throw new InboxLifecycleConflictException(row.Id);
                     return false;
                 }
-                await transaction.AppendAsync(Delivered, new InboxRefData(sessionId, row.Id), token);
+                await transaction.AppendAsync(Delivered, new InboxRefData(sessionId, row.Id), token).ConfigureAwait(true);
                 return true;
-            }, ct);
+            }, ct).ConfigureAwait(true);
             count++;
         }
         return count;
@@ -143,18 +143,20 @@ internal sealed partial class SessionAdmission
     private async Task<IReadOnlyList<PendingRow>> ReadPendingAsync(SessionId sessionId,
         InboxDeliveryMode? delivery, bool first, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        if (!await db.Sessions.AnyAsync(row => row.id == sessionId.Value, ct)) throw new InvalidOperationException("Inbox operations require an existing session.");
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        if (!await db.Sessions.AnyAsync(row => row.id == sessionId.Value, ct).ConfigureAwait(true)) throw new InvalidOperationException("Inbox operations require an existing session.");
         var query = db.Inbox.Where(row => row.session_id == sessionId.Value);
         if (delivery is not null)
         {
             var mode = delivery == InboxDeliveryMode.Steer ? "steer" : "queue";
             query = query.Where(row => row.delivery == mode);
         }
-        var pending = await query.OrderBy(row => row.enqueued_seq).LimitAsync(first ? 1 : -1, ct);
         var rows = new List<PendingRow>();
-        foreach (var row in pending)
+        await foreach (var row in query.OrderBy(row => row.enqueued_seq)
+            .Select(row => new { row.id, row.type, row.delivery, row.payload, row.time_created }).ReadAsync(first ? 1 : -1, ct).ConfigureAwait(true))
         {
             using var payload = JsonDocument.Parse(row.payload);
             rows.Add(new PendingRow(MessageId.FromExisting(row.id), row.type, row.delivery switch
@@ -169,14 +171,14 @@ internal sealed partial class SessionAdmission
 
     private static async Task RequireSessionAsync(EventTransaction transaction, SessionId sessionId, CancellationToken ct)
     {
-        if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, ct))
+        if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, ct).ConfigureAwait(true))
             throw new InvalidOperationException("Inbox operations require an existing session.");
     }
 
     private static async Task ProjectDeliveredAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var data = committed.Data.Deserialize(SessionEventJsonContext.Default.InboxRefData)!;
-        var consumed = await SqliteIntrinsics.ConsumeInboxAsync(transaction.Db, data.SessionId.Value, data.InboxId.Value, ct)
+        var consumed = await SqliteIntrinsics.ConsumeInboxAsync(transaction.Db, data.SessionId.Value, data.InboxId.Value, ct).ConfigureAwait(true)
             ?? throw new InboxLifecycleConflictException(data.InboxId);
         var type = consumed.type;
         if (type is "compaction" or "move")
@@ -194,14 +196,14 @@ internal sealed partial class SessionAdmission
             OpenCodeJsonContext.Default.MessageTime);
         // Drizzle's Timestamps supplies projection write time, not completion time.
         await SqliteIntrinsics.InsertMessageAsync(transaction.Db, data.InboxId.Value, data.SessionId.Value, type,
-            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), payload.ToJsonString(), ct);
+            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), payload.ToJsonString(), ct).ConfigureAwait(true);
     }
 
     private static async Task ProjectCancelledAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var data = committed.Data.Deserialize(SessionEventJsonContext.Default.InboxRefData)!;
         if (await transaction.Db.Inbox.Where(row => row.id == data.InboxId.Value && row.session_id == data.SessionId.Value
-            && (row.delivery == "queue" || row.delivery == "steer")).ExecuteDeleteAsync(ct) != 1) throw new InboxLifecycleConflictException(data.InboxId);
+            && (row.delivery == "queue" || row.delivery == "steer")).ExecuteDeleteAsync(ct).ConfigureAwait(true) != 1) throw new InboxLifecycleConflictException(data.InboxId);
     }
 
     private static async Task ProjectDeliveryChangedAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
@@ -210,6 +212,6 @@ internal sealed partial class SessionAdmission
         var to = data.Delivery == InboxDeliveryMode.Steer ? "steer" : "queue";
         var from = data.Delivery == InboxDeliveryMode.Steer ? "queue" : "steer";
         if (await transaction.Db.Inbox.Where(row => row.id == data.InboxId.Value && row.session_id == data.SessionId.Value && row.delivery == from)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.delivery, to), ct) != 1) throw new InboxLifecycleConflictException(data.InboxId);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.delivery, to), ct).ConfigureAwait(true) != 1) throw new InboxLifecycleConflictException(data.InboxId);
     }
 }

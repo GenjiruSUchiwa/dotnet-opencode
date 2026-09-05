@@ -14,7 +14,7 @@ internal sealed class InstructionEntryPersistence(IDatabase database)
         new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
             return await SqliteIntrinsics.PutInstructionAsync(transaction.Db, sessionId.Value, key, json,
-                database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), token);
+                database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), token).ConfigureAwait(true);
         }, ct);
 
     internal Task RemoveAsync(SessionId sessionId, string key, CancellationToken ct) =>
@@ -23,6 +23,6 @@ internal sealed class InstructionEntryPersistence(IDatabase database)
             var now = database.Clock.GetUtcNow().ToUnixTimeMilliseconds();
             return await transaction.Db.Set<InstructionEntryRow>().Where(row => row.session_id == sessionId.Value && row.key == key && !row.removed)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.value, (string?)null).SetProperty(row => row.removed, true)
-                    .SetProperty(row => row.time_updated, now), token);
+                    .SetProperty(row => row.time_updated, now), token).ConfigureAwait(true);
         }, ct);
 }

@@ -8,7 +8,7 @@ NuGet release workflow.
 | Work | Current status | Completion evidence still needed |
 | --- | --- | --- |
 | Tool packaging and NuGet Trusted Publishing | Two automatic releases succeeded; the first version is listed in NuGet's public download index | Retain working publication on subsequent pushes |
-| EF Core 11 + SQLite | Whole persistence conversion committed; final review and owned analyzer cleanup resumed | Review mappings, query translation from provider source, transactions, errors, precision and callers; complete a source/build checkpoint |
+| EF Core 11 + SQLite | Full source review and owned analyzer cleanup complete; owner rebuilt CLI with 0 errors and 5 non-owned warnings | Integration build/publication; runtime database parity is outside authorized verification |
 | Meziantou analyzers | Enabled across owned source; cleanup split between exclusive owners | Resolve diagnostics without blanket suppression, then re-inventory and build the full dependency graph |
 | Vogen | All 25 scalar wrappers and CLI/non-CLI consumers migrated | Include unchanged factories, codecs and enabled analyzers in the final integrated build |
 | System.CommandLine | Implemented CLI uses one typed command tree | Include the graph in the final build; retain documented parser and Server adapter boundaries |

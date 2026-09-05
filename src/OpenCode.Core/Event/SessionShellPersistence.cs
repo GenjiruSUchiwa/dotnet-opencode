@@ -42,10 +42,10 @@ internal sealed class SessionShellPersistence(IDatabase database)
             metadata.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal));
         return SessionRunCoordinator.AdmitAsync(sessionId, () => new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token)) throw new SessionMutationNotFoundException(sessionId);
-            if (await transaction.Db.HighestProjectionAsync(sessionId.Value, token) > await transaction.LatestSequenceAsync(sessionId.Value, token))
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token).ConfigureAwait(true)) throw new SessionMutationNotFoundException(sessionId);
+            if (await transaction.Db.HighestProjectionAsync(sessionId.Value, token).ConfigureAwait(true) > await transaction.LatestSequenceAsync(sessionId.Value, token).ConfigureAwait(true))
                 throw new NotSupportedException("Unsequenced projections require canonical migration before shell publication.");
-            return await transaction.AppendAsync(definition, data, token, eventId, captured);
+            return await transaction.AppendAsync(definition, data, token, eventId, captured).ConfigureAwait(true);
         }, ct), ct);
     }
 
@@ -74,13 +74,13 @@ internal sealed class SessionShellPersistence(IDatabase database)
             }
             if (metadata is not null) data["metadata"] = metadata;
             await SqliteIntrinsics.InsertMessageAsync(transaction.Db, "msg_" + committed.Id.Value[4..], sessionId, "shell",
-                checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), data.ToJsonString(), ct);
+                checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), data.ToJsonString(), ct).ConfigureAwait(true);
             return;
         }
         var shellId = shell.GetProperty("id").GetString()!;
         var current = await transaction.Db.Messages.Where(row => row.session_id == sessionId && row.type == "shell"
             && SqliteFunctions.JsonText(row.data, "$.shellID") == shellId).OrderByDescending(row => row.seq)
-            .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct);
+            .Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         if (current is null) return; // Source records the end fact even when no shell message remains.
         var id = current.id;
         SessionQueries.Decode(SessionId.FromExisting(sessionId), MessageId.FromExisting(id), "shell", current.data);
@@ -93,6 +93,6 @@ internal sealed class SessionShellPersistence(IDatabase database)
         var json = message.ToJsonString();
         var updated = transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds();
         await transaction.Db.Messages.Where(row => row.session_id == sessionId && row.id == id)
-            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.data, json).SetProperty(row => row.time_updated, updated), ct);
+            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.data, json).SetProperty(row => row.time_updated, updated), ct).ConfigureAwait(true);
     }
 }

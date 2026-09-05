@@ -213,7 +213,8 @@ internal sealed class OwnedSdkHost : IAsyncDisposable
         _ = SettleAsync();
         async Task SettleAsync()
         {
-            try { await Get<SessionExecutionEngine>().AwaitOwnedDrainsAsync(); }
+            // Joining the owned drain must outlive cancellation of the wake request.
+            try { await Get<SessionExecutionEngine>().AwaitOwnedDrainsAsync(CancellationToken.None); }
             finally { operation.Dispose(); }
         }
     }
@@ -250,7 +251,7 @@ internal sealed class OwnedSdkHost : IAsyncDisposable
         await FinishAsync(() => Get<SessionSubagents>().DisposeAsync().AsTask());
         await FinishAsync(() => Get<SessionTitleService>().DisposeAsync().AsTask());
         await FinishAsync(() => Get<SessionSkillService>().DisposeAsync().AsTask());
-        await FinishAsync(() => Get<SessionExecutionEngine>().AwaitOwnedDrainsAsync());
+        await FinishAsync(() => Get<SessionExecutionEngine>().AwaitOwnedDrainsAsync(CancellationToken.None));
         await FinishAsync(() => Get<SessionShellHostService>().StopAsync(default));
         await FinishAsync(() => Get<SessionExecutionService>().StopAsync(default));
         foreach (var service in _hosted.Reverse().Where(service => service is not SessionExecutionService))
@@ -308,5 +309,5 @@ internal sealed class OwnedSdkHost : IAsyncDisposable
 
     private static bool Executable(string path) => File.Exists(path) && (OperatingSystem.IsWindows()
         ? Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase)
-        : (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0);
+        : (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != UnixFileMode.None);
 }

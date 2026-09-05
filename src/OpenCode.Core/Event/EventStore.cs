@@ -21,12 +21,14 @@ internal sealed class EventStore(IDatabase database)
         {
             ct.ThrowIfCancellationRequested();
             var commitToken = uninterruptible ? CancellationToken.None : ct;
-            await using var connection = database.CreateConnection();
+            var connection = database.CreateConnection();
+            await using var connectionLifetime = connection.ConfigureAwait(true);
             // Publication lock precedes the SQLite writer lock and spans notification.
             using var transaction = connection.BeginTransaction(deferred: false);
-            await using var persistence = new PersistenceContext(connection, transaction);
+            var persistence = new PersistenceContext(connection, transaction);
+            await using var persistenceLifetime = persistence.ConfigureAwait(true);
             var context = new EventTransaction(aggregateId, database.Clock, persistence);
-            var result = await action(context, commitToken);
+            var result = await action(context, commitToken).ConfigureAwait(true);
             commitToken.ThrowIfCancellationRequested();
             // Cancellation is checked above, not after durable commit begins.
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
@@ -58,14 +60,14 @@ internal sealed class EventTransaction(string aggregateId, TimeProvider clock, P
 
     internal async Task<long> LatestSequenceAsync(string aggregateId, CancellationToken ct)
     {
-        return await Db.Sequences.Where(row => row.aggregate_id == aggregateId).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct) ?? -1;
+        return await Db.Sequences.Where(row => row.aggregate_id == aggregateId).Select(row => (long?)row.seq).FirstOrDefaultAsync(ct).ConfigureAwait(true) ?? -1;
     }
 
     // Bus.reserveSequence: used by inherited history, never by event replay ownership.
     internal async Task ReserveSequenceAsync(string aggregateId, long seq, CancellationToken ct)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(seq);
-        await SqliteIntrinsics.ReserveSequenceAsync(Db, aggregateId, seq, ct);
+        await SqliteIntrinsics.ReserveSequenceAsync(Db, aggregateId, seq, ct).ConfigureAwait(true);
     }
 
     internal async Task<OpenCodeEvent> AppendAsync<T>(
@@ -78,17 +80,17 @@ internal sealed class EventTransaction(string aggregateId, TimeProvider clock, P
             aggregate.ValueKind != JsonValueKind.String)
             throw new JsonException("Durable event data must contain its string aggregate field.");
         if (aggregate.GetString() != aggregateId) throw new JsonException("Event aggregate does not match its transaction.");
-        var seq = checked(await LatestSequenceAsync(aggregateId, ct) + 1);
+        var seq = checked(await LatestSequenceAsync(aggregateId, ct).ConfigureAwait(true) + 1);
         var eventId = id ?? EventId.Create();
-        if (await Db.Events.AnyAsync(row => row.id == eventId.Value, ct))
+        if (await Db.Events.AnyAsync(row => row.id == eventId.Value, ct).ConfigureAwait(true))
             throw new InvalidOperationException("The durable event ID already exists. Append is not replay.");
 
         var committed = new OpenCodeEvent(eventId, definition.Type, Clock.GetUtcNow().ToUnixTimeMilliseconds(),
             encoded, Location: location, Metadata: metadata, Durable: new DurableEnvelope(aggregateId, seq, definition.Version));
-        await definition.Project(this, committed, ct);
-        await ReserveSequenceAsync(aggregateId, seq, ct);
+        await definition.Project(this, committed, ct).ConfigureAwait(true);
+        await ReserveSequenceAsync(aggregateId, seq, ct).ConfigureAwait(true);
         await Db.InsertAsync(new EventRow { id = eventId.Value, aggregate_id = aggregateId, seq = seq,
-            created = committed.Created, type = $"{definition.Type}.{definition.Version}", data = encoded.GetRawText() }, ct);
+            created = committed.Created, type = $"{definition.Type}.{definition.Version}", data = encoded.GetRawText() }, ct).ConfigureAwait(true);
         Committed.Add(committed);
         Live.Add(committed);
         return committed;

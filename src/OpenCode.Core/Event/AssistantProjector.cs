@@ -20,12 +20,12 @@ internal sealed class AssistantProjector(IDatabase database)
         var sessionId = encoded.GetProperty("sessionID").GetString()!;
         return new EventStore(database).TransactAsync(sessionId, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId, token)) throw new InvalidOperationException("Assistant events require an existing session.");
-            if (await transaction.Db.Messages.Where(row => row.session_id == sessionId).MaxAsync(row => (long?)row.seq, token) is { } seq
-                && seq > await transaction.LatestSequenceAsync(sessionId, token))
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId, token).ConfigureAwait(true)) throw new InvalidOperationException("Assistant events require an existing session.");
+            if (await transaction.Db.Messages.Where(row => row.session_id == sessionId).MaxAsync(row => (long?)row.seq, token).ConfigureAwait(true) is { } seq
+                && seq > await transaction.LatestSequenceAsync(sessionId, token).ConfigureAwait(true))
                 throw new NotSupportedException("Unsequenced direct-SQL history requires canonical migration before assistant events.");
             return await transaction.AppendAsync(new DurableEventDefinition<JsonElement>(type, version, "sessionID",
-                AssistantEventJsonContext.Default.JsonElement, ProjectAsync), encoded, token, id);
+                AssistantEventJsonContext.Default.JsonElement, ProjectAsync), encoded, token, id).ConfigureAwait(true);
         }, ct);
     }
 
@@ -34,7 +34,7 @@ internal sealed class AssistantProjector(IDatabase database)
         var data = JsonNode.Parse(committed.Data.GetRawText())!.AsObject();
         var sessionId = data["sessionID"]!.GetValue<string>();
         var messageId = data["assistantMessageID"]!.GetValue<string>();
-        var assistant = await LoadAsync(transaction, sessionId, messageId, ct);
+        var assistant = await LoadAsync(transaction, sessionId, messageId, ct).ConfigureAwait(true);
         if (committed.Type == "session.step.started")
         {
             if (assistant is not null)
@@ -50,12 +50,12 @@ internal sealed class AssistantProjector(IDatabase database)
                     snapshot["start"] = data["snapshot"]!.DeepClone();
                     assistant["snapshot"] = snapshot;
                 }
-                await SaveAsync(transaction, sessionId, messageId, assistant, ct);
+                await SaveAsync(transaction, sessionId, messageId, assistant, ct).ConfigureAwait(true);
                 return;
             }
             // Only the newest assistant is eligible. Do not seek an older incomplete row.
             var current = await transaction.Db.Messages.Where(row => row.session_id == sessionId && row.type == "assistant")
-                .OrderByDescending(row => row.seq).Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct);
+                .OrderByDescending(row => row.seq).Select(row => new { row.id, row.data }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
             if (current is not null)
             {
                 var previous = JsonNode.Parse(current.data)!.AsObject();
@@ -63,7 +63,7 @@ internal sealed class AssistantProjector(IDatabase database)
                 {
                     previous.Remove("retry");
                     AssistantEventData.Object(previous, "time")["completed"] = committed.Created;
-                    await SaveAsync(transaction, sessionId, current.id, previous, ct);
+                    await SaveAsync(transaction, sessionId, current.id, previous, ct).ConfigureAwait(true);
                 }
             }
             var created = new JsonObject
@@ -76,7 +76,7 @@ internal sealed class AssistantProjector(IDatabase database)
             if (data["snapshot"]?.GetValue<string>() is { Length: > 0 })
                 created["snapshot"] = new JsonObject { ["start"] = data["snapshot"]!.DeepClone() };
             await SqliteIntrinsics.InsertMessageAsync(transaction.Db, messageId, sessionId, "assistant", checked((long)committed.Durable!.Seq),
-                committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), created.ToJsonString(), ct);
+                committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), created.ToJsonString(), ct).ConfigureAwait(true);
             return;
         }
 
@@ -85,7 +85,7 @@ internal sealed class AssistantProjector(IDatabase database)
         if (assistant is not null)
         {
             Update(assistant, data, committed.Type, checked((long)committed.Created));
-            await SaveAsync(transaction, sessionId, messageId, assistant, ct);
+            await SaveAsync(transaction, sessionId, messageId, assistant, ct).ConfigureAwait(true);
         }
         if (committed.Type is "session.step.ended" or "session.step.failed" &&
             data.ContainsKey("cost") && data.ContainsKey("tokens"))
@@ -94,7 +94,7 @@ internal sealed class AssistantProjector(IDatabase database)
             var cache = AssistantEventData.Object(tokens, "cache");
             await SqliteIntrinsics.AddUsageAsync(transaction.Db, sessionId, AssistantEventData.Finite(data, "cost"),
                 AssistantEventData.Finite(tokens, "input"), AssistantEventData.Finite(tokens, "output"), AssistantEventData.Finite(tokens, "reasoning"),
-                AssistantEventData.Finite(cache, "read"), AssistantEventData.Finite(cache, "write"), ct);
+                AssistantEventData.Finite(cache, "read"), AssistantEventData.Finite(cache, "write"), ct).ConfigureAwait(true);
         }
     }
 
@@ -209,7 +209,7 @@ internal sealed class AssistantProjector(IDatabase database)
     private static async Task<JsonObject?> LoadAsync(EventTransaction transaction, string sessionId, string messageId, CancellationToken ct)
     {
         if (await transaction.Db.Messages.Where(row => row.session_id == sessionId && row.id == messageId && row.type == "assistant")
-            .Select(row => row.data).FirstOrDefaultAsync(ct) is not { } json) return null;
+            .Select(row => row.data).FirstOrDefaultAsync(ct).ConfigureAwait(true) is not { } json) return null;
         var assistant = JsonNode.Parse(json)!.AsObject();
         AssistantEventData.String(assistant, "agent");
         AssistantEventData.Model(AssistantEventData.Object(assistant, "model"));
@@ -221,7 +221,7 @@ internal sealed class AssistantProjector(IDatabase database)
     private static async Task SaveAsync(EventTransaction transaction, string sessionId, string messageId, JsonObject data, CancellationToken ct)
     {
         await SqliteIntrinsics.SaveAssistantAsync(transaction.Db, sessionId, messageId, data.ToJsonString(),
-            AssistantEventData.Finite(AssistantEventData.Object(data, "time"), "created"), transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct);
+            AssistantEventData.Finite(AssistantEventData.Object(data, "time"), "created"), transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true);
     }
 
     private static void Copy(JsonObject target, JsonObject source, params string[] fields)

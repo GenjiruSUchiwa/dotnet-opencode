@@ -43,8 +43,8 @@ public static class SessionEvents
         }
         try
         {
-            await gate.Semaphore.WaitAsync(ct);
-            try { return await publish(); }
+            await gate.Semaphore.WaitAsync(ct).ConfigureAwait(true);
+            try { return await publish().ConfigureAwait(true); }
             finally { gate.Semaphore.Release(); }
         }
         finally

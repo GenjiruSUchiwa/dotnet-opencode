@@ -53,7 +53,7 @@ public sealed class CredentialStore
 
     public async Task<StoredCredential?> GetActiveCredentialAsync(string integrationId, CancellationToken ct = default)
     {
-        var credentials = await ListCredentialsForIntegrationAsync(integrationId, ct);
+        var credentials = await ListCredentialsForIntegrationAsync(integrationId, ct).ConfigureAwait(true);
         // Integration.resolveConnections reverses Credential.list and selects [0].
         return credentials.LastOrDefault();
     }
@@ -61,8 +61,9 @@ public sealed class CredentialStore
     public async Task<StoredCredential?> GetCredentialAsync(string id, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        await using var connection = _database.CreateConnection();
-        return await ReadOneAsync(connection, null, id, ct);
+        var connection = _database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        return await ReadOneAsync(connection, null, id, ct).ConfigureAwait(true);
     }
 
     public Task<CredentialMutation> CreateAsync(string integrationId, JsonElement value, string? label = null, CancellationToken ct = default)
@@ -73,12 +74,13 @@ public sealed class CredentialStore
         var id = CredentialId.Create().Value;
         return _database.RunInTransactionAsync(async (connection, transaction) =>
         {
-            await using var db = new PersistenceContext(connection, transaction);
+            var db = new PersistenceContext(connection, transaction);
+            await using var dbLifetime = db.ConfigureAwait(true);
             var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
             await db.Set<CredentialRow>().Where(row => row.integration_id == integrationId)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct);
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
             await db.InsertAsync(new CredentialRow { id = id, integration_id = integrationId, label = label ?? "default",
-                value = parsed.GetRawText(), active = 1, time_created = now, time_updated = now }, ct);
+                value = parsed.GetRawText(), active = 1, time_created = now, time_updated = now }, ct).ConfigureAwait(true);
             return new CredentialMutation(new StoredCredential(id, integrationId, label ?? "default", parsed.GetRawText(), true)
             { Value = parsed }, [new CredentialNotification.Updated(), new CredentialNotification.Switched(integrationId, id)]);
         }, ct);
@@ -87,17 +89,18 @@ public sealed class CredentialStore
     public Task<CredentialMutation> ActivateAsync(string id, CancellationToken ct = default) =>
         _database.RunInTransactionAsync(async (connection, transaction) =>
         {
-            var credential = await ReadOneAsync(connection, transaction, id, ct);
+            var credential = await ReadOneAsync(connection, transaction, id, ct).ConfigureAwait(true);
             if (credential is null) return new CredentialMutation(null, []);
-            await using var db = new PersistenceContext(connection, transaction);
+            var db = new PersistenceContext(connection, transaction);
+            await using var dbLifetime = db.ConfigureAwait(true);
             if (await db.Set<CredentialRow>().Where(row => row.integration_id == credential.IntegrationId).OrderByDescending(row => row.active)
-                .ThenByDescending(row => row.time_created).ThenByDescending(row => row.id).Select(row => row.id).FirstOrDefaultAsync(ct) == id)
+                .ThenByDescending(row => row.time_created).ThenByDescending(row => row.id).Select(row => row.id).FirstOrDefaultAsync(ct).ConfigureAwait(true) == id)
                 return new CredentialMutation(credential, []);
             var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
             await db.Set<CredentialRow>().Where(row => row.integration_id == credential.IntegrationId)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct);
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
             await db.Set<CredentialRow>().Where(row => row.id == id)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)1).SetProperty(row => row.time_updated, now), ct);
+                .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)1).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
             return new CredentialMutation(credential with { Active = true, StoredActive = true },
                 [new CredentialNotification.Switched(credential.IntegrationId, id)]);
         }, ct);
@@ -108,14 +111,15 @@ public sealed class CredentialStore
         var parsed = value is { } input ? (JsonElement?)ParseValue(input.GetRawText()) : null;
         return _database.RunInTransactionAsync(async (connection, transaction) =>
         {
-            var credential = await ReadOneAsync(connection, transaction, id, ct);
+            var credential = await ReadOneAsync(connection, transaction, id, ct).ConfigureAwait(true);
             if (credential is null || parsed is null && (label is null || label == credential.Label))
                 return new CredentialMutation(credential, []);
-            await using var db = new PersistenceContext(connection, transaction);
+            var db = new PersistenceContext(connection, transaction);
+            await using var dbLifetime = db.ConfigureAwait(true);
             var json = parsed?.GetRawText() ?? credential.ValueJson;
             var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
             await db.Set<CredentialRow>().Where(row => row.id == id).ExecuteUpdateAsync(setters => setters
-                .SetProperty(row => row.label, label ?? credential.Label).SetProperty(row => row.value, json).SetProperty(row => row.time_updated, now), ct);
+                .SetProperty(row => row.label, label ?? credential.Label).SetProperty(row => row.value, json).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
             return new CredentialMutation(credential with
             {
                 Label = label ?? credential.Label, ValueJson = parsed?.GetRawText() ?? credential.ValueJson,
@@ -127,24 +131,25 @@ public sealed class CredentialStore
     public Task<CredentialMutation> RemoveAsync(string id, CancellationToken ct = default) =>
         _database.RunInTransactionAsync(async (connection, transaction) =>
         {
-            await using var db = new PersistenceContext(connection, transaction);
-            var existing = await db.Set<CredentialRow>().Where(row => row.id == id).Select(row => new { row.integration_id }).FirstOrDefaultAsync(ct);
+            var db = new PersistenceContext(connection, transaction);
+            await using var dbLifetime = db.ConfigureAwait(true);
+            var existing = await db.Set<CredentialRow>().Where(row => row.id == id).Select(row => new { row.integration_id }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
             if (existing is null) return new CredentialMutation(null, []);
             var integration = existing.integration_id;
             var selected = string.IsNullOrEmpty(integration) ? null : await db.Set<CredentialRow>().Where(row => row.integration_id == integration)
                 .OrderByDescending(row => row.active).ThenByDescending(row => row.time_created).ThenByDescending(row => row.id)
-                .Select(row => row.id).FirstOrDefaultAsync(ct);
-            await db.Set<CredentialRow>().Where(row => row.id == id).ExecuteDeleteAsync(ct);
+                .Select(row => row.id).FirstOrDefaultAsync(ct).ConfigureAwait(true);
+            await db.Set<CredentialRow>().Where(row => row.id == id).ExecuteDeleteAsync(ct).ConfigureAwait(true);
             if (selected != id) return new CredentialMutation(null, [new CredentialNotification.Updated()]);
             var replacement = await db.Set<CredentialRow>().Where(row => row.integration_id == integration)
-                .OrderByDescending(row => row.time_created).ThenByDescending(row => row.id).Select(row => row.id).FirstOrDefaultAsync(ct);
+                .OrderByDescending(row => row.time_created).ThenByDescending(row => row.id).Select(row => row.id).FirstOrDefaultAsync(ct).ConfigureAwait(true);
             if (replacement is not null)
             {
                 var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
                 await db.Set<CredentialRow>().Where(row => row.integration_id == integration)
-                    .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct);
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)0).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
                 await db.Set<CredentialRow>().Where(row => row.id == replacement)
-                    .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)1).SetProperty(row => row.time_updated, now), ct);
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.active, (long?)1).SetProperty(row => row.time_updated, now), ct).ConfigureAwait(true);
             }
             return new CredentialMutation(null,
                 [new CredentialNotification.Updated(), new CredentialNotification.Switched(integration!, replacement)]);
@@ -152,8 +157,11 @@ public sealed class CredentialStore
 
     private static async Task<StoredCredential?> ReadOneAsync(SqliteConnection connection, SqliteTransaction? transaction, string id, CancellationToken ct)
     {
-        await using var db = new PersistenceContext(connection, transaction);
-        var row = await db.Set<CredentialRow>().FirstOrDefaultAsync(row => row.id == id && row.integration_id != null && row.integration_id != "", ct);
+        var db = new PersistenceContext(connection, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var row = await db.Set<CredentialRow>().Where(row => row.id == id && row.integration_id != null && row.integration_id != "")
+            .Select(row => new CredentialRow { id = row.id, integration_id = row.integration_id, label = row.label, value = row.value, active = row.active })
+            .FirstOrDefaultAsync(ct).ConfigureAwait(true);
         return row is null ? null : ReadCredential(row);
     }
 
@@ -162,16 +170,24 @@ public sealed class CredentialStore
         ct.ThrowIfCancellationRequested();
         // The injected database owns channel placement. Never open another path or
         // import auth.json when this channel has no credentials.
-        await using var conn = _database.CreateConnection();
-        await using var db = new PersistenceContext(conn);
-        return (await db.Set<CredentialRow>().Where(row => row.integration_id != null && row.integration_id != ""
+        var conn = _database.CreateConnection();
+        await using var connLifetime = conn.ConfigureAwait(true);
+        var db = new PersistenceContext(conn);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var query = db.Set<CredentialRow>().Where(row => row.integration_id != null && row.integration_id != ""
                 && (integrationId == null || row.integration_id == EF.Functions.Collate(integrationId, "BINARY")))
-            .OrderBy(row => row.active).ThenBy(row => row.time_created).ThenBy(row => row.id).ToListAsync(ct)).Select(ReadCredential).ToArray();
+            .OrderBy(row => row.active).ThenBy(row => row.time_created).ThenBy(row => row.id)
+            .Select(row => new CredentialRow { id = row.id, integration_id = row.integration_id, label = row.label, value = row.value, active = row.active });
+        var credentials = new List<StoredCredential>();
+        await foreach (var row in query.ReadAsync(-1, ct).ConfigureAwait(true)) credentials.Add(ReadCredential(row));
+        return credentials;
     }
 
     private static StoredCredential ReadCredential(CredentialRow row)
     {
-        bool? active = row.active switch
+        // The old materializer used GetInt32; preserve overflow rejection before
+        // checking the permitted NULL/zero/one states.
+        bool? active = (row.active is { } stored ? (int?)checked((int)stored) : null) switch
         {
             null => null, 0 => false, 1 => true,
             _ => throw new InvalidDataException("Stored credential active state must be NULL, zero, or one.")

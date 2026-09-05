@@ -25,12 +25,15 @@ internal sealed class InstructionPersistence(IDatabase database)
 
     internal async Task<IReadOnlyList<InstructionEntrySnapshot>> EntriesAsync(SessionId id, CancellationToken ct)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        var rows = await db.Set<InstructionEntryRow>().Where(row => row.session_id == id.Value).OrderBy(row => row.key)
-            .Select(row => new { row.key, row.value, row.removed }).ToListAsync(ct);
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var session = id.Value;
+        var rows = db.Set<InstructionEntryRow>().Where(row => row.session_id == session).OrderBy(row => row.key)
+            .Select(row => new { row.key, row.value, row.removed });
         var entries = new List<InstructionEntrySnapshot>();
-        foreach (var row in rows)
+        await foreach (var row in rows.ReadAsync(-1, ct).ConfigureAwait(true))
         {
             using var value = JsonDocument.Parse(row.value ?? "null");
             entries.Add(new InstructionEntrySnapshot(row.key, value.RootElement.Clone(), row.removed));
@@ -41,19 +44,19 @@ internal sealed class InstructionPersistence(IDatabase database)
     internal Task PrepareAsync(SessionId id, IReadOnlyList<InstructionSource> sources, bool preview, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            var state = await StateAsync(transaction, id, token);
+            var state = await StateAsync(transaction, id, token).ConfigureAwait(true);
             RequireSources(sources, state);
             // A retained epoch must remain renderable even if a producer disappeared.
-            if (state is not null) await RenderInitialAsync(transaction, sources, state.Initial, token);
-            var observed = await ObserveAsync(transaction, sources, state, token);
+            if (state is not null) await RenderInitialAsync(transaction, sources, state.Initial, token).ConfigureAwait(true);
+            var observed = await ObserveAsync(transaction, sources, state, token).ConfigureAwait(true);
             if (preview || state is not null && observed.Delta.Count == 0) return false;
             foreach (var blob in observed.Blobs)
             {
-                await SqliteIntrinsics.PutInstructionBlobAsync(transaction.Db, blob.Key, InstructionJson.Stringify(blob.Value), token);
+                await SqliteIntrinsics.PutInstructionBlobAsync(transaction.Db, blob.Key, InstructionJson.Stringify(blob.Value), token).ConfigureAwait(true);
             }
             var rendered = state is null ? "" : observed.Text;
             await transaction.AppendAsync(Updated, new InstructionsUpdatedData(id, observed.Delta, rendered.Length == 0 ? null : rendered), token,
-                metadata: state is null ? new Dictionary<string, JsonElement> { ["instructions"] = JsonSerializer.SerializeToElement(new { initial = true }) } : null);
+                metadata: state is null ? new Dictionary<string, JsonElement> { ["instructions"] = JsonSerializer.SerializeToElement(new { initial = true }) } : null).ConfigureAwait(true);
             return true;
         }, ct);
 
@@ -62,15 +65,15 @@ internal sealed class InstructionPersistence(IDatabase database)
         IReadOnlyList<InstructionSource> sources, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            var state = await StateAsync(transaction, id, token);
+            var state = await StateAsync(transaction, id, token).ConfigureAwait(true);
             RequireSources(sources, state);
-            var observed = await ObserveAsync(transaction, sources, state, token);
-            var initial = state is null ? observed.Text : await RenderInitialAsync(transaction, sources, state.Initial, token);
-            var rows = await SessionQueries.Context(transaction.Db, id.Value).OrderBy(row => row.seq)
-                .Select(row => new { row.id, row.type, row.data }).ToListAsync(token);
+            var observed = await ObserveAsync(transaction, sources, state, token).ConfigureAwait(true);
+            var initial = state is null ? observed.Text : await RenderInitialAsync(transaction, sources, state.Initial, token).ConfigureAwait(true);
+            var rows = SessionQueries.Context(transaction.Db, id.Value).OrderBy(row => row.seq)
+                .Select(row => new { row.id, row.type, row.data });
             var messages = new List<JsonElement>();
             var unsettled = false;
-            foreach (var row in rows)
+            await foreach (var row in rows.ReadAsync(-1, token).ConfigureAwait(true))
             {
                 // Decode the full selected context, then retain only the source's settled prefix.
                 var message = SessionQueries.Decode(id, MessageId.FromExisting(row.id), row.type, row.data);
@@ -96,14 +99,14 @@ internal sealed class InstructionPersistence(IDatabase database)
             {
                 if (oldHash is null) continue;
                 delta.Add(source.Key, "removed");
-                if (source.Removed is not null) text.Add(RequireText(source.Key, source.Removed(await BlobAsync(transaction, oldHash, ct))));
+                if (source.Removed is not null) text.Add(RequireText(source.Key, source.Removed(await BlobAsync(transaction, oldHash, ct).ConfigureAwait(true))));
                 continue;
             }
             var hash = InstructionJson.Hash(source.Value);
             if (hash == oldHash) continue;
             delta.Add(source.Key, hash);
             blobs[hash] = source.Value;
-            text.Add(RequireText(source.Key, oldHash is null ? source.Initial(source.Value) : source.Changed(await BlobAsync(transaction, oldHash, ct), source.Value)));
+            text.Add(RequireText(source.Key, oldHash is null ? source.Initial(source.Value) : source.Changed(await BlobAsync(transaction, oldHash, ct).ConfigureAwait(true), source.Value)));
         }
         return new(delta, blobs, string.Join("\n\n", text));
     }
@@ -112,13 +115,13 @@ internal sealed class InstructionPersistence(IDatabase database)
         IReadOnlyList<InstructionSource> sources, CancellationToken ct) =>
         new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            var state = await StateAsync(transaction, id, token) ?? throw new InvalidOperationException("Instruction baseline is missing during request assembly.");
+            var state = await StateAsync(transaction, id, token).ConfigureAwait(true) ?? throw new InvalidOperationException("Instruction baseline is missing during request assembly.");
             RequireSources(sources, state);
-            var initial = await RenderInitialAsync(transaction, sources, state.Initial, token);
-            var rows = await SessionQueries.Context(transaction.Db, id.Value).OrderBy(row => row.seq)
-                .Select(row => new { row.id, row.type, row.data }).ToListAsync(token);
+            var initial = await RenderInitialAsync(transaction, sources, state.Initial, token).ConfigureAwait(true);
+            var rows = SessionQueries.Context(transaction.Db, id.Value).OrderBy(row => row.seq)
+                .Select(row => new { row.id, row.type, row.data });
             var messages = new List<JsonElement>();
-            foreach (var row in rows)
+            await foreach (var row in rows.ReadAsync(-1, token).ConfigureAwait(true))
             {
                 var data = new JsonObject { ["type"] = row.type, ["id"] = row.id };
                 foreach (var pair in JsonNode.Parse(row.data)!.AsObject())
@@ -133,7 +136,7 @@ internal sealed class InstructionPersistence(IDatabase database)
     private static async Task<State?> StateAsync(EventTransaction transaction, SessionId id, CancellationToken ct)
     {
         var row = await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == id.Value)
-            .Select(row => new { row.initial_values, row.current_values }).FirstOrDefaultAsync(ct);
+            .Select(row => new { row.initial_values, row.current_values }).FirstOrDefaultAsync(ct).ConfigureAwait(true);
         return row is null ? null : new State(JsonSerializer.Deserialize<Dictionary<string, string>>(row.initial_values)!,
             JsonSerializer.Deserialize<Dictionary<string, string>>(row.current_values)!);
     }
@@ -151,7 +154,7 @@ internal sealed class InstructionPersistence(IDatabase database)
 
     private static async Task<JsonElement> BlobAsync(EventTransaction transaction, string hash, CancellationToken ct)
     {
-        if (await transaction.Db.Set<InstructionBlobRow>().Where(row => row.hash == hash).Select(row => row.value).FirstOrDefaultAsync(ct) is not { } json)
+        if (await transaction.Db.Set<InstructionBlobRow>().Where(row => row.hash == hash).Select(row => row.value).FirstOrDefaultAsync(ct).ConfigureAwait(true) is not { } json)
             throw new InvalidOperationException("Referenced instruction blob is missing.");
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
@@ -162,7 +165,7 @@ internal sealed class InstructionPersistence(IDatabase database)
     {
         var parts = new List<string>();
         foreach (var source in sources)
-            if (values.TryGetValue(source.Key, out var hash)) parts.Add(RequireText(source.Key, source.Initial(await BlobAsync(transaction, hash, ct))));
+            if (values.TryGetValue(source.Key, out var hash)) parts.Add(RequireText(source.Key, source.Initial(await BlobAsync(transaction, hash, ct).ConfigureAwait(true))));
         return string.Join("\n\n", parts);
     }
 
@@ -172,14 +175,14 @@ internal sealed class InstructionPersistence(IDatabase database)
     private static async Task ProjectAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var data = committed.Data.Deserialize(InstructionEventJsonContext.Default.InstructionsUpdatedData)!;
-        var state = await StateAsync(transaction, data.SessionId, ct);
+        var state = await StateAsync(transaction, data.SessionId, ct).ConfigureAwait(true);
         var current = state?.Current ?? new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var pair in data.Delta)
         {
             if (pair.Value == "removed") current.Remove(pair.Key);
             else current[pair.Key] = pair.Value;
         }
-        await SqliteIntrinsics.PutInstructionStateAsync(transaction.Db, data.SessionId.Value, checked((long)committed.Durable!.Seq), JsonSerializer.Serialize(current), ct);
+        await SqliteIntrinsics.PutInstructionStateAsync(transaction.Db, data.SessionId.Value, checked((long)committed.Durable!.Seq), JsonSerializer.Serialize(current), ct).ConfigureAwait(true);
         if (data.Text is null) return;
         var json = JsonSerializer.Serialize(new
         {
@@ -187,6 +190,6 @@ internal sealed class InstructionPersistence(IDatabase database)
             time = new { created = committed.Created }
         });
         await SqliteIntrinsics.InsertMessageAsync(transaction.Db, "msg_" + committed.Id.Value[4..], data.SessionId.Value, "system",
-            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), json, ct);
+            checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), json, ct).ConfigureAwait(true);
     }
 }

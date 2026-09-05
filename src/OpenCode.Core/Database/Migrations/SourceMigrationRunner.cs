@@ -1,6 +1,7 @@
 namespace OpenCode.Core.Database.Migrations;
 
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Data.Sqlite;
 
 /// <summary>Explicit owner-invoked upgrade of recognized V2
@@ -17,7 +18,8 @@ public static class SourceMigrationRunner
         await Gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            await using var transaction = connection.BeginTransaction(deferred: true);
+            var transaction = connection.BeginTransaction(deferred: true);
+            await using var transactionLifetime = transaction.ConfigureAwait(true);
             var plan = await InspectLockedAsync(connection, transaction, throughMigration, ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
             return plan;
@@ -25,6 +27,7 @@ public static class SourceMigrationRunner
         finally { Gate.Release(); }
     }
 
+    [SuppressMessage("Design", "MA0072", Justification = "Foreign-key restoration must fail the migration call, retaining both the original failure and restoration failure; a committed batch must not be reported as safe to retry.")]
     public static async Task<MigrationResult> ApplyAsync(SqliteConnection connection, MigrationTarget target, CancellationToken ct = default,
         string throughMigration = SourceMigrationCatalog.Current, TimeProvider? clock = null)
     {
@@ -43,7 +46,8 @@ public static class SourceMigrationRunner
                 // toggle that setting inside a transaction. This is connection-local,
                 // restored even when classification rejects the database without writes.
                 if (originalForeignKeys != 0) await SetForeignKeysAsync(connection, 0, ct).ConfigureAwait(false);
-                await using var transaction = connection.BeginTransaction(deferred: false);
+                var transaction = connection.BeginTransaction(deferred: false);
+                await using var transactionLifetime = transaction.ConfigureAwait(true);
                 var plan = await InspectLockedAsync(connection, transaction, throughMigration, ct).ConfigureAwait(false);
                 var converted = plan.Journal != MigrationJournalKind.Canonical;
                 if (converted)
@@ -78,10 +82,12 @@ public static class SourceMigrationRunner
                 }
                 if (plan.Pending.Count > 0)
                 {
-                    await using var check = connection.CreateCommand();
+                    var check = connection.CreateCommand();
+                    await using var checkLifetime = check.ConfigureAwait(true);
                     check.Transaction = transaction;
                     check.CommandText = "PRAGMA main.foreign_key_check";
-                    await using var reader = await check.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    var reader = await check.ExecuteReaderAsync(ct).ConfigureAwait(false);
+                    await using var readerLifetime = reader.ConfigureAwait(true);
                     if (await reader.ReadAsync(ct).ConfigureAwait(false))
                         throw new MigrationRejectedException("foreign_key_violation", "The upgrade would leave a foreign-key violation. No repair or partial commit was attempted.");
                 }

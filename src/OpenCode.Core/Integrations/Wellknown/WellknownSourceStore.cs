@@ -12,9 +12,11 @@ public sealed class WellknownSourceStore(IDatabase database)
 
     public async Task<string[]> ReadAsync(CancellationToken ct = default)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return Decode(await db.Set<KvRow>().Where(row => row.key == Key).Select(row => row.value).FirstOrDefaultAsync(ct));
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        return Decode(await db.Set<KvRow>().Where(row => row.key == Key).Select(row => row.value).FirstOrDefaultAsync(ct).ConfigureAwait(true));
     }
 
     public Task<string[]> AddAsync(string origin, CancellationToken ct = default) => MutateAsync(
@@ -24,10 +26,11 @@ public sealed class WellknownSourceStore(IDatabase database)
 
     private Task<string[]> MutateAsync(Func<string[], string[]> change, CancellationToken ct) => database.RunInTransactionAsync(async (connection, transaction) =>
     {
-        await using var db = new PersistenceContext(connection, transaction);
-        var origins = change(Decode(await db.Set<KvRow>().Where(row => row.key == Key).Select(row => row.value).FirstOrDefaultAsync(ct)));
+        var db = new PersistenceContext(connection, transaction);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var origins = change(Decode(await db.Set<KvRow>().Where(row => row.key == Key).Select(row => row.value).FirstOrDefaultAsync(ct).ConfigureAwait(true)));
         await SqliteIntrinsics.PutKvAsync(db, Key, JsonSerializer.Serialize(origins, WellknownJsonContext.Default.StringArray),
-            database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct);
+            database.Clock.GetUtcNow().ToUnixTimeMilliseconds(), ct).ConfigureAwait(true);
         return origins;
     }, ct);
 

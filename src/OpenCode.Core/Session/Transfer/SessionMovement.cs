@@ -32,9 +32,9 @@ public sealed class SessionMovement(IDatabase database, SessionStore sessions, P
         ArgumentNullException.ThrowIfNull(execution);
         if (!lifetime.CanBeCanceled) throw new ArgumentException("Movement requires a host-owned execution lifetime.", nameof(lifetime));
         lifetime.ThrowIfCancellationRequested();
-        await AdmitAsync(request, ct: ct);
+        await AdmitAsync(request, ct: ct).ConfigureAwait(true);
         // Publication is durable before the advisory wake. Request cancellation does not undo it.
-        await execution.WakeAsync(request.SessionId, lifetime);
+        await execution.WakeAsync(request.SessionId, lifetime).ConfigureAwait(true);
     }
 
     /// <summary>Prepare and admit without scheduling. A supplied control ID reconciles pending moves only.</summary>
@@ -49,22 +49,22 @@ public sealed class SessionMovement(IDatabase database, SessionStore sessions, P
 
         return SessionRunCoordinator.AdmitAsync(request.SessionId, async () =>
         {
-            var payload = await PrepareAsync(request, ct);
+            var payload = await PrepareAsync(request, ct).ConfigureAwait(true);
             return await InboxSerialization.RunAsync(request.SessionId, async () =>
             {
-                var latest = await sessions.GetSessionAsync(request.SessionId, ct)
+                var latest = await sessions.GetSessionAsync(request.SessionId, ct).ConfigureAwait(true)
                     ?? throw new SessionMutationNotFoundException(request.SessionId);
                 if (latest.Location.WorkspaceId is not null)
                     throw new NotSupportedException("Moving from an explicit workspace requires its source transport lifecycle.");
                 var admission = new SessionAdmission(database);
                 if (Stat(latest.Location.Directory, ct) != true)
                 {
-                    await admission.MoveFromMissingSourceLockedAsync(request.SessionId, payload, ct);
+                    await admission.MoveFromMissingSourceLockedAsync(request.SessionId, payload, ct).ConfigureAwait(true);
                     return new SessionMoveAdmission(null, true);
                 }
                 return new SessionMoveAdmission(await admission.AdmitMoveLockedAsync(request.SessionId,
-                    id ?? MessageId.Create(), payload, request.Delivery, ct), false);
-            }, ct);
+                    id ?? MessageId.Create(), payload, request.Delivery, ct).ConfigureAwait(true), false);
+            }, ct).ConfigureAwait(true);
         }, ct);
     }
 
@@ -86,7 +86,7 @@ public sealed class SessionMovement(IDatabase database, SessionStore sessions, P
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Directory);
-        var current = await sessions.GetSessionAsync(request.SessionId, ct)
+        var current = await sessions.GetSessionAsync(request.SessionId, ct).ConfigureAwait(true)
             ?? throw new SessionMutationNotFoundException(request.SessionId);
         if (request.WorkspaceId is not null || current.Location.WorkspaceId is not null)
             throw new NotSupportedException("Explicit workspace movement requires Location routing. No move was admitted.");
@@ -102,9 +102,10 @@ public sealed class SessionMovement(IDatabase database, SessionStore sessions, P
 
         try
         {
-            var resolved = await CatalogLocation.ResolveAsync(database, directory, ct: ct);
+            var resolved = await CatalogLocation.ResolveAsync(database, directory, ct: ct).ConfigureAwait(true);
             var location = new LocationRef(directory);
-            await using var lease = await locations.AcquireAsync(location, ct);
+            var lease = await locations.AcquireAsync(location, ct).ConfigureAwait(true);
+            await using var leaseLifetime = lease.ConfigureAwait(true);
             if (lease.Location.WorkspaceId is not null || lease.Location.Project.Id != resolved.Project.Id)
                 throw new InvalidOperationException("Destination Location disagrees with resolved project identity.");
             var relative = Path.GetRelativePath(resolved.Project.Directory, directory).Replace('\\', '/');
@@ -120,7 +121,7 @@ public sealed class SessionMovement(IDatabase database, SessionStore sessions, P
     private static bool? Stat(string directory, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        try { return (File.GetAttributes(directory) & FileAttributes.Directory) != 0; }
+        try { return (File.GetAttributes(directory) & FileAttributes.Directory) != FileAttributes.None; }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
     }

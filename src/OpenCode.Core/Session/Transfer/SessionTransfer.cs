@@ -37,34 +37,39 @@ public sealed class SessionTransfer(IDatabase database)
         var id = SessionId.Create();
         return new EventStore(database).TransactAsync(id.Value, async (transaction, token) =>
         {
-            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == request.SessionId.Value, token)) throw new SessionMutationNotFoundException(request.SessionId);
+            var parent = request.SessionId.Value;
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == parent, token).ConfigureAwait(true)) throw new SessionMutationNotFoundException(request.SessionId);
 
-            var boundary = transaction.Db.Messages.Where(row => row.session_id == request.SessionId.Value);
-            if (request.Boundary is ForkRequestBoundaryBefore before) boundary = boundary.Where(row => row.id == before.MessageId.Value);
-            var found = await boundary.OrderByDescending(row => row.seq).Select(row => row.id).FirstOrDefaultAsync(token);
+            var boundary = transaction.Db.Messages.Where(row => row.session_id == parent);
+            if (request.Boundary is ForkRequestBoundaryBefore before)
+            {
+                var boundaryId = before.MessageId.Value;
+                boundary = boundary.Where(row => row.id == boundaryId);
+            }
+            var found = await boundary.OrderByDescending(row => row.seq).Select(row => row.id).FirstOrDefaultAsync(token).ConfigureAwait(true);
             if (found is null && request.Boundary is ForkRequestBoundaryBefore missing) throw new SessionForkMessageNotFoundException(request.SessionId, missing.MessageId);
             if (found is null) throw new SessionForkEmptyException(request.SessionId);
             var messageId = MessageId.FromExisting(found);
 
             // Snapshot current values, not the parent's epoch baseline or boundary-era values.
             IReadOnlyDictionary<string, string>? instructions = null;
-            if (await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == request.SessionId.Value).Select(row => row.current_values)
-                .FirstOrDefaultAsync(token) is { } json)
+            if (await transaction.Db.Set<InstructionStateRow>().Where(row => row.session_id == parent).Select(row => row.current_values)
+                .FirstOrDefaultAsync(token).ConfigureAwait(true) is { } json)
                 instructions = JsonSerializer.Deserialize(json, TransferJsonContext.Default.IReadOnlyDictionaryStringString)
                     ?? throw new JsonException("Instruction state must be an object.");
             var entries = new List<InstructionEntrySnapshot>();
-            var rows = await transaction.Db.Set<InstructionEntryRow>().Where(row => row.session_id == request.SessionId.Value).OrderBy(row => row.key)
-                .Select(row => new { row.key, row.value, row.removed }).ToListAsync(token);
-            foreach (var row in rows)
+            var rows = transaction.Db.Set<InstructionEntryRow>().Where(row => row.session_id == parent).OrderBy(row => row.key)
+                .Select(row => new { row.key, row.value, row.removed });
+            await foreach (var row in rows.ReadAsync(-1, token).ConfigureAwait(true))
             {
                 using var value = JsonDocument.Parse(row.value ?? "null");
                 entries.Add(new InstructionEntrySnapshot(row.key, value.RootElement.Clone(), row.removed));
             }
             await transaction.AppendAsync(ForkProjector.Forked, new SessionForkedData(id, request.SessionId,
                 request.Boundary is ForkRequestBoundaryBefore ? new ForkBoundaryBefore(messageId) : new ForkBoundaryThrough(messageId),
-                instructions, entries), token);
+                instructions, entries), token).ConfigureAwait(true);
 
-            var projected = await transaction.Db.Sessions.FirstOrDefaultAsync(row => row.id == id.Value, token)
+            var projected = await transaction.Db.SessionDetails.FirstOrDefaultAsync(row => row.id == id.Value, token).ConfigureAwait(true)
                 ?? throw new InvalidOperationException("Fork projection did not create a session.");
             return SessionStore.ReadSession(projected);
         }, ct);

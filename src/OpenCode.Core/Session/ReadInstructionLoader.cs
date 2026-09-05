@@ -1,10 +1,12 @@
 namespace OpenCode.Core.Session;
 
 using System.Text.Json;
+using System.Diagnostics.CodeAnalysis;
 using OpenCode.Core.Database;
 using OpenCode.Core.Event;
 using OpenCode.Schema;
 using Microsoft.EntityFrameworkCore;
+using OpenCode.Core.Persistence;
 
 /// <summary>SessionInstructions.load: temporary claims plus the model-visible synthetic metadata ledger.</summary>
 internal sealed class ReadInstructionLoader(IDatabase database)
@@ -12,6 +14,7 @@ internal sealed class ReadInstructionLoader(IDatabase database)
     private readonly Lock _sync = new();
     private readonly HashSet<(SessionId Session, string Path)> _inFlight = [];
 
+    [SuppressMessage("Design", "MA0015", Justification = "The compound paths/project-root validation retains its source error text rather than choosing a new single parameter or adding a message suffix.")]
     internal async Task LoadAsync(SessionId sessionId, IReadOnlyList<string> paths, string projectRoot, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -25,10 +28,10 @@ internal sealed class ReadInstructionLoader(IDatabase database)
         {
             var injected = await new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
             {
-                var rows = await SessionQueries.Context(transaction.Db, sessionId.Value).Where(row => row.type == "synthetic")
-                    .OrderBy(row => row.seq).Select(row => row.data).ToListAsync(token);
+                var rows = SessionQueries.Context(transaction.Db, sessionId.Value).Where(row => row.type == "synthetic")
+                    .OrderBy(row => row.seq).Select(row => row.data);
                 var result = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var row in rows)
+                await foreach (var row in rows.ReadAsync(-1, token).ConfigureAwait(true))
                 {
                     using var document = JsonDocument.Parse(row);
                     if (!document.RootElement.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object ||
@@ -38,12 +41,12 @@ internal sealed class ReadInstructionLoader(IDatabase database)
                     foreach (var path in loaded.EnumerateArray()) result.Add(path.GetString()!);
                 }
                 return result;
-            }, ct);
+            }, ct).ConfigureAwait(true);
             var files = new List<(string Path, string Content)>();
             foreach (var path in claimed.Where(path => !injected.Contains(path)))
             {
                 ct.ThrowIfCancellationRequested();
-                try { files.Add((path, await File.ReadAllTextAsync(path, ct))); }
+                try { files.Add((path, await File.ReadAllTextAsync(path, ct).ConfigureAwait(true))); }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
             }
             if (files.Count == 0) return;
@@ -55,12 +58,12 @@ internal sealed class ReadInstructionLoader(IDatabase database)
             }
             await new EventStore(database).TransactAsync(sessionId.Value, async (transaction, token) =>
             {
-                if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token)) throw new InvalidOperationException("Session not found.");
+                if (!await transaction.Db.Sessions.AnyAsync(row => row.id == sessionId.Value, token).ConfigureAwait(true)) throw new InvalidOperationException("Session not found.");
                 return await transaction.AppendAsync(SessionSyntheticProjector.Definition, new SessionSyntheticData(sessionId,
                     string.Join("\n\n", files.Select(file => $"Instructions from: {file.Path}\n{file.Content}")),
                     "Loaded " + string.Join(", ", files.Select(file => Describe(file.Path))),
-                    new Dictionary<string, JsonElement> { ["instruction"] = JsonSerializer.SerializeToElement(new { paths = files.Select(file => file.Path).ToArray() }) }), token);
-            }, ct);
+                    new Dictionary<string, JsonElement> { ["instruction"] = JsonSerializer.SerializeToElement(new { paths = files.Select(file => file.Path).ToArray() }) }), token).ConfigureAwait(true);
+            }, ct).ConfigureAwait(true);
         }
         finally { lock (_sync) foreach (var path in claimed) _inFlight.Remove((sessionId, path)); }
     }

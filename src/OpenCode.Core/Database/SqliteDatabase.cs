@@ -96,17 +96,19 @@ public sealed class SqliteDatabase : IDatabase
         Func<SqliteConnection, SqliteTransaction, Task<T>> action,
         CancellationToken ct = default)
     {
-        await using var connection = CreateConnection();
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct);
+        var connection = CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(ct).ConfigureAwait(true);
+        await using var transactionLifetime = transaction.ConfigureAwait(true);
         try
         {
-            var result = await action(connection, transaction);
-            await transaction.CommitAsync(ct);
+            var result = await action(connection, transaction).ConfigureAwait(true);
+            await transaction.CommitAsync(ct).ConfigureAwait(true);
             return result;
         }
         catch
         {
-            await transaction.RollbackAsync(ct);
+            await transaction.RollbackAsync(ct).ConfigureAwait(true);
             throw;
         }
     }

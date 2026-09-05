@@ -11,9 +11,14 @@ public sealed class ProjectQueries(IDatabase database)
 {
     public async Task<IReadOnlyList<ProjectInfo>> ListAsync(CancellationToken ct = default)
     {
-        await using var connection = database.CreateConnection();
-        await using var db = new PersistenceContext(connection);
-        return (await db.Set<ProjectRow>().OrderByDescending(row => row.time_updated).ThenBy(row => row.id).ToListAsync(ct)).Select(FromRow).ToArray();
+        var connection = database.CreateConnection();
+        await using var connectionLifetime = connection.ConfigureAwait(true);
+        var db = new PersistenceContext(connection);
+        await using var dbLifetime = db.ConfigureAwait(true);
+        var projects = new List<ProjectInfo>();
+        await foreach (var row in db.Set<ProjectRow>().OrderByDescending(row => row.time_updated).ThenBy(row => row.id).ReadAsync(-1, ct).ConfigureAwait(true))
+            projects.Add(FromRow(row));
+        return projects;
     }
 
     internal static ProjectInfo FromRow(ProjectRow row)

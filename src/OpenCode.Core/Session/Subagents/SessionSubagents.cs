@@ -52,64 +52,64 @@ public sealed partial class SessionSubagents : IAsyncDisposable
         ObjectDisposedException.ThrowIf(_closed, this);
         _ = Jobs;
         _token.ThrowIfCancellationRequested();
-        var parent = await _sessions.GetSessionAsync(context.SessionId, ct) ?? throw new ToolExecutionException($"Parent session not found: {context.SessionId}");
+        var parent = await _sessions.GetSessionAsync(context.SessionId, ct).ConfigureAwait(false) ?? throw new ToolExecutionException($"Parent session not found: {context.SessionId}");
         var current = parent;
         var depth = 0;
         while (current.ParentId is { } ancestor)
         {
             depth++;
-            current = await _sessions.GetSessionAsync(ancestor, ct) ?? throw new ToolExecutionException($"Parent session not found: {ancestor}");
+            current = await _sessions.GetSessionAsync(ancestor, ct).ConfigureAwait(false) ?? throw new ToolExecutionException($"Parent session not found: {ancestor}");
         }
         var limit = ConfigLoader.LoadDocument(directory: parent.Location.Directory)["experimental"]?["subagent_depth"]?.GetValue<double>() ?? 1;
         if (!double.IsFinite(limit) || limit < 0 || Math.Truncate(limit) != limit) throw new ToolExecutionException("experimental.subagent_depth must be a nonnegative integer.");
         if (depth >= limit) throw new ToolExecutionException($"Subagent depth limit reached ({limit}). Increase \"experimental.subagent_depth\" to allow nested subagents.");
-        var agent = await AgentCatalog.ResolveAsync(parent.Location.Directory, AgentId.FromExisting(agentId), ct) ?? throw new ToolExecutionException($"Unknown agent: {agentId}");
+        var agent = await AgentCatalog.ResolveAsync(parent.Location.Directory, AgentId.FromExisting(agentId), ct).ConfigureAwait(false) ?? throw new ToolExecutionException($"Unknown agent: {agentId}");
         if (agent.Mode == AgentMode.Primary) throw new ToolExecutionException($"Agent {agentId} cannot run as a subagent");
         try
         {
             await permissions.AssertAsync(new PermissionAskInput(context.SessionId, "subagent", [agent.Id.Value], Agent: context.AgentId,
-                Save: [agent.Id.Value], Source: new PermissionSource("tool", context.RequireMessageId().Value, context.CallId)), ct);
+                Save: [agent.Id.Value], Source: new PermissionSource("tool", context.RequireMessageId().Value, context.CallId)), ct).ConfigureAwait(false);
         }
         catch (Exception error) when (error is PermissionBlockedException or PermissionCorrectedException)
         { throw new ToolExecutionException($"Subagent denied: {agent.Id}", error); }
 
         var existing = existingId is { } requested
-            ? await _sessions.GetSessionAsync(requested, ct) ?? throw new ToolExecutionException($"Subagent session not found: {requested}") : null;
+            ? await _sessions.GetSessionAsync(requested, ct).ConfigureAwait(false) ?? throw new ToolExecutionException($"Subagent session not found: {requested}") : null;
         if (existing is not null && existing.ParentId != parent.Id) throw new ToolExecutionException($"Session {existing.Id} is not a child of the current session");
         if (existing is not null && existing.Agent != agent.Id.Value)
         {
             // Source child selection publishes policy state; it does not resolve credentials/models before admission.
             await _selection.PublishAsync(existing.Id, SessionMutationProjector.AgentSelected,
-                selected => new SessionAgentSelectionData(existing.Id, agent.Id.Value, selected.Agent), ct);
+                selected => new SessionAgentSelectionData(existing.Id, agent.Id.Value, selected.Agent), ct).ConfigureAwait(false);
             if (agent.Model is { } model)
                 await _selection.PublishAsync(existing.Id, SessionMutationProjector.ModelSelected,
                     selected => selected.Model is { } previous && previous.ProviderId == model.ProviderId && previous.Id == model.Id &&
-                        (previous.Variant ?? "default") == (model.Variant ?? "default") ? null : new SessionModelSelectionData(existing.Id, model, selected.Model), ct);
+                        (previous.Variant ?? "default") == (model.Variant ?? "default") ? null : new SessionModelSelectionData(existing.Id, model, selected.Model), ct).ConfigureAwait(false);
         }
         var child = existing ?? await _sessions.CreateSessionAsync(parent.Location.Directory, description, parent.ProjectId,
             ct: ct, agent: agent.Id.Value, model: agent.Model ?? parent.Model, location: parent.Location, metadata: parent.Metadata,
-            parentId: parent.Id, subpath: parent.Subpath);
-        await context.ReportProgress(new Dictionary<string, object> { ["sessionID"] = child.Id.Value, ["status"] = "running" });
+            parentId: parent.Id, subpath: parent.Subpath).ConfigureAwait(false);
+        await context.ReportProgress(new Dictionary<string, object> { ["sessionID"] = child.Id.Value, ["status"] = "running" }).ConfigureAwait(false);
         var detached = false;
         try
         {
-            await _execution.AdmitPromptAsync(child.Id, new PromptInput(existing is null ? "You are a subagent spawned by another session.\n" + prompt : prompt), ct: ct);
-            if (!background || existing is not null) await _execution.WakeAsync(child.Id, _token);
+            await _execution.AdmitPromptAsync(child.Id, new PromptInput(existing is null ? "You are a subagent spawned by another session.\n" + prompt : prompt), ct: ct).ConfigureAwait(false);
+            if (!background || existing is not null) await _execution.WakeAsync(child.Id, _token).ConfigureAwait(false);
             var recovery = new JobSubagentRecovery(parent.Id, child.Id, agent.Name, description);
             var info = await Jobs.StartAsync(new JobStartInput("subagent", token => ExecuteAsync(child.Id, token),
-                child.Id.Value, description, new Dictionary<string, JsonElement>(), recovery), ct);
+                child.Id.Value, description, new Dictionary<string, JsonElement>(), recovery), ct).ConfigureAwait(false);
             if (background)
             {
-                var promoted = await Jobs.BackgroundAsync(info.Id, ct) ?? throw new InvalidOperationException("Known subagent job disappeared during promotion.");
+                var promoted = await Jobs.BackgroundAsync(info.Id, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("Known subagent job disappeared during promotion.");
                 detached = true;
-                await NotifyWhenDoneAsync(recovery, promoted, ct: ct);
+                await NotifyWhenDoneAsync(recovery, promoted, ct: ct).ConfigureAwait(false);
                 return BackgroundResult(child.Id);
             }
-            var result = await Jobs.BlockAsync(info.Id, parent.Id, ct) ?? throw new InvalidOperationException("Known subagent job disappeared while waiting.");
+            var result = await Jobs.BlockAsync(info.Id, parent.Id, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("Known subagent job disappeared while waiting.");
             if (result.Backgrounded)
             {
                 detached = true;
-                await NotifyWhenDoneAsync(recovery, result.Info, ct: ct);
+                await NotifyWhenDoneAsync(recovery, result.Info, ct: ct).ConfigureAwait(false);
                 return BackgroundResult(child.Id);
             }
             if (result.Info.Status == JobStatus.Error) throw new ToolExecutionException($"Subagent failed (sessionID: {child.Id}): {result.Info.Error ?? "unknown error"}");
@@ -122,9 +122,9 @@ public sealed partial class SessionSubagents : IAsyncDisposable
             if (!_lifetime.IsCancellationRequested && !detached)
             {
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15), _sessions.Clock);
-                await _execution.InterruptAsync(child.Id, cleanup.Token);
-                await Jobs.CancelAsync(child.Id.Value, cleanup.Token);
-                await _execution.AwaitIdleAsync(child.Id, cleanup.Token);
+                await _execution.InterruptAsync(child.Id, cleanup.Token).ConfigureAwait(false);
+                await Jobs.CancelAsync(child.Id.Value, cleanup.Token).ConfigureAwait(false);
+                await _execution.AwaitIdleAsync(child.Id, cleanup.Token).ConfigureAwait(false);
             }
             throw;
         }
@@ -133,23 +133,23 @@ public sealed partial class SessionSubagents : IAsyncDisposable
     /// <summary>Explicit host/UI detachment. A foreground waiter receives the same running result as background=true.</summary>
     public async Task<bool> BackgroundAsync(SessionId parentId, SessionId childId, CancellationToken ct = default)
     {
-        if (await _sessions.GetSessionAsync(childId, ct) is not { } child || child.ParentId != parentId) return false;
-        var info = await Jobs.GetAsync(childId.Value, ct);
+        if (await _sessions.GetSessionAsync(childId, ct).ConfigureAwait(false) is not { } child || child.ParentId != parentId) return false;
+        var info = await Jobs.GetAsync(childId.Value, ct).ConfigureAwait(false);
         if (info is null || info.Type != "subagent") return false;
-        var promoted = await Jobs.BackgroundAsync(childId.Value, ct);
+        var promoted = await Jobs.BackgroundAsync(childId.Value, ct).ConfigureAwait(false);
         if (promoted is null) return false;
-        var marker = (await Jobs.PendingBackgroundAsync(ct)).FirstOrDefault(item => item.NotificationId == promoted.NotificationId);
+        var marker = (await Jobs.PendingBackgroundAsync(ct).ConfigureAwait(false)).FirstOrDefault(item => item.NotificationId == promoted.NotificationId);
         if (marker?.Recovery is not JobSubagentRecovery recovery) throw new InvalidOperationException("Promoted subagent has no recovery descriptor.");
-        await NotifyWhenDoneAsync(recovery, promoted, ct: ct);
+        await NotifyWhenDoneAsync(recovery, promoted, ct: ct).ConfigureAwait(false);
         return true;
     }
 
     public async Task<bool> CancelAsync(SessionId parentId, SessionId childId, CancellationToken ct = default)
     {
-        if (await _sessions.GetSessionAsync(childId, ct) is not { } child || child.ParentId != parentId) return false;
-        if (await Jobs.GetAsync(childId.Value, ct) is not { Type: "subagent" }) return false;
-        await _execution.InterruptAsync(childId, ct);
-        await Jobs.CancelAsync(childId.Value, ct);
+        if (await _sessions.GetSessionAsync(childId, ct).ConfigureAwait(false) is not { } child || child.ParentId != parentId) return false;
+        if (await Jobs.GetAsync(childId.Value, ct).ConfigureAwait(false) is not { Type: "subagent" }) return false;
+        await _execution.InterruptAsync(childId, ct).ConfigureAwait(false);
+        await Jobs.CancelAsync(childId.Value, ct).ConfigureAwait(false);
         return true;
     }
 
@@ -159,12 +159,12 @@ public sealed partial class SessionSubagents : IAsyncDisposable
         token = lifetime.Token;
         try
         {
-            await (recovered ?? _execution.ResumeChildJobAsync(child, token, _token));
+            await (recovered ?? _execution.ResumeChildJobAsync(child, token, _token)).ConfigureAwait(false);
             // Source Session.messages checks existence before its typed message query.
-            if (await _sessions.GetSessionAsync(child, token) is null) throw new SessionMutationNotFoundException(child);
+            if (await _sessions.GetSessionAsync(child, token).ConfigureAwait(false) is null) throw new SessionMutationNotFoundException(child);
             var messages = recovered is null
-                ? await _queries.MessagesAsync(child, 20, SessionQueryOrder.Descending, null, token)
-                : (await _queries.ContextAsync(child, token)).Reverse().ToArray();
+                ? await _queries.MessagesAsync(child, 20, SessionQueryOrder.Descending, null, token).ConfigureAwait(false)
+                : (await _queries.ContextAsync(child, token).ConfigureAwait(false)).Reverse().ToArray();
             var assistant = messages
                 .OfType<AssistantMessage>().FirstOrDefault(message => message.Time.Completed is not null && message.Error is null);
             var text = assistant is null ? "" : string.Concat(assistant.Content.OfType<AssistantTextContent>().Select(part => part.Text));
@@ -177,8 +177,8 @@ public sealed partial class SessionSubagents : IAsyncDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15), _sessions.Clock);
-            await _execution.InterruptAsync(child, cleanup.Token);
-            await _execution.AwaitIdleAsync(child, cleanup.Token);
+            await _execution.InterruptAsync(child, cleanup.Token).ConfigureAwait(false);
+            await _execution.AwaitIdleAsync(child, cleanup.Token).ConfigureAwait(false);
             throw;
         }
     }
@@ -187,7 +187,7 @@ public sealed partial class SessionSubagents : IAsyncDisposable
         Func<SessionId, bool>? suppressWake = null, CancellationToken ct = default)
     {
         if (generation.NotificationId is null) throw new InvalidOperationException("A background subagent requires a durable notification identity.");
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
@@ -201,27 +201,28 @@ public sealed partial class SessionSubagents : IAsyncDisposable
     {
         try
         {
-            var result = (await Jobs.WaitAsync(generation.Id, ct: _token)).Info
+            var result = (await Jobs.WaitAsync(generation.Id, ct: _token).ConfigureAwait(false)).Info
                 ?? throw new InvalidOperationException("Subagent job disappeared before notification.");
             if (result.StartedAt != generation.StartedAt || result.NotificationId != generation.NotificationId)
             {
                 // A later generation may replace the ID before this observer attaches. The prior
                 // terminal marker is authoritative; never send the later output under the old ID.
-                var previous = (await Jobs.PendingBackgroundAsync(_token)).FirstOrDefault(item => item.NotificationId == generation.NotificationId);
+                var previous = (await Jobs.PendingBackgroundAsync(_token).ConfigureAwait(false)).FirstOrDefault(item => item.NotificationId == generation.NotificationId);
                 if (previous is null) return;
                 if (previous.Status == JobStatus.Running) throw new InvalidOperationException("Prior subagent generation has no terminal recovery outcome yet.");
                 if (previous.Recovery is not JobSubagentRecovery prior || prior.ChildSessionId != recovery.ChildSessionId || prior.ParentSessionId != recovery.ParentSessionId)
                     throw new InvalidOperationException("Prior subagent notification belongs to a different recovery owner.");
                 await DeliverAsync(new SubagentRecovery(prior.ParentSessionId, prior.ChildSessionId, prior.Agent, prior.Description),
-                    generation.NotificationId!.Value, CompletionOf(previous.Status, previous.Output, previous.Error), suppressWake);
+                    generation.NotificationId!.Value, CompletionOf(previous.Status, previous.Output, previous.Error), suppressWake).ConfigureAwait(false);
                 return;
             }
             await DeliverAsync(new SubagentRecovery(recovery.ParentSessionId, recovery.ChildSessionId, recovery.Agent, recovery.Description),
-                generation.NotificationId!.Value, CompletionOf(result.Status, result.Output, result.Error), suppressWake);
+                generation.NotificationId!.Value, CompletionOf(result.Status, result.Output, result.Error), suppressWake).ConfigureAwait(false);
         }
         finally
         {
-            await _gate.WaitAsync();
+            // Bookkeeping must complete even when the host lifetime has ended.
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try { _notifications.Remove((generation.Id, generation.StartedAt)); }
             finally { _gate.Release(); }
         }
@@ -237,10 +238,10 @@ public sealed partial class SessionSubagents : IAsyncDisposable
                 {
                     ["source"] = JsonSerializer.SerializeToElement("subagent"), ["childID"] = JsonSerializer.SerializeToElement(recovery.ChildSessionId.Value),
                     ["agent"] = JsonSerializer.SerializeToElement(recovery.Agent), ["state"] = JsonSerializer.SerializeToElement(result.Status)
-                }), ct: _token);
-        var parent = await _sessions.GetSessionAsync(recovery.ParentSessionId, _token) ?? throw new SessionMutationNotFoundException(recovery.ParentSessionId);
-        if (parent.Revert is null && suppressWake?.Invoke(parent.Id) != true) await _execution.WakeAsync(parent.Id, _token);
-        await Jobs.CompleteBackgroundAsync(notificationId, _token);
+                }), ct: _token).ConfigureAwait(false);
+        var parent = await _sessions.GetSessionAsync(recovery.ParentSessionId, _token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(recovery.ParentSessionId);
+        if (parent.Revert is null && suppressWake?.Invoke(parent.Id) != true) await _execution.WakeAsync(parent.Id, _token).ConfigureAwait(false);
+        await Jobs.CompleteBackgroundAsync(notificationId, _token).ConfigureAwait(false);
     }
 
     private static Completion CompletionOf(JobStatus status, string? output, string? error) => new(status switch
@@ -257,12 +258,13 @@ public sealed partial class SessionSubagents : IAsyncDisposable
     }
     private async Task ObserveAsync(Task task)
     {
-        try { await task; }
+        try { await task.ConfigureAwait(false); }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error) { Trace.TraceWarning("Subagent task failed; pending recovery markers are retained: {0}", error.Message); }
         finally
         {
-            await _gate.WaitAsync();
+            // Remove owned work during shutdown as well as normal completion.
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
             try { _owned.Remove(task); }
             finally { _gate.Release(); }
         }
@@ -271,13 +273,13 @@ public sealed partial class SessionSubagents : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Task[] tasks;
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try { if (_closed) return; _closed = true; tasks = _owned.ToArray(); }
         finally { _gate.Release(); }
-        _lifetime.Cancel();
         try
         {
-            await Task.WhenAll(tasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            try { await _lifetime.CancelAsync().ConfigureAwait(false); }
+            finally { await Task.WhenAll(tasks).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
             // Execution ownership remains with the shared engine. The host must settle that
             // engine before disposing stores/Locations; a joiner must not stop another owner.
         }

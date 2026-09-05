@@ -68,12 +68,12 @@ public sealed class SessionTitleService : IAsyncDisposable
     private async Task RunAsync(SessionId sessionId, CancellationToken ct)
     {
         // Defers synchronous catalog/filesystem work too; Schedule never delays the primary model request.
-        await Task.Yield();
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         var token = cancellation.Token;
-        var session = await _sessions.GetSessionAsync(sessionId, token);
+        var session = await _sessions.GetSessionAsync(sessionId, token).ConfigureAwait(false);
         if (session is null) return;
-        var first = await _persistence.FirstUserAsync(sessionId, token);
+        var first = await _persistence.FirstUserAsync(sessionId, token).ConfigureAwait(false);
         if (first is null) return;
         var text = first.Text;
         if (!IsUntitled(session))
@@ -81,7 +81,7 @@ public sealed class SessionTitleService : IAsyncDisposable
             try
             {
                 var original = "Original request:\n" + first.Text[..Math.Min(2000, first.Text.Length)];
-                var recent = string.Join("\n\n", (await _queries.ContextAsync(sessionId, token)).SelectMany(message =>
+                var recent = string.Join("\n\n", (await _queries.ContextAsync(sessionId, token).ConfigureAwait(false)).SelectMany(message =>
                 {
                     if (message is UserMessage user && user.Id != first.Id) return new[] { "User: " + Trim(user.Text) };
                     if (message is not AssistantMessage assistant) return [];
@@ -96,13 +96,13 @@ public sealed class SessionTitleService : IAsyncDisposable
 
         // Title selection intentionally does not acquire tools, MCP or instruction epochs.
         // AgentCatalog still rejects configured plugin producers rather than pretending their hooks ran.
-        var agent = await AgentCatalog.ResolveAsync(session.Location.Directory, AgentId.FromExisting("title"), token);
+        var agent = await AgentCatalog.ResolveAsync(session.Location.Directory, AgentId.FromExisting("title"), token).ConfigureAwait(false);
         if (agent is null) return;
         if (session.Location.WorkspaceId is not null) throw new NotSupportedException("Title generation requires local Location model routing.");
-        var catalog = await _providers.ReadCatalogAsync(session.Location.Directory, token);
+        var catalog = await _providers.ReadCatalogAsync(session.Location.Directory, token).ConfigureAwait(false);
         var primaryRef = session.Model ?? catalog.DefaultSelection;
         var primaryInfo = primaryRef is null ? null : catalog.Models.FirstOrDefault(model => model.ProviderId == primaryRef.ProviderId && model.Id == primaryRef.Id);
-        var primary = await ResolveAsync(session, primaryInfo, primaryRef, token);
+        var primary = await ResolveAsync(session, primaryInfo, primaryRef, token).ConfigureAwait(false);
         CatalogModelInfo? info = null;
         if (agent.Model is { } configured)
             info = catalog.Models.FirstOrDefault(model => model.ProviderId == configured.ProviderId && model.Id == configured.Id);
@@ -115,26 +115,26 @@ public sealed class SessionTitleService : IAsyncDisposable
                 .Select(family => models.FirstOrDefault(model => model.Family == family)).FirstOrDefault(model => model is not null);
         }
         var variant = agent.Model?.Variant ?? new[] { "none", "minimal", "low" }.FirstOrDefault(id => info?.Variants.Any(item => item.Id == id) == true);
-        var preferred = info is null ? null : await ResolveAsync(session, info, new ModelRef(info.ProviderId, info.Id, variant), token);
+        var preferred = info is null ? null : await ResolveAsync(session, info, new ModelRef(info.ProviderId, info.Id, variant), token).ConfigureAwait(false);
         var selected = preferred ?? primary;
         if (selected is null) return;
         var selectedInfo = preferred is null ? primaryInfo! : info!;
-        var title = await AttemptAsync(session, agent, text, selected, selectedInfo, token);
+        var title = await AttemptAsync(session, agent, text, selected, selectedInfo, token).ConfigureAwait(false);
         if (title is null && primary is not null && selected.Selection != primary.Selection)
-            title = await AttemptAsync(session, agent, text, primary, primaryInfo!, token);
+            title = await AttemptAsync(session, agent, text, primary, primaryInfo!, token).ConfigureAwait(false);
         if (title is null) return;
         title = title.Length <= 100 ? title : title[..97] + "...";
-        var expected = await _persistence.ExpectedSequenceAsync(sessionId, token);
-        var current = await _sessions.GetSessionAsync(sessionId, token);
+        var expected = await _persistence.ExpectedSequenceAsync(sessionId, token).ConfigureAwait(false);
+        var current = await _sessions.GetSessionAsync(sessionId, token).ConfigureAwait(false);
         if (current is null || current.Title != session.Title || current.Title == title) return;
-        await _persistence.RenameAsync(sessionId, session.Title, title, expected, token);
+        await _persistence.RenameAsync(sessionId, session.Title, title, expected, token).ConfigureAwait(false);
     }
 
     private async Task<ResolvedModel?> ResolveAsync(SessionInfo session, CatalogModelInfo? info, ModelRef? selection, CancellationToken ct)
     {
         if (info is null || selection is null || !info.Available || !info.TransportSupported) return null;
         if (selection.Variant is not (null or "default") && !info.Variants.Any(item => item.Id == selection.Variant)) return null;
-        try { return await _providers.ResolveAsync(ct: ct, directory: session.Location.Directory, sessionModel: selection, sessionId: session.Id.Value); }
+        try { return await _providers.ResolveAsync(ct: ct, directory: session.Location.Directory, sessionModel: selection, sessionId: session.Id.Value).ConfigureAwait(false); }
         catch (LlmException) { return null; }
     }
 
@@ -159,7 +159,7 @@ public sealed class SessionTitleService : IAsyncDisposable
         try
         {
             // One physical auxiliary stream. The caller may make only the source's distinct-primary fallback.
-            await foreach (var item in model.Client.StreamAsync(request, ct))
+            await foreach (var item in model.Client.StreamAsync(request, ct).ConfigureAwait(false))
             {
                 switch (item)
                 {
@@ -182,7 +182,7 @@ public sealed class SessionTitleService : IAsyncDisposable
             if (tokens is not null)
             {
                 using var publication = new CancellationTokenSource(TimeSpan.FromSeconds(15), _sessions.Clock);
-                await _persistence.UsageAsync(session.Id, Money.FromExisting(cost), tokens, publication.Token);
+                await _persistence.UsageAsync(session.Id, Money.FromExisting(cost), tokens, publication.Token).ConfigureAwait(false);
             }
         }
         return failed ? null : chunks.ToString().Split('\n').Select(Trim).FirstOrDefault(line => line.Length > 0);
@@ -190,7 +190,7 @@ public sealed class SessionTitleService : IAsyncDisposable
 
     private async Task ObserveAsync(Task task, SessionId? automatic)
     {
-        try { await task; }
+        try { await task.ConfigureAwait(false); }
         catch (OperationCanceledException) { }
         catch (Exception error) { Trace.TraceWarning("Title generation failed: {0}", error.Message); }
         finally
@@ -207,8 +207,11 @@ public sealed class SessionTitleService : IAsyncDisposable
     {
         Task[] pending;
         lock (_gate) { if (_closed) return; _closed = true; pending = _pending.ToArray(); }
-        _lifetime.Cancel();
-        try { await Task.WhenAll(pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+        try
+        {
+            try { await _lifetime.CancelAsync().ConfigureAwait(false); }
+            finally { await Task.WhenAll(pending).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing); }
+        }
         finally { _lifetime.Dispose(); }
     }
 

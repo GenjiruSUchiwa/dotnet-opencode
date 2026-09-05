@@ -9,6 +9,7 @@ using OpenCode.Schema;
 /// <summary>Source ToolOutput.truncate; retention scheduling remains host-owned.</summary>
 internal sealed record SessionToolOutput(double MaxLines, double MaxBytes)
 {
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Preserve the configuration error text exposed by execution failure; do not append a CLR parameter suffix.")]
     internal static SessionToolOutput FromConfig(JsonObject config)
     {
         var value = config["tool_output"];
@@ -55,7 +56,7 @@ internal sealed record SessionToolOutput(double MaxLines, double MaxBytes)
         var directory = Path.GetFullPath(Path.Combine(ConfigLoader.GetDefaultDataDirectory(), "tool-output"));
         Directory.CreateDirectory(directory);
         var file = Path.Combine(directory, "tool_" + Identifier.Ascending());
-        await File.WriteAllTextAsync(file, text, new UTF8Encoding(false), ct);
+        await File.WriteAllTextAsync(file, text, new UTF8Encoding(false), ct).ConfigureAwait(false);
         var marker = $"... {removed} {unit} truncated; full content saved to {file} ...";
         var bounded = new List<ToolContent>();
         var remaining = string.Join('\n', kept).Length;

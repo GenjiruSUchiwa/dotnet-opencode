@@ -35,18 +35,18 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
         CancellationToken ct = default) => SessionRunCoordinator.AdmitAsync(sessionId, async () =>
         {
             var messageId = id ?? MessageId.Create();
-            var existing = await sessions.ReconcileInboxAsync(sessionId, messageId, "user", delivery, ct);
+            var existing = await sessions.ReconcileInboxAsync(sessionId, messageId, "user", delivery, ct).ConfigureAwait(false);
             if (existing is not null) return existing;
-            var session = await sessions.GetSessionAsync(sessionId, ct) ?? throw new InvalidOperationException("Session not found.");
+            var session = await sessions.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
             var capturedMetadata = metadata?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal);
-            var prepared = await PrepareAsync(session.Location, input, ct);
+            var prepared = await PrepareAsync(session.Location, input, ct).ConfigureAwait(false);
             if (session.Revert is not null)
             {
                 if (commitRevert is null) throw new NotSupportedException("The host must supply durable staged-revert commit after prompt preparation.");
-                await commitRevert(session, ct);
+                await commitRevert(session, ct).ConfigureAwait(false);
             }
             return await sessions.AdmitInboxAsync(sessionId, messageId,
-                new UserInboxPayload(prepared.Text, prepared.Files, prepared.Agents, prepared.Skills, capturedMetadata), delivery, ct);
+                new UserInboxPayload(prepared.Text, prepared.Files, prepared.Agents, prepared.Skills, capturedMetadata), delivery, ct).ConfigureAwait(false);
         }, ct);
 
     public async Task<Prompt> PrepareAsync(LocationRef location, PromptInput input, CancellationToken ct = default)
@@ -66,11 +66,11 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
         if (files is not null)
             await Parallel.ForEachAsync(Enumerable.Range(0, files.Length),
                 new ParallelOptions { MaxDegreeOfParallelism = 8, CancellationToken = ct }, async (index, token) =>
-                    files[index] = await MaterializeAsync(input.Files![index], token));
+                    files[index] = await MaterializeAsync(input.Files![index], token).ConfigureAwait(false)).ConfigureAwait(false);
         var skills = new List<PromptSkillAttachment>();
         if (input.Skills is { Count: > 0 })
         {
-            var catalog = await InstructionCatalog.ListSkillsAsync(location.Directory, ct);
+            var catalog = await InstructionCatalog.ListSkillsAsync(location.Directory, ct).ConfigureAwait(false);
             var prepared = new Dictionary<SkillId, string>();
             foreach (var attachment in input.Skills)
             {
@@ -99,10 +99,10 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
             if (uri is not null && (!OperatingSystem.IsWindows() || uri.IsUnc))
                 throw new NotSupportedException("Local prompt files currently require Windows regular-file classification and a non-UNC file URI.");
             var path = uri?.LocalPath;
-            var directory = path is not null && (File.GetAttributes(path) & FileAttributes.Directory) != 0;
-            if (path is not null && (File.GetAttributes(path) & FileAttributes.Device) != 0)
+            var directory = path is not null && File.GetAttributes(path).HasFlag(FileAttributes.Directory);
+            if (path is not null && File.GetAttributes(path).HasFlag(FileAttributes.Device))
                 throw new PromptAttachmentException(input.Uri, $"Attachment is not a file: {input.Uri}");
-            var bytes = inline ? DecodeData(input.Uri) : directory ? DirectoryBytes(path!, ct) : await ReadBytesAsync(path!, input.Uri, ct);
+            var bytes = inline ? DecodeData(input.Uri) : directory ? DirectoryBytes(path!, ct) : await ReadBytesAsync(path!, input.Uri, ct).ConfigureAwait(false);
             if (bytes.Length > MaxAttachmentBytes) throw TooLarge(input.Uri);
             var mime = directory ? "application/x-directory" : DetectMime(bytes);
             if (mime == "text/plain" && uri is not null && PositiveQuery(uri, "start") is { } start)
@@ -117,7 +117,7 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
                 input.Name ?? (path is null ? null : Path.GetFileName(Path.TrimEndingDirectorySeparator(path))), input.Description, input.Mention);
             if (mime.StartsWith("image/", StringComparison.Ordinal) && normalizeImage is not null)
             {
-                var normalized = await normalizeImage(file, ct);
+                var normalized = await normalizeImage(file, ct).ConfigureAwait(false);
                 // Image normalization changes only content/mime, never attachment provenance.
                 file = file with { Data = normalized.Data, Mime = normalized.Mime };
             }
@@ -166,20 +166,21 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
 
     private static async Task<byte[]> ReadBytesAsync(string path, string uri, CancellationToken ct)
     {
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
+        var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
             64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var streamLifetime = stream.ConfigureAwait(false);
         if (stream.Length > MaxAttachmentBytes) throw TooLarge(uri);
-        return await PipelineBytes.CollectAsync(stream, MaxAttachmentBytes, () => TooLarge(uri), ct);
+        return await PipelineBytes.CollectAsync(stream, MaxAttachmentBytes, () => TooLarge(uri), ct).ConfigureAwait(false);
     }
 
     private static byte[] DirectoryBytes(string path, CancellationToken ct) => Encoding.UTF8.GetBytes(string.Join('\n',
-        new DirectoryInfo(path).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false })
-            .Where(item => (item.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Device)) == 0)
-            .OrderBy(item => (item.Attributes & FileAttributes.Directory) == 0)
+        new DirectoryInfo(path).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = (FileAttributes)0, IgnoreInaccessible = false })
+            .Where(item => !item.Attributes.HasFlag(FileAttributes.ReparsePoint) && !item.Attributes.HasFlag(FileAttributes.Device))
+            .OrderBy(item => !item.Attributes.HasFlag(FileAttributes.Directory))
             .ThenBy(item => item.Name, StringComparer.CurrentCulture).Select(item =>
             {
                 ct.ThrowIfCancellationRequested();
-                return item.Name + ((item.Attributes & FileAttributes.Directory) != 0 ? Path.DirectorySeparatorChar.ToString() : "");
+                return item.Name + (item.Attributes.HasFlag(FileAttributes.Directory) ? Path.DirectorySeparatorChar.ToString() : "");
             })));
 
     private static double? PositiveQuery(Uri uri, string key)
@@ -213,15 +214,15 @@ public sealed class SessionPromptPreparation(SessionStore sessions, NormalizePro
         var pending = new Stack<string>();
         pending.Push(directory);
         while (pending.TryPop(out var current))
-            foreach (var entry in new DirectoryInfo(current).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false }))
+            foreach (var entry in new DirectoryInfo(current).EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = (FileAttributes)0, IgnoreInaccessible = false }))
             {
                 ct.ThrowIfCancellationRequested();
-                if ((entry.Attributes & FileAttributes.Directory) != 0)
+                if (entry.Attributes.HasFlag(FileAttributes.Directory))
                 {
-                    if ((entry.Attributes & FileAttributes.ReparsePoint) == 0) pending.Push(entry.FullName);
+                    if (!entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) pending.Push(entry.FullName);
                     continue;
                 }
-                if (entry.Name == "SKILL.md" || (entry.Attributes & FileAttributes.Device) != 0) continue;
+                if (entry.Name == "SKILL.md" || entry.Attributes.HasFlag(FileAttributes.Device)) continue;
                 files.Add(OperatingSystem.IsWindows() ? entry.FullName.Replace('\\', '/') : entry.FullName);
                 if (files.Count > 10) files.Remove(files.Max!);
             }

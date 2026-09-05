@@ -20,11 +20,11 @@ public sealed partial class SessionSubagents
         ArgumentOutOfRangeException.ThrowIfNegative(maxAttempts);
         ObjectDisposedException.ThrowIf(_closed, this);
         var token = _token;
-        await _recoveryGate.WaitAsync(token);
+        await _recoveryGate.WaitAsync(token).ConfigureAwait(false);
         var suspended = new ConcurrentDictionary<SessionId, byte>();
         try
         {
-            var pending = (await Jobs.PendingBackgroundAsync(token)).Where(item => item.Recovery is JobSubagentRecovery recovery && item.Id == recovery.ChildSessionId.Value)
+            var pending = (await Jobs.PendingBackgroundAsync(token).ConfigureAwait(false)).Where(item => item.Recovery is JobSubagentRecovery recovery && item.Id == recovery.ChildSessionId.Value)
                 .Select(item =>
                 {
                     var recovery = (JobSubagentRecovery)item.Recovery;
@@ -35,8 +35,8 @@ public sealed partial class SessionSubagents
                 }).ToArray();
             var active = _execution.ActiveSessionIds;
             var children = pending.Where(item => item.Status == "running").Select(item => item.Recovery.ChildSessionId).ToHashSet();
-            foreach (var id in (await _sessions.ListSuspendedAsync(token)).Concat(children).Where(id => !active.Contains(id))) suspended.TryAdd(id, 0);
-            await _restart.ReleaseChildClaimsAsync(children.Concat(active).ToHashSet(), token);
+            foreach (var id in (await _sessions.ListSuspendedAsync(token).ConfigureAwait(false)).Concat(children).Where(id => !active.Contains(id))) suspended.TryAdd(id, 0);
+            await _restart.ReleaseChildClaimsAsync(children.Concat(active).ToHashSet(), token).ConfigureAwait(false);
 
             var scheduled = new List<SessionId>();
             var exhausted = new List<SessionId>();
@@ -49,17 +49,17 @@ public sealed partial class SessionSubagents
             while (remaining.TryDequeue(out var item))
             {
                 token.ThrowIfCancellationRequested();
-                var child = await _sessions.GetSessionAsync(item.Recovery.ChildSessionId, token);
-                var parent = await _sessions.GetSessionAsync(item.Recovery.ParentSessionId, token);
+                var child = await _sessions.GetSessionAsync(item.Recovery.ChildSessionId, token).ConfigureAwait(false);
+                var parent = await _sessions.GetSessionAsync(item.Recovery.ParentSessionId, token).ConfigureAwait(false);
                 if (child is null || child.ParentId != item.Recovery.ParentSessionId || parent is null)
                 {
-                    await Jobs.CompleteBackgroundAsync(item.NotificationId, token);
+                    await Jobs.CompleteBackgroundAsync(item.NotificationId, token).ConfigureAwait(false);
                     skipped.Add(item.Recovery.ChildSessionId);
                     blocked.Remove(item.Recovery.ChildSessionId);
                     withoutProgress = remaining.Count;
                     continue;
                 }
-                var current = await Jobs.GetAsync(child.Id.Value, token);
+                var current = await Jobs.GetAsync(child.Id.Value, token).ConfigureAwait(false);
                 if (current?.Status == JobStatus.Running)
                 {
                     managed.Add(child.Id); notifications.Add(item.NotificationId); skipped.Add(child.Id);
@@ -69,7 +69,7 @@ public sealed partial class SessionSubagents
                 }
                 if (item.Status != "running")
                 {
-                    await DeliverAsync(item.Recovery, item.NotificationId, new Completion(item.Status, item.Output, item.Error), suspended.ContainsKey);
+                    await DeliverAsync(item.Recovery, item.NotificationId, new Completion(item.Status, item.Output, item.Error), suspended.ContainsKey).ConfigureAwait(false);
                     notifications.Add(item.NotificationId);
                     blocked.Remove(child.Id);
                     withoutProgress = remaining.Count;
@@ -91,15 +91,15 @@ public sealed partial class SessionSubagents
                 {
                     // Hand the SAME owned drain task to the job; calling Resume again here could force a duplicate step
                     // if a fast recovered child had already settled before the job acquired its observer.
-                    await Task.WhenAny(registered.Task, resumed).WaitAsync(token);
-                    if (!registered.Task.IsCompletedSuccessfully) await resumed;
+                    await Task.WhenAny(registered.Task, resumed).WaitAsync(token).ConfigureAwait(false);
+                    if (!registered.Task.IsCompletedSuccessfully) await resumed.ConfigureAwait(false);
                 }
                 catch (RecoveryNotScheduledException error)
                 {
                     stop.Dispose();
                     if (error.Preparation == RestartPreparation.Exhausted) exhausted.Add(child.Id);
                     else skipped.Add(child.Id);
-                    await DeliverAsync(item.Recovery, item.NotificationId, new Completion("error", Error: Exhausted), suspended.ContainsKey);
+                    await DeliverAsync(item.Recovery, item.NotificationId, new Completion("error", Error: Exhausted), suspended.ContainsKey).ConfigureAwait(false);
                     notifications.Add(item.NotificationId);
                     blocked.Remove(child.Id);
                     withoutProgress = remaining.Count;
@@ -137,14 +137,14 @@ public sealed partial class SessionSubagents
                     {
                         try
                         {
-                            using var cancellation = jobToken.Register(() => stop.Cancel());
-                            return await ExecuteAsync(child.Id, jobToken, resumed);
+                            await using var cancellation = jobToken.Register(() => stop.Cancel()).ConfigureAwait(false);
+                            return await ExecuteAsync(child.Id, jobToken, resumed).ConfigureAwait(false);
                         }
                         finally { stop.Dispose(); }
-                    }, child.Id.Value, recovery.Description, Recovery: recovery, NotificationId: item.NotificationId), token);
+                    }, child.Id.Value, recovery.Description, Recovery: recovery, NotificationId: item.NotificationId), token).ConfigureAwait(false);
                     attached = true;
-                    var promoted = await Jobs.BackgroundAsync(info.Id, token) ?? throw new InvalidOperationException("Recovered subagent job disappeared.");
-                    await NotifyWhenDoneAsync(recovery, promoted, suspended.ContainsKey, token);
+                    var promoted = await Jobs.BackgroundAsync(info.Id, token).ConfigureAwait(false) ?? throw new InvalidOperationException("Recovered subagent job disappeared.");
+                    await NotifyWhenDoneAsync(recovery, promoted, suspended.ContainsKey, token).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -162,7 +162,7 @@ public sealed partial class SessionSubagents
                 withoutProgress = remaining.Count;
             }
 
-            var roots = await _execution.RecoverSuspendedAsync(token, maxAttempts, new RestartScope(managed, notifications));
+            var roots = await _execution.RecoverSuspendedAsync(token, maxAttempts, new RestartScope(managed, notifications)).ConfigureAwait(false);
             foreach (var pair in roots.Blocked) blocked[pair.Key] = pair.Value;
             return new SessionRecoveryReport(scheduled.Concat(roots.Scheduled).Distinct().ToArray(), exhausted.Concat(roots.Exhausted).Distinct().ToArray(),
                 skipped.Concat(roots.Skipped).Distinct().ToArray(), blocked);

@@ -37,16 +37,16 @@ public sealed class SessionSkillService : IAsyncDisposable
         if (!input.Skill.IsInitialized()) throw new ArgumentException("Skill must be an initialized string identifier.", nameof(input));
         lock (_gate) ObjectDisposedException.ThrowIf(_closed, this);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime);
-        var session = await _sessions.GetSessionAsync(sessionId, linked.Token) ?? throw new SessionMutationNotFoundException(sessionId);
+        var session = await _sessions.GetSessionAsync(sessionId, linked.Token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
         if (session.Location.WorkspaceId is not null)
             throw new NotSupportedException("Skill activation requires the skill registry for the Session's execution Location.");
         // This is the same complete local producer used by prompt preparation and the skill list
         // endpoint. Configured/discovered plugin and remote-source gaps are errors, not partial lists.
-        var skills = await InstructionCatalog.ListSkillsAsync(session.Location.Directory, linked.Token);
+        var skills = await InstructionCatalog.ListSkillsAsync(session.Location.Directory, linked.Token).ConfigureAwait(false);
         var skill = skills.FirstOrDefault(item => item.Id == input.Skill) ?? throw new SessionSkillNotFoundException(input.Skill);
         var eventId = input.Id is { } id ? EventId.FromExisting(id.Value is { } value && value.StartsWith("msg_", StringComparison.Ordinal)
             ? "evt_" + value[4..] : id.Value) : (EventId?)null;
-        await _publisher.PublishAsync(new SessionSkillActivatedData(sessionId, skill.Id, skill.Name, skill.Content), eventId, linked.Token);
+        await _publisher.PublishAsync(new SessionSkillActivatedData(sessionId, skill.Id, skill.Name, skill.Content), eventId, linked.Token).ConfigureAwait(false);
         if (input.Resume == false) return;
 
         // Publication is committed before scheduling. Use the existing forced resume/join, not
@@ -63,7 +63,7 @@ public sealed class SessionSkillService : IAsyncDisposable
 
     private async Task ResumeAsync(SessionId sessionId, TaskCompletionSource finished)
     {
-        try { await _execution.ResumeHostedAsync(sessionId, _lifetime); }
+        try { await _execution.ResumeHostedAsync(sessionId, _lifetime).ConfigureAwait(false); }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception error)
         {
@@ -82,8 +82,11 @@ public sealed class SessionSkillService : IAsyncDisposable
     {
         Task[] resumes;
         lock (_gate) { if (_closed) return; _closed = true; resumes = _resumes.ToArray(); }
-        await _shutdown.CancelAsync();
-        await Task.WhenAll(resumes);
-        _shutdown.Dispose();
+        try
+        {
+            try { await _shutdown.CancelAsync().ConfigureAwait(false); }
+            finally { await Task.WhenAll(resumes).ConfigureAwait(false); }
+        }
+        finally { _shutdown.Dispose(); }
     }
 }

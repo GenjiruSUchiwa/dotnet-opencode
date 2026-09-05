@@ -23,26 +23,27 @@ public sealed partial class SessionExecutionEngine
     {
         ArgumentNullException.ThrowIfNull(prompt);
         ct.ThrowIfCancellationRequested();
-        var session = await sessionStore.GetSessionAsync(sessionId, ct) ?? throw new SessionMutationNotFoundException(sessionId);
+        var session = await sessionStore.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
         if (session.Location.WorkspaceId is not null) throw new NotSupportedException("Session generation requires local Location routing.");
         var placement = PermissionLocationMap.Canonical(session.Location);
-        await using var lease = await AcquireToolsAsync(session.Location, ct);
-        session = await sessionStore.GetSessionAsync(sessionId, ct) ?? throw new SessionMutationNotFoundException(sessionId);
+        var lease = await AcquireToolsAsync(session.Location, ct).ConfigureAwait(false);
+        await using var leaseLifetime = new OptionalToolLease(lease).ConfigureAwait(false);
+        session = await sessionStore.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
         if (PermissionLocationMap.Canonical(session.Location) != placement)
             throw new OperationCanceledException("Session placement changed during generation selection.", ct);
         var document = ConfigLoader.LoadDocument(directory: session.Location.Directory);
-        var agent = await ResolveAgentAsync(session, ct);
-        var mcp = lease is null ? null : await lease.Mcp.ObserveAsync(McpInstructionSource.Configuration(session.Location.Directory, document), ct);
-        var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, ct)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
+        var agent = await ResolveAgentAsync(session, ct).ConfigureAwait(false);
+        var mcp = lease is null ? null : await lease.Mcp.ObserveAsync(McpInstructionSource.Configuration(session.Location.Directory, document), ct).ConfigureAwait(false);
+        var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, ct).ConfigureAwait(false)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
         RequireSnapshot(snapshot);
         var instructions = await sessionStore.ObserveInstructionsAsync(session, agent.Id.Value, document, ct, agent,
             snapshot?.Definitions.Select(definition => definition.Name).ToArray(), lease?.Location.Project.Directory,
             mcp: mcp is null ? null : McpInstructionSource.FromObservation(mcp, agent),
-            codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery));
-        var model = await providerResolver.ResolveAsync(ct: ct, directory: session.Location.Directory, sessionModel: session.Model, sessionId: session.Id.Value);
+            codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery)).ConfigureAwait(false);
+        var model = await providerResolver.ResolveAsync(ct: ct, directory: session.Location.Directory, sessionModel: session.Model, sessionId: session.Id.Value).ConfigureAwait(false);
         RequireToolContract(document.Deserialize<OpenCodeConfig>() ?? new(), model.Selection, agent);
-        var history = await sessionStore.PreviewExecutionContextAsync(sessionId, instructions, ct);
-        var metadata = (await providerResolver.ReadCatalogAsync(session.Location.Directory, ct)).Models.FirstOrDefault(item =>
+        var history = await sessionStore.PreviewExecutionContextAsync(sessionId, instructions, ct).ConfigureAwait(false);
+        var metadata = (await providerResolver.ReadCatalogAsync(session.Location.Directory, ct).ConfigureAwait(false)).Models.FirstOrDefault(item =>
             item.ProviderId == model.Selection.ProviderId && item.Id == model.Selection.Id)
             ?? throw new CatalogMetadataUnavailableException("Selected model metadata is unavailable for Session generation.");
         var messages = SessionHistory.Lower(history.Messages, model.Selection, model.ProviderMetadataKey);
@@ -52,10 +53,10 @@ public sealed partial class SessionExecutionEngine
         var request = new LlmRequest(model.ModelId, SessionHistory.PrepareMedia(messages, metadata.Capabilities?.Input))
         {
             System = new[] { instructions.System, history.Initial }.Where(text => text.Length > 0).Select(text => new LlmSystemPart(text)).ToImmutableArray(),
-            Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, session.Location.Directory, agent, ct),
+            Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, session.Location.Directory, agent, ct).ConfigureAwait(false),
             // Source generation advertises the captured tools but never dispatches a returned call.
             ToolChoice = snapshot is null ? new LlmToolChoice.None() : null,
-            PromptCacheKey = Regex.IsMatch(lineage, "^ses_[0-9a-f]{64}$") ? lineage[4..] : lineage,
+            PromptCacheKey = Regex.IsMatch(lineage, "^ses_[0-9a-f]{64}$", RegexOptions.NonBacktracking) ? lineage[4..] : lineage,
             Http = new LlmHttpOptions
             {
                 Headers = SessionRequestIdentity.Headers(session, agent.Request.Headers, identity),
@@ -68,7 +69,7 @@ public sealed partial class SessionExecutionEngine
         var terminal = false;
         LlmUsage? usage = null;
         // Source LLM.generate folds one structured stream. No SessionAttempt, retries, or local tool execution.
-        await foreach (var item in model.Client.StreamAsync(request, ct))
+        await foreach (var item in model.Client.StreamAsync(request, ct).ConfigureAwait(false))
         {
             ct.ThrowIfCancellationRequested();
             switch (item)

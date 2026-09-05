@@ -20,15 +20,15 @@ public sealed class SessionShellLifecycle(SessionStore sessions) : ISessionShell
         SessionRunCoordinator.AdmitAsync(sessionId, async () =>
         {
             // Look up current Session placement/existence, never route by the process's original cwd.
-            _ = await sessions.GetSessionAsync(sessionId, ct) ?? throw new SessionMutationNotFoundException(sessionId);
+            _ = await sessions.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
             var id = notification.Metadata.TryGetValue("shellID", out var value)
                 ? CompletionId(sessionId, ShellId.FromExisting(value.GetString() ?? throw new JsonException("Shell notification identity must be a shell ID.")))
                 : MessageId.Create(); // A failed spawn has no shell identity; do not guess one from its command.
-            var existing = await sessions.ReconcileInboxAsync(sessionId, id, "synthetic", ct: ct);
+            var existing = await sessions.ReconcileInboxAsync(sessionId, id, "synthetic", ct: ct).ConfigureAwait(false);
             if (existing is not null) return existing;
             return await sessions.AdmitInboxAsync(sessionId, id,
                 new SyntheticInboxPayload(notification.Text, notification.Description,
-                    notification.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)), ct: ct);
+                    notification.Metadata.ToDictionary(pair => pair.Key, pair => pair.Value.Clone(), StringComparer.Ordinal)), ct: ct).ConfigureAwait(false);
         }, ct);
 
     // Native correlation policy for an actor callback that supplies Shell ID rather than Message ID.

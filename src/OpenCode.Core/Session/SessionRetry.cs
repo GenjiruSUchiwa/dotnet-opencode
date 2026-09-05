@@ -13,6 +13,7 @@ internal abstract record SessionAttemptOutcome
     internal sealed record Retry(SessionStructuredError Error, SessionRetryDecision Decision) : SessionAttemptOutcome;
     internal sealed record Continue(SessionStructuredError Error, SessionRetryDecision Decision) : SessionAttemptOutcome;
     internal sealed record Compacted : SessionAttemptOutcome;
+    internal sealed record RecoverFull : SessionAttemptOutcome;
 }
 
 /// <summary>runner/retry.ts defaults, without unsupported plugin retry hooks.</summary>
@@ -62,9 +63,9 @@ internal sealed class SessionRetry(TimeProvider clock)
         using (var publication = new CancellationTokenSource(TimeSpan.FromSeconds(15), store.Clock))
             await store.AppendAssistantEventAsync("session.retry.scheduled", JsonSerializer.SerializeToElement(
                 new SessionRetryScheduledEventData(sessionId, assistantId, retry.Decision.Attempt, at, retry.Error),
-                OpenCodeJsonContext.Default.SessionRetryScheduledEventData), publication.Token);
+                OpenCodeJsonContext.Default.SessionRetryScheduledEventData), publication.Token).ConfigureAwait(false);
         var remaining = Math.Max(0, at - store.Clock.GetUtcNow().ToUnixTimeMilliseconds());
-        await Task.Delay(TimeSpan.FromMilliseconds(remaining), store.Clock, ct);
+        await Task.Delay(TimeSpan.FromMilliseconds(remaining), store.Clock, ct).ConfigureAwait(false);
     }
 
     private static string? Header(LlmException error, string name) => error.Reason.Http?.Headers

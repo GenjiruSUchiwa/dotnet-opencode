@@ -124,8 +124,8 @@ public sealed class OpenCodeClient : IAsyncDisposable
     public static async Task<OpenCodeClient> CreateAsync(SdkHostOptions options, CancellationToken ct)
     {
         var client = new OpenCodeClient(new OwnedSdkHost(options));
-        try { await client.Owned.InitializeAsync(ct); return client; }
-        catch { await client.DisposeAsync(); throw; }
+        try { await client.Owned.InitializeAsync(ct).ConfigureAwait(false); return client; }
+        catch { await client.DisposeAsync().ConfigureAwait(false); throw; }
     }
 
     /// <summary>
@@ -150,7 +150,7 @@ public sealed class OpenCodeClient : IAsyncDisposable
         IReadOnlyDictionary<string, JsonElement>? metadata = null)
     {
         _owned?.RequireOpen();
-        await foreach (var text in _engine.PromptAsync(sessionId, input, modelId, variant, ct, messageId, delivery, resume, metadata, _owned?.Stopping ?? default))
+        await foreach (var text in _engine.PromptAsync(sessionId, input, modelId, variant, ct, messageId, delivery, resume, metadata, _owned?.Stopping ?? default).ConfigureAwait(false))
             yield return text;
     }
 
@@ -166,9 +166,9 @@ public sealed class OpenCodeClient : IAsyncDisposable
     {
         if (!ExecutionCapabilities.CanExecute) throw new NotSupportedException(ExecutionCapabilities.UnavailableReason);
         var dir = directory ?? Directory.GetCurrentDirectory();
-        var session = await RunAsync(token => _sessionStore.CreateSessionAsync(dir, ct: token), ct);
+        var session = await RunAsync(token => _sessionStore.CreateSessionAsync(dir, ct: token), ct).ConfigureAwait(false);
 
-        await foreach (var chunk in PromptAsync(session.Id, promptText, modelId, variant, ct))
+        await foreach (var chunk in PromptAsync(session.Id, promptText, modelId, variant, ct).ConfigureAwait(false))
         {
             yield return chunk;
         }
@@ -176,7 +176,7 @@ public sealed class OpenCodeClient : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_owned is not null) await _owned.DisposeAsync();
+        if (_owned is not null) await _owned.DisposeAsync().ConfigureAwait(false);
     }
 
     public JobRuntime Jobs => Owned.Get<JobRuntime>();
@@ -191,7 +191,7 @@ public sealed class OpenCodeClient : IAsyncDisposable
     {
         _owned?.RequireOpen();
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct, _owned?.Stopping ?? default);
-        await foreach (var item in _sessionStore.LogAsync(sessionId, after, follow, lifetime.Token)) yield return item;
+        await foreach (var item in _sessionStore.LogAsync(sessionId, after, follow, lifetime.Token).ConfigureAwait(false)) yield return item;
     }
 
     public Task<SessionTransferData> ExportSessionAsync(SessionId sessionId, bool sanitize = false, CancellationToken ct = default) =>
@@ -218,49 +218,58 @@ public sealed class OpenCodeClient : IAsyncDisposable
     public Task<SessionRecoveryReport> RecoverAfterConfirmedRestartAsync(int maxAttempts = 10) => RunAsync(async token =>
     {
         var active = _engine.ActiveSessionIds;
-        var pending = await Jobs.PendingBackgroundAsync(token);
-        var suspended = (await _sessionStore.ListSuspendedAsync(token)).Concat(pending
+        var pending = await Jobs.PendingBackgroundAsync(token).ConfigureAwait(false);
+        var suspended = (await _sessionStore.ListSuspendedAsync(token).ConfigureAwait(false)).Concat(pending
             .Where(item => item.Status == JobStatus.Running && item.Recovery is JobSubagentRecovery)
             .Select(item => ((JobSubagentRecovery)item.Recovery).ChildSessionId)).Where(id => !active.Contains(id)).ToHashSet();
-        await Owned.Get<ShellToolJobs>().RecoverAfterConfirmedRestartAsync(suspended, token);
-        return await Subagents.RecoverSuspendedAsync(maxAttempts);
+        await Owned.Get<ShellToolJobs>().RecoverAfterConfirmedRestartAsync(suspended, token).ConfigureAwait(false);
+        return await Subagents.RecoverSuspendedAsync(maxAttempts).ConfigureAwait(false);
     }, default);
 
     public Task<IReadOnlyList<PermissionRequest>> PendingPermissionsAsync(SessionId sessionId, CancellationToken ct = default) => RunAsync(async token =>
     {
-        var session = await _sessionStore.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-        await using var location = await Owned.Get<PermissionLocationMap>().TryAcquireLoadedAsync(session.Location, token);
-        return location is null ? Array.Empty<PermissionRequest>() : await location.Permissions.ListAsync(sessionId, token);
+        var session = await _sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var location = await Owned.Get<PermissionLocationMap>().TryAcquireLoadedAsync(session.Location, token).ConfigureAwait(false);
+        if (location is null) return Array.Empty<PermissionRequest>();
+        await using var locationLifetime = location.ConfigureAwait(false);
+        return await location.Permissions.ListAsync(sessionId, token).ConfigureAwait(false);
     }, ct);
 
     public Task ReplyPermissionAsync(SessionId sessionId, PermissionId permissionId, PermissionReply reply, string? message = null, CancellationToken ct = default) => RunAsync(async token =>
     {
-        var session = await _sessionStore.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-        await using var location = await Owned.Get<PermissionLocationMap>().TryAcquireLoadedAsync(session.Location, token)
+        var session = await _sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var location = await Owned.Get<PermissionLocationMap>().TryAcquireLoadedAsync(session.Location, token).ConfigureAwait(false)
             ?? throw new KeyNotFoundException("The permission Location is not loaded.");
-        await location.Permissions.ReplyAsync(permissionId, sessionId, reply, message, token);
+        await using var locationLifetime = location.ConfigureAwait(false);
+        await location.Permissions.ReplyAsync(permissionId, sessionId, reply, message, token).ConfigureAwait(false);
     }, ct);
 
     public Task<IReadOnlyList<FormInfo>> PendingFormsAsync(SessionId sessionId, CancellationToken ct = default) => RunAsync(async token =>
     {
-        var session = await _sessionStore.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-        await using var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token);
-        return location is null ? Array.Empty<FormInfo>() : location.Forms.List(sessionId.Value);
+        var session = await _sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token).ConfigureAwait(false);
+        if (location is null) return Array.Empty<FormInfo>();
+        await using var locationLifetime = location.ConfigureAwait(false);
+        return location.Forms.List(sessionId.Value);
     }, ct);
 
     public Task ReplyFormAsync(SessionId sessionId, FormId formId, FormAnswer answer, CancellationToken ct = default) => RunAsync(async token =>
     {
-        var session = await _sessionStore.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-        await using var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token);
-        if (location is null || location.Forms.Get(formId).SessionId != sessionId.Value) throw new FormNotFoundException(formId);
+        var session = await _sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token).ConfigureAwait(false)
+            ?? throw new FormNotFoundException(formId);
+        await using var locationLifetime = location.ConfigureAwait(false);
+        if (location.Forms.Get(formId).SessionId != sessionId.Value) throw new FormNotFoundException(formId);
         location.Forms.Reply(formId, answer);
     }, ct);
 
     public Task CancelFormAsync(SessionId sessionId, FormId formId, CancellationToken ct = default) => RunAsync(async token =>
     {
-        var session = await _sessionStore.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-        await using var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token);
-        if (location is null || location.Forms.Get(formId).SessionId != sessionId.Value) throw new FormNotFoundException(formId);
+        var session = await _sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var location = await FormLocations.AcquireAsync(session.Location, loadedOnly: true, ct: token).ConfigureAwait(false)
+            ?? throw new FormNotFoundException(formId);
+        await using var locationLifetime = location.ConfigureAwait(false);
+        if (location.Forms.Get(formId).SessionId != sessionId.Value) throw new FormNotFoundException(formId);
         location.Forms.Cancel(formId);
     }, ct);
 

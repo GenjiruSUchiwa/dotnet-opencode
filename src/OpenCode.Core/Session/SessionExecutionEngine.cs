@@ -54,21 +54,22 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
     /// </summary>
     public async Task CheckReadinessAsync(SessionId sessionId, CancellationToken ct = default)
     {
-        var session = await sessionStore.GetSessionAsync(sessionId, ct) ?? throw new InvalidOperationException("Session not found.");
-        if (!IsActive(sessionId)) await sessionStore.RequireExecutionReadyAsync(sessionId, ct);
+        var session = await sessionStore.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
+        if (!IsActive(sessionId)) await sessionStore.RequireExecutionReadyAsync(sessionId, ct).ConfigureAwait(false);
         var document = ConfigLoader.LoadDocument(directory: session.Location.Directory);
-        var agent = await ResolveAgentAsync(session, ct);
-        await using var lease = await AcquireToolsAsync(session.Location, ct);
+        var agent = await ResolveAgentAsync(session, ct).ConfigureAwait(false);
+        var lease = await AcquireToolsAsync(session.Location, ct).ConfigureAwait(false);
+        await using var leaseLifetime = new OptionalToolLease(lease).ConfigureAwait(false);
         var mcp = lease is null ? null : await lease.Mcp.ObserveAsync(
-            McpInstructionSource.Configuration(session.Location.Directory, document), ct);
-        var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, ct)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
+            McpInstructionSource.Configuration(session.Location.Directory, document), ct).ConfigureAwait(false);
+        var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, ct).ConfigureAwait(false)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
         RequireSnapshot(snapshot);
         _ = SessionToolOutput.FromConfig(document);
         _ = CompactionSettings.Read(session.Location.Directory, document);
         await sessionStore.SelectInstructionsAsync(session, agent.Id.Value, document, true, ct, agent,
             snapshot?.Definitions.Select(definition => definition.Name).ToArray(), lease?.Location.Project.Directory,
             mcp: mcp is null ? null : McpInstructionSource.FromObservation(mcp, agent),
-            codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery));
+            codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery)).ConfigureAwait(false);
     }
 
     /// <summary>Mandatory ReadTool callback, bound to the same loaded permission Location as the executing tool.</summary>
@@ -76,11 +77,12 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
     {
         return SessionRunCoordinator.AdmitAsync(sessionId, async () =>
         {
-            var session = await sessionStore.GetSessionAsync(sessionId, ct) ?? throw new InvalidOperationException("Session not found.");
+            var session = await sessionStore.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
             if (toolLocations is null) throw new NotSupportedException("Read instructions require the shared tool Location map.");
-            await using var lease = await toolLocations.TryAcquireLoadedAsync(session.Location, ct)
+            var lease = await toolLocations.TryAcquireLoadedAsync(session.Location, ct).ConfigureAwait(false)
                 ?? throw new NotSupportedException("Read instructions require the executing tool's loaded Location.");
-            await sessionStore.LoadReadInstructionsAsync(sessionId, paths, lease.Location.Project.Directory, ct);
+            await using var leaseLifetime = lease.ConfigureAwait(false);
+            await sessionStore.LoadReadInstructionsAsync(sessionId, paths, lease.Location.Project.Directory, ct).ConfigureAwait(false);
             return true;
         }, ct);
     }
@@ -99,8 +101,8 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         MessageId? id = null, InboxDeliveryMode delivery = InboxDeliveryMode.Steer, CancellationToken ct = default)
     {
         if (!lifetime.CanBeCanceled) throw new ArgumentException("Compaction execution requires a host-owned lifetime.", nameof(lifetime));
-        var admitted = await sessionStore.AdmitCompactionAsync(sessionId, id, delivery, ct);
-        await WakeAsync(sessionId, lifetime);
+        var admitted = await sessionStore.AdmitCompactionAsync(sessionId, id, delivery, ct).ConfigureAwait(false);
+        await WakeAsync(sessionId, lifetime).ConfigureAwait(false);
         return admitted;
     }
 
@@ -118,11 +120,11 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         var id = messageId ?? MessageId.Create();
         if (!resume)
         {
-            var existing = await sessionStore.ReconcileInboxAsync(sessionId, id, "user", delivery, requestCancellation.Token);
+            var existing = await sessionStore.ReconcileInboxAsync(sessionId, id, "user", delivery, requestCancellation.Token).ConfigureAwait(false);
             if (existing is not null) yield break;
             if (modelId is not null || variant is not null)
                 throw new NotSupportedException("Admission-only prompts cannot retain a transient model override; use session model selection.");
-            await AdmitPromptAsync(sessionId, input, id, metadata, delivery, requestCancellation.Token);
+            await AdmitPromptAsync(sessionId, input, id, metadata, delivery, requestCancellation.Token).ConfigureAwait(false);
             yield break;
         }
         using var owner = CancellationTokenSource.CreateLinkedTokenSource(requestCancellation.Token);
@@ -131,15 +133,15 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         var running = PumpAsync();
         try
         {
-            await foreach (var block in channel.Reader.ReadAllAsync(requestCancellation.Token)) yield return block;
-            await running;
+            await foreach (var block in channel.Reader.ReadAllAsync(requestCancellation.Token).ConfigureAwait(false)) yield return block;
+            await running.ConfigureAwait(false);
         }
         finally
         {
             readerCancelled = !running.IsCompleted && !shutdown.IsCancellationRequested;
-            owner.Cancel();
             // Observe the owner through settlement even when enumeration stops early.
-            await running;
+            try { await owner.CancelAsync().ConfigureAwait(false); }
+            finally { await running.ConfigureAwait(false); }
         }
 
         async Task PumpAsync()
@@ -150,12 +152,12 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                 await RunAsync(sessionId, true, value => channel.Writer.TryWrite(value), modelId, variant, owner.Token,
                     async token =>
                     {
-                        await AdmitPromptAsync(sessionId, input, id, metadata, delivery, token);
+                        await AdmitPromptAsync(sessionId, input, id, metadata, delivery, token).ConfigureAwait(false);
                     }, reconcile: async token =>
                     {
-                        return await sessionStore.ReconcileInboxAsync(sessionId, id, "user", delivery, token) is not null;
+                        return await sessionStore.ReconcileInboxAsync(sessionId, id, "user", delivery, token).ConfigureAwait(false) is not null;
                     }, cancellationReason: shutdown.CanBeCanceled ? "shutdown" : "user",
-                    interruptionReason: reason => reason == "user" || ct.IsCancellationRequested || readerCancelled || !shutdown.IsCancellationRequested ? "user" : "shutdown");
+                    interruptionReason: reason => reason == "user" || ct.IsCancellationRequested || readerCancelled || !shutdown.IsCancellationRequested ? "user" : "shutdown").ConfigureAwait(false);
             }
             catch (Exception error) { failure = error; }
             finally { channel.Writer.TryComplete(failure); }
@@ -168,7 +170,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         using var owner = CancellationTokenSource.CreateLinkedTokenSource(ct, shutdown);
         await RunAsync(sessionId, false, _ => { }, null, null, owner.Token,
             cancellationReason: shutdown.CanBeCanceled ? "shutdown" : "user",
-            interruptionReason: reason => reason == "user" || ct.IsCancellationRequested || !shutdown.IsCancellationRequested ? "user" : "shutdown");
+            interruptionReason: reason => reason == "user" || ct.IsCancellationRequested || !shutdown.IsCancellationRequested ? "user" : "shutdown").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -202,7 +204,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         var exhausted = new List<SessionId>();
         var skipped = new List<SessionId>();
         var blocked = new Dictionary<SessionId, string>();
-        foreach (var id in await sessionStore.ListSuspendedAsync(lifetime))
+        foreach (var id in await sessionStore.ListSuspendedAsync(lifetime).ConfigureAwait(false))
         {
             lifetime.ThrowIfCancellationRequested();
             if (IsActive(id)) { skipped.Add(id); continue; }
@@ -211,9 +213,9 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                 await SessionRunCoordinator.ScheduleAsync(id, registered => RunAsync(id, false, _ => { }, null, null, lifetime,
                     admission: async token =>
                     {
-                        var preparation = await sessionStore.PrepareRestartAsync(id, maxAttempts, token, scope, localMoves: movement is not null);
+                        var preparation = await sessionStore.PrepareRestartAsync(id, maxAttempts, token, scope, localMoves: movement is not null).ConfigureAwait(false);
                         if (preparation != RestartPreparation.Ready) throw new RecoveryNotScheduledException(preparation);
-                    }, cancellationReason: "shutdown", registered: registered, recovering: true), lifetime);
+                    }, cancellationReason: "shutdown", registered: registered, recovering: true), lifetime).ConfigureAwait(false);
                 scheduled.Add(id);
             }
             catch (SessionAlreadyOwnedException) { skipped.Add(id); }
@@ -233,7 +235,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         CancellationToken host = default) =>
         RunAsync(id, false, _ => { }, null, null, lifetime, admission: async token =>
         {
-            var preparation = await sessionStore.PrepareRestartAsync(id, maxAttempts, token, scope, child: true, localMoves: movement is not null);
+            var preparation = await sessionStore.PrepareRestartAsync(id, maxAttempts, token, scope, child: true, localMoves: movement is not null).ConfigureAwait(false);
             if (preparation != RestartPreparation.Ready) throw new RecoveryNotScheduledException(preparation);
         }, cancellationReason: "shutdown", registered: registered, recovering: true,
             interruptionReason: reason => reason == "user" || host.CanBeCanceled && !host.IsCancellationRequested ? "user" : reason);
@@ -249,12 +251,12 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
     private Task WakeAsync(SessionId sessionId, InboxPromotable scope, CancellationToken lifetime)
     {
         var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        TrackDrain(settled.Task);
+        _ = TrackDrain(settled.Task); // Tracked for host disposal; scheduling acknowledges registration, not completion.
         try
         {
             return SessionRunCoordinator.ScheduleAsync(sessionId, async registered =>
             {
-                try { await RunAsync(sessionId, true, _ => { }, null, null, lifetime, cancellationReason: "shutdown", registered: registered, promotable: scope); }
+                try { await RunAsync(sessionId, true, _ => { }, null, null, lifetime, cancellationReason: "shutdown", registered: registered, promotable: scope).ConfigureAwait(false); }
                 finally { settled.TrySetResult(); }
             }, lifetime);
         }
@@ -276,7 +278,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
 
     public async Task<bool> InterruptAsync(SessionId sessionId, CancellationToken ct = default)
     {
-        if (await sessionStore.GetSessionAsync(sessionId, ct) is null) throw new SessionMutationNotFoundException(sessionId);
+        if (await sessionStore.GetSessionAsync(sessionId, ct).ConfigureAwait(false) is null) throw new SessionMutationNotFoundException(sessionId);
         return SessionRunCoordinator.Interrupt(sessionId);
     }
 
@@ -286,11 +288,11 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
     {
         if (options.Continue && !lifetime.CanBeCanceled)
             throw new ArgumentException("Interrupt continuation requires a host-owned lifetime.", nameof(lifetime));
-        var interrupted = await InterruptAsync(sessionId, ct);
+        var interrupted = await InterruptAsync(sessionId, ct).ConfigureAwait(false);
         if (!interrupted || !options.Continue) return interrupted;
-        var next = await sessionStore.NextPromotableInboxAsync(sessionId, InboxPromotable.Input, ct);
+        var next = await sessionStore.NextPromotableInboxAsync(sessionId, InboxPromotable.Input, ct).ConfigureAwait(false);
         if (next is not null && (next.Delivery == InboxDeliveryMode.Steer || next.Payload is CompactionInboxPayload or MoveInboxPayload))
-            await WakeAsync(sessionId, InboxPromotable.Steer, lifetime);
+            await WakeAsync(sessionId, InboxPromotable.Steer, lifetime).ConfigureAwait(false);
         return interrupted;
     }
 
@@ -305,8 +307,8 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
             async (_, token) =>
             {
                 // Reject unsequenced history before lifecycle events could disguise it.
-                await sessionStore.RequireExecutionReadyAsync(sessionId, token, recovering);
-                await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.started", token);
+                await sessionStore.RequireExecutionReadyAsync(sessionId, token, recovering).ConfigureAwait(false);
+                await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.started", token).ConfigureAwait(false);
                 claimed = true;
             },
             async (emit, drainScope, token) =>
@@ -318,25 +320,26 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                 var assistantId = MessageId.Create();
                 var retry = new SessionRetry(sessionStore.Clock);
                 var overflowRecovery = true;
-                var compaction = new SessionCompaction(sessionStore, providerResolver);
+                var continuationRecovery = true;
+                var compaction = new SessionCompaction(sessionStore, providerResolver, identity);
                 double step = 1;
                 while (true)
                 {
                     token.ThrowIfCancellationRequested();
                     var scope = entering || !continuing ? InboxPromotable.Input : InboxPromotable.Steer;
-                    var pending = retrying ? null : await sessionStore.NextPromotableInboxAsync(sessionId, scope, token);
+                    var pending = retrying ? null : await sessionStore.NextPromotableInboxAsync(sessionId, scope, token).ConfigureAwait(false);
                     if (pending is null && !continuing && !force && !retrying) return;
                     if (!continuing && !force && !retrying && drainScope == InboxPromotable.Steer
                         && pending?.Delivery == InboxDeliveryMode.Queue && pending.Payload is not (CompactionInboxPayload or MoveInboxPayload)) return;
                     if (settleTools)
                     {
-                        await SettleStaleToolsAsync(sessionId, token);
+                        await SettleStaleToolsAsync(sessionId, token).ConfigureAwait(false);
                         settleTools = false;
                     }
                     if (pending?.Payload is MoveInboxPayload)
                     {
                         if (movement is null) throw new NotSupportedException("Movement requires the host's shared SessionMovement service.");
-                        var moved = await movement.TryDeliverAsync(sessionId, scope, CloseSourceHttpTransportAsync, token);
+                        var moved = await movement.TryDeliverAsync(sessionId, scope, CloseSourceHttpTransportAsync, token).ConfigureAwait(false);
                         if (moved is null) continue;
                         continuing = !entering && continuing;
                         if (!continuing) step = 1;
@@ -348,40 +351,41 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     }
                     if (pending?.Payload is CompactionInboxPayload)
                     {
-                        var target = await sessionStore.GetSessionAsync(sessionId, token) ?? throw new InvalidOperationException("Session not found.");
+                        var target = await sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
                         if (target.Location.WorkspaceId is not null) throw new NotSupportedException("Compaction requires native workspace placement support.");
                         var settings = CompactionSettings.Read(target.Location.Directory, ConfigLoader.LoadDocument(directory: target.Location.Directory));
-                        var input = await sessionStore.StartCompactionAsync(sessionId, scope, token);
+                        var input = await sessionStore.StartCompactionAsync(sessionId, scope, token).ConfigureAwait(false);
                         if (input is null) continue;
                         try
                         {
-                            await compaction.RunAsync(target, await sessionStore.LoadExecutionHistoryAsync(sessionId, token), settings,
-                                "manual", input, true, null, token);
+                            await compaction.RunAsync(target, await sessionStore.LoadExecutionHistoryAsync(sessionId, token).ConfigureAwait(false), settings,
+                                "manual", input, true, null, token).ConfigureAwait(false);
                         }
                         catch (Exception error)
                         {
                             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15), sessionStore.Clock);
                             await compaction.FailAsync(sessionId, "manual", error is OperationCanceledException
-                                ? new SessionStructuredError("aborted", "Compaction cancelled") : SessionFailure.From(error), input, cleanup.Token);
+                                ? new SessionStructuredError("aborted", "Compaction cancelled") : SessionFailure.From(error), input, cleanup.Token).ConfigureAwait(false);
                             throw;
                         }
                         force = false;
                         continue;
                     }
-                    var history = await sessionStore.LoadExecutionHistoryAsync(sessionId, token);
-                    var session = await sessionStore.GetSessionAsync(sessionId, token) ?? throw new InvalidOperationException("Session not found.");
+                    var history = await sessionStore.LoadExecutionHistoryAsync(sessionId, token).ConfigureAwait(false);
+                    var session = await sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
                     if (session.Location.WorkspaceId is not null)
                         throw new NotSupportedException("Explicit workspace execution requires Location service routing.");
                     var directory = session.Location.Directory;
                     var document = ConfigLoader.LoadDocument(directory: directory);
                     var config = document.Deserialize<OpenCodeConfig>() ?? new();
-                    var agent = await ResolveAgentAsync(session, token);
-                    await using var lease = await AcquireToolsAsync(session.Location, token);
+                    var agent = await ResolveAgentAsync(session, token).ConfigureAwait(false);
+                    var lease = await AcquireToolsAsync(session.Location, token).ConfigureAwait(false);
+                    await using var leaseLifetime = new OptionalToolLease(lease).ConfigureAwait(false);
                     var mcp = lease is null ? null : await lease.Mcp.ObserveAsync(
-                        McpInstructionSource.Configuration(directory, document), token);
-                    var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, token)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
+                        McpInstructionSource.Configuration(directory, document), token).ConfigureAwait(false);
+                    var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, token).ConfigureAwait(false)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
                     RequireSnapshot(snapshot);
-                    var model = await providerResolver.ResolveAsync(modelId, variant, token, directory, session.Model, sessionId: session.Id.Value);
+                    var model = await providerResolver.ResolveAsync(modelId, variant, token, directory, session.Model, sessionId: session.Id.Value).ConfigureAwait(false);
                     RequireToolContract(config, model.Selection, agent);
                     // Validate old history before delivery so unsupported context leaves
                     // pending input intact. Then reload after durable promotion.
@@ -389,9 +393,9 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     var instructions = await sessionStore.SelectInstructionsAsync(session, agent.Id.Value, document, false, token, agent,
                         snapshot?.Definitions.Select(definition => definition.Name).ToArray(), lease?.Location.Project.Directory,
                         mcp: mcp is null ? null : McpInstructionSource.FromObservation(mcp, agent),
-                        codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery));
+                        codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery)).ConfigureAwait(false);
                     var promoted = retrying ? 0 : await sessionStore.PromoteInboxAsync(sessionId,
-                        continuing ? InboxPromotable.Steer : drainScope, token);
+                        continuing ? InboxPromotable.Steer : drainScope, token).ConfigureAwait(false);
                     if (promoted == 0 && !force && !continuing && !retrying) return;
                     if (promoted > 0)
                     {
@@ -399,12 +403,12 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         if (session.ParentId is null && SessionTitleService.IsUntitled(session)) titles?.Schedule(sessionId);
                     }
                     force = false;
-                    var context = await sessionStore.LoadExecutionContextAsync(sessionId, instructions, token);
+                    var context = await sessionStore.LoadExecutionContextAsync(sessionId, instructions, token).ConfigureAwait(false);
                     var settingsForStep = CompactionSettings.Read(directory, document);
-                    var modelMetadata = await compaction.MetadataAsync(session, model, token);
+                    var modelMetadata = await compaction.MetadataAsync(session, model, token).ConfigureAwait(false);
                     if (settingsForStep.Required(context.Messages, modelMetadata))
                     {
-                        var compacted = await compaction.RunAsync(session, context.Messages, settingsForStep, "auto", null, false, model, token, modelMetadata);
+                        var compacted = await compaction.RunAsync(session, context.Messages, settingsForStep, "auto", null, false, model, token, modelMetadata).ConfigureAwait(false);
                         if (!compacted.Completed) throw new SessionStepFailedException(compacted.Error!);
                         assistantId = MessageId.Create();
                         retrying = true;
@@ -417,7 +421,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     var request = new LlmRequest(model.ModelId, messages)
                     {
                         System = [new LlmSystemPart(instructions.System), new LlmSystemPart(context.Initial)],
-                        Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, directory, agent, token),
+                        Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, directory, agent, token).ConfigureAwait(false),
                         ToolChoice = snapshot is null || limitReached ? new LlmToolChoice.None() : null,
                         Http = new LlmHttpOptions
                         {
@@ -428,9 +432,16 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     var outcome = await new SessionAttempt(sessionStore, sessionId, model, agent.Id.Value, emit, snapshot,
                         SessionToolOutput.FromConfig(document), assistantId, retry, modelMetadata.Cost,
                          recoverOverflow: settingsForStep.Auto && overflowRecovery ? async cancellation =>
-                            (await compaction.RunAsync(session, context.Messages, settingsForStep, "auto", null, false, model, cancellation, modelMetadata)).Completed : null,
-                        snapshots: snapshots is null ? null : await snapshots.TryGetAsync(session.Location, token))
-                        .RunAsync(request, token);
+                            (await compaction.RunAsync(session, context.Messages, settingsForStep, "auto", null, false, model, cancellation, modelMetadata).ConfigureAwait(false)).Completed : null,
+                        snapshots: snapshots is null ? null : await snapshots.TryGetAsync(session.Location, token).ConfigureAwait(false),
+                        recoverContinuation: continuationRecovery)
+                        .RunAsync(request, token).ConfigureAwait(false);
+                    if (outcome is SessionAttemptOutcome.RecoverFull)
+                    {
+                        continuationRecovery = false;
+                        retrying = true;
+                        continue;
+                    }
                     if (outcome is SessionAttemptOutcome.Compacted)
                     {
                         overflowRecovery = false;
@@ -441,18 +452,18 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     if (outcome is SessionAttemptOutcome.Retry scheduled)
                     {
                         retrying = true;
-                        await SessionRetry.WaitAsync(sessionStore, sessionId, assistantId, scheduled, token);
+                        await SessionRetry.WaitAsync(sessionStore, sessionId, assistantId, scheduled, token).ConfigureAwait(false);
                         continue;
                     }
                     if (outcome is SessionAttemptOutcome.Continue interrupted)
                     {
                         await SessionRetry.WaitAsync(sessionStore, sessionId, assistantId,
-                            new SessionAttemptOutcome.Retry(interrupted.Error, interrupted.Decision), token);
+                            new SessionAttemptOutcome.Retry(interrupted.Error, interrupted.Decision), token).ConfigureAwait(false);
                         // This existing generic transaction publisher also supports synthetic facts;
                         // the supplied definition owns the event type and projection, not the method name.
                         await sessionStore.PublishCompactionAsync(sessionId, SessionSyntheticProjector.Definition,
                             new SessionSyntheticData(sessionId,
-                                "The previous response was interrupted. Continue from where you left off without repeating completed content."), token);
+                                "The previous response was interrupted. Continue from where you left off without repeating completed content."), token).ConfigureAwait(false);
                         assistantId = MessageId.Create();
                         retrying = true;
                         continue;
@@ -463,6 +474,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     assistantId = MessageId.Create();
                     retry = new SessionRetry(sessionStore.Clock);
                     overflowRecovery = true;
+                    continuationRecovery = true;
                     step++;
                     // The next logical step reloads durable tool results and instructions;
                     // queued input stays parked during a tool continuation.
@@ -472,18 +484,18 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
             {
                 if (!claimed) return;
                 if (failure is PermissionDeclinedException or QuestionCancelledException)
-                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.interrupted", token, reason: "user");
+                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.interrupted", token, reason: "user").ConfigureAwait(false);
                 else if (failure is OperationCanceledException)
-                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.interrupted", token, reason: interruptionReason?.Invoke(reason) ?? reason);
+                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.interrupted", token, reason: interruptionReason?.Invoke(reason) ?? reason).ConfigureAwait(false);
                 else if (failure is not null)
                     await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.failed", token,
-                        error: SessionFailure.From(failure));
+                        error: SessionFailure.From(failure)).ConfigureAwait(false);
                 else
-                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.succeeded", token);
+                    await sessionStore.AppendExecutionEventAsync(sessionId, "session.execution.succeeded", token).ConfigureAwait(false);
             }, ct, requireIdle: modelId is not null || variant is not null, admission: admission,
             cancellationReason: cancellationReason, registered: registered, reconcile: reconcile is null ? null : async token =>
             {
-                var existing = await reconcile(token);
+                var existing = await reconcile(token).ConfigureAwait(false);
                 if (existing) { modelId = null; variant = null; }
                 return existing;
             }, onlyIfIdle: recovering, scope: promotable));
@@ -491,7 +503,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
 
     private async Task SettleStaleToolsAsync(SessionId sessionId, CancellationToken ct)
     {
-        foreach (var message in await sessionStore.LoadExecutionHistoryAsync(sessionId, ct))
+        foreach (var message in await sessionStore.LoadExecutionHistoryAsync(sessionId, ct).ConfigureAwait(false))
         {
             if (message.GetProperty("type").GetString() != "assistant") continue;
             foreach (var tool in message.GetProperty("content").EnumerateArray())
@@ -513,7 +525,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                 };
                 if (state.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object && metadata.EnumerateObject().Any())
                     data["metadata"] = System.Text.Json.Nodes.JsonNode.Parse(metadata.GetRawText());
-                await sessionStore.AppendAssistantEventAsync("session.tool.failed", JsonSerializer.SerializeToElement(data), ct);
+                await sessionStore.AppendAssistantEventAsync("session.tool.failed", JsonSerializer.SerializeToElement(data), ct).ConfigureAwait(false);
             }
         }
     }
@@ -539,20 +551,26 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
     }
 
     private static async Task<AgentInfo> ResolveAgentAsync(SessionInfo session, CancellationToken ct) =>
-        await AgentCatalog.ResolveAsync(session.Location.Directory, session.Agent is null ? null : AgentId.FromExisting(session.Agent), ct)
+        await AgentCatalog.ResolveAsync(session.Location.Directory, session.Agent is null ? null : AgentId.FromExisting(session.Agent), ct).ConfigureAwait(false)
         ?? throw new InvalidOperationException("The selected agent is unavailable.");
 
     private async ValueTask<ToolLocationLease?> AcquireToolsAsync(LocationRef location, CancellationToken ct)
     {
         if (toolFactory is null && toolLocations is null) return null;
         if (toolFactory is null || toolLocations is null) throw new NotSupportedException("Tool execution requires a paired factory and the Server's shared permission Location map.");
-        return await toolFactory.AcquireAsync(toolLocations, location, ct);
+        return await toolFactory.AcquireAsync(toolLocations, location, ct).ConfigureAwait(false);
     }
 
     private static void RequireSnapshot(ToolSnapshot? snapshot)
     {
         if (snapshot?.CodeModeCatalog is { Count: > 0 } && !snapshot.CodeModeExecutable)
             throw new NotSupportedException("The captured Code Mode catalog has no bound evaluator.");
+    }
+
+    // Tool-free hosts have no lease. Keep nullable cleanup awaitable without capturing the caller's context.
+    private readonly struct OptionalToolLease(ToolLocationLease? lease) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() => lease?.DisposeAsync() ?? ValueTask.CompletedTask;
     }
 
 }

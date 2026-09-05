@@ -86,7 +86,7 @@ internal static class SessionRunCoordinator
             ct.ThrowIfCancellationRequested();
             var selected = await AdmitAsync(id, () => InboxSerialization.RunAsync(id, async () =>
             {
-                var existing = !admitted && reconcile is not null && await reconcile(ct);
+                var existing = !admitted && reconcile is not null && await reconcile(ct).ConfigureAwait(false);
                 lock (Sync)
                 {
                     if (Reserved.Contains(id)) throw new SessionMutationInProgressException(id);
@@ -96,7 +96,7 @@ internal static class SessionRunCoordinator
                 }
                 // All ownership registrations share this gate. No owner can appear
                 // between the idle policy check, durable admission, and registration.
-                if (!admitted && !existing && admission is not null) await admission(ct);
+                if (!admitted && !existing && admission is not null) await admission(ct).ConfigureAwait(false);
                 admitted = true;
                 lock (Sync)
                 {
@@ -119,13 +119,13 @@ internal static class SessionRunCoordinator
                     entry.Done = OwnAsync(id, entry, started, drain, settled, clock);
                     return (Entry: entry, Waiting: false, Owns: true);
                 }
-            }, ct), ct);
+            }, ct), ct).ConfigureAwait(false);
             registered?.Invoke();
             if (selected.Waiting)
             {
                 // Stopping owners refuse new work. The new caller remains the owner
                 // of its eventual successor; no CancellationToken.None background task.
-                try { await selected.Entry.Done.WaitAsync(ct); }
+                try { await selected.Entry.Done.WaitAsync(ct).ConfigureAwait(false); }
                 catch when (!ct.IsCancellationRequested) { }
                 if (wake)
                     lock (Sync) scope = selected.Entry.PendingWake ?? scope;
@@ -133,8 +133,8 @@ internal static class SessionRunCoordinator
             }
             try
             {
-                if (selected.Owns) await selected.Entry.Done;
-                else await selected.Entry.Done.WaitAsync(ct);
+                if (selected.Owns) await selected.Entry.Done.ConfigureAwait(false);
+                else await selected.Entry.Done.WaitAsync(ct).ConfigureAwait(false);
             }
             finally { lock (Sync) selected.Entry.Listeners.Remove(output); }
             return;
@@ -146,7 +146,7 @@ internal static class SessionRunCoordinator
         Func<Action<string>, InboxPromotable, CancellationToken, Task> drain,
         Func<Exception?, string, CancellationToken, Task> settled, TimeProvider clock)
     {
-        await Task.Yield();
+        await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
         var previousOperation = Operation.Value;
         Operation.Value = id;
         void Output(string value)
@@ -158,10 +158,10 @@ internal static class SessionRunCoordinator
         Exception? failure = null;
         try
         {
-            await started(Output, entry.Stop.Token);
+            await started(Output, entry.Stop.Token).ConfigureAwait(false);
             while (true)
             {
-                await drain(Output, entry.Scope, entry.Stop.Token);
+                await drain(Output, entry.Scope, entry.Stop.Token).ConfigureAwait(false);
                 lock (Sync)
                 {
                     if (entry.PendingWake is { } scope && !entry.Stop.IsCancellationRequested)
@@ -187,7 +187,7 @@ internal static class SessionRunCoordinator
             {
                 // Bounded, owned settlement outlives cancellation of provider work.
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15), clock);
-                await settled(failure, entry.CancellationReason, cleanup.Token);
+                await settled(failure, entry.CancellationReason, cleanup.Token).ConfigureAwait(false);
             }
             finally
             {
@@ -228,8 +228,8 @@ internal static class SessionRunCoordinator
 
         async Task ObserveAsync()
         {
-            await Task.Yield();
-            try { await start(() => accepted.TrySetResult()); }
+            await Task.CompletedTask.ConfigureAwait(ConfigureAwaitOptions.ForceYielding);
+            try { await start(() => accepted.TrySetResult()).ConfigureAwait(false); }
             catch (OperationCanceledException error) { accepted.TrySetCanceled(error.CancellationToken); }
             catch (Exception error)
             {
@@ -258,7 +258,7 @@ internal static class SessionRunCoordinator
         }
         var previousOperation = Operation.Value;
         Operation.Value = id;
-        try { return await admission(); }
+        try { return await admission().ConfigureAwait(false); }
         finally
         {
             Operation.Value = previousOperation;
@@ -275,9 +275,9 @@ internal static class SessionRunCoordinator
     internal static async Task WithIdleMutationAsync(SessionId id, Func<CancellationToken, Task> mutation, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(mutation);
-        await using var reservation = await ReserveRemovalAsync(id, ct);
+        await using var reservation = (await ReserveRemovalAsync(id, ct).ConfigureAwait(false)).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
-        await mutation(ct);
+        await mutation(ct).ConfigureAwait(false);
     }
 
     /// <summary>Revert uses Busy, not interruption. Share ownership registration's gate while doing idle work.</summary>
@@ -285,7 +285,7 @@ internal static class SessionRunCoordinator
         AdmitAsync(id, () => InboxSerialization.RunAsync(id, async () =>
         {
             if (IsActive(id)) throw new SessionBusyException(id);
-            return await operation(ct);
+            return await operation(ct).ConfigureAwait(false);
         }, ct), ct);
 
     internal static async Task<IAsyncDisposable> ReserveRemovalAsync(SessionId id, CancellationToken ct)
@@ -303,14 +303,14 @@ internal static class SessionRunCoordinator
         try
         {
             Interrupt(id);
-            await admissions.WaitAsync(ct);
-            await AwaitIdleAsync(id, ct);
+            await admissions.WaitAsync(ct).ConfigureAwait(false);
+            await AwaitIdleAsync(id, ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             return reservation;
         }
         catch
         {
-            await reservation.DisposeAsync();
+            await reservation.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -324,7 +324,7 @@ internal static class SessionRunCoordinator
                 tasks = (Scheduled.TryGetValue(id, out var pending) ? pending : Enumerable.Empty<Task>())
                     .Concat(Active.TryGetValue(id, out var active) ? [active.Done] : Array.Empty<Task>()).Distinct().ToArray();
             if (tasks.Length == 0) return;
-            try { await Task.WhenAll(tasks).WaitAsync(ct); }
+            try { await Task.WhenAll(tasks).WaitAsync(ct).ConfigureAwait(false); }
             catch when (!ct.IsCancellationRequested) { }
         }
     }

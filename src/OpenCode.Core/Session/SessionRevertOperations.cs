@@ -19,23 +19,23 @@ public sealed class SessionRevertOperations(IDatabase database, SessionStore ses
     public Task<SessionRevert> StageAsync(SessionId sessionId, MessageId messageId, bool files = true, CancellationToken ct = default) =>
         SessionRunCoordinator.WithIdleOperationAsync(sessionId, async token =>
         {
-            var session = await sessions.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
+            var session = await sessions.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
             RequirePlugins(session.Location);
-            var snapshot = await snapshots.TryGetAsync(session.Location, token);
-            var original = session.Revert?.Snapshot ?? (snapshot is null ? null : await snapshot.CaptureAsync(token));
-            var next = await new SessionRevertPersistence(database).PlanAsync(sessionId, messageId, token);
+            var snapshot = await snapshots.TryGetAsync(session.Location, token).ConfigureAwait(false);
+            var original = session.Revert?.Snapshot ?? (snapshot is null ? null : await snapshot.CaptureAsync(token).ConfigureAwait(false));
+            var next = await new SessionRevertPersistence(database).PlanAsync(sessionId, messageId, token).ConfigureAwait(false);
             var restore = new Dictionary<string, SnapshotId>(StringComparer.Ordinal);
             if (original is { } saved)
                 foreach (var file in session.Revert?.Files ?? []) restore[file.File] = saved;
             if (files) foreach (var file in next) restore[file.Key] = file.Value;
             if (restore.Count > 0)
-                await (snapshot ?? throw new SnapshotException("restore", "The snapshot Location is unavailable")).RestoreAsync(restore, token);
+                await (snapshot ?? throw new SnapshotException("restore", "The snapshot Location is unavailable")).RestoreAsync(restore, token).ConfigureAwait(false);
             var changes = original is { } before
                 ? await (snapshot ?? throw new SnapshotException("diff", "The snapshot Location is unavailable")).DiffAsync(before,
-                    await snapshot.CaptureAsync(token) ?? before, files ? next.Keys.ToArray() : [], ct: token)
+                    await snapshot.CaptureAsync(token).ConfigureAwait(false) ?? before, files ? next.Keys.ToArray() : [], ct: token).ConfigureAwait(false)
                 : [];
             var revert = new SessionRevert(messageId, Snapshot: original, Files: changes);
-            await new SessionRevertPersistence(database).StageAsync(sessionId, revert, token);
+            await new SessionRevertPersistence(database).StageAsync(sessionId, revert, token).ConfigureAwait(false);
             return revert;
         }, ct);
 
@@ -44,25 +44,25 @@ public sealed class SessionRevertOperations(IDatabase database, SessionStore ses
         if (!lifetime.CanBeCanceled) throw new ArgumentException("Revert clear requires the host execution lifetime.", nameof(lifetime));
         await SessionRunCoordinator.WithIdleOperationAsync(sessionId, async token =>
         {
-            var session = await sessions.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
+            var session = await sessions.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
             RequirePlugins(session.Location);
             if (session.Revert is null) return false;
             if (session.Revert.Snapshot is { } original)
             {
-                var snapshot = await snapshots.GetAsync(session.Location, token);
-                await snapshot.RestoreAsync((session.Revert.Files ?? []).ToDictionary(file => file.File, _ => original, StringComparer.Ordinal), token);
+                var snapshot = await snapshots.GetAsync(session.Location, token).ConfigureAwait(false);
+                await snapshot.RestoreAsync((session.Revert.Files ?? []).ToDictionary(file => file.File, _ => original, StringComparer.Ordinal), token).ConfigureAwait(false);
             }
-            await new SessionRevertPersistence(database).ClearAsync(sessionId, token);
+            await new SessionRevertPersistence(database).ClearAsync(sessionId, token).ConfigureAwait(false);
             return true;
-        }, ct);
-        await execution.WakeAsync(sessionId, lifetime);
+        }, ct).ConfigureAwait(false);
+        await execution.WakeAsync(sessionId, lifetime).ConfigureAwait(false);
     }
 
     public Task CommitAsync(SessionId sessionId, CancellationToken ct = default) =>
         SessionRunCoordinator.WithIdleOperationAsync(sessionId, async token =>
         {
-            var session = await sessions.GetSessionAsync(sessionId, token) ?? throw new SessionMutationNotFoundException(sessionId);
-            await CommitPreparedAsync(database, session, token);
+            var session = await sessions.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+            await CommitPreparedAsync(database, session, token).ConfigureAwait(false);
             return true;
         }, ct);
 

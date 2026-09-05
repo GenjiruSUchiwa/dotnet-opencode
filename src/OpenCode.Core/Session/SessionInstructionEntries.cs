@@ -22,7 +22,7 @@ public sealed class SessionInstructionEntries(IDatabase database)
     public const int MaxValueBytes = 8 * 1024;
 
     public async Task<IReadOnlyList<InstructionEntryInfo>> ListAsync(SessionId sessionId, CancellationToken ct = default) =>
-        (await new InstructionPersistence(database).EntriesAsync(sessionId, ct))
+        (await new InstructionPersistence(database).EntriesAsync(sessionId, ct).ConfigureAwait(false))
             .Where(entry => !entry.Removed).Select(entry => new InstructionEntryInfo(entry.Key, entry.Value)).ToArray();
 
     public Task PutAsync(SessionId sessionId, string key, JsonElement value, CancellationToken ct = default)
@@ -46,7 +46,7 @@ public sealed class SessionInstructionEntries(IDatabase database)
     private static void RequireKey(string key)
     {
         ArgumentNullException.ThrowIfNull(key);
-        if (!Regex.IsMatch(key, "^[a-z0-9][a-z0-9._-]*$", RegexOptions.CultureInvariant))
+        if (!Regex.IsMatch(key, "^[a-z0-9][a-z0-9._-]*$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking))
             throw new ArgumentException("Instruction entry key must use lowercase alphanumerics plus . _ - and start with an alphanumeric character.", nameof(key));
     }
 }

@@ -20,8 +20,8 @@ public sealed class SessionBackgroundService
 
     public async Task BackgroundAsync(SessionId sessionId, CancellationToken ct = default)
     {
-        _ = await _sessions.GetSessionAsync(sessionId, ct) ?? throw new SessionMutationNotFoundException(sessionId);
-        var promoted = await _jobs.BackgroundAllAsync(sessionId, ct: ct);
+        _ = await _sessions.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        var promoted = await _jobs.BackgroundAllAsync(sessionId, ct: ct).ConfigureAwait(false);
         if (promoted.Count == 0) return;
         var text = string.Join('\n', new[]
         {
@@ -30,8 +30,8 @@ public sealed class SessionBackgroundService
         {
             "", "The backgrounded work is still unfinished. Move on to other work if you can. If there is nothing else useful to do, finish your response. Do not wait, sleep, poll, or report the backgrounded work as complete until a later completion notification is added to the conversation."
         }));
-        await _sessions.AdmitInboxAsync(sessionId, MessageId.Create(), new SyntheticInboxPayload(text), ct: ct);
-        var current = await _sessions.GetSessionAsync(sessionId, ct) ?? throw new SessionMutationNotFoundException(sessionId);
-        if (current.Revert is null) await _execution.WakeAsync(sessionId, _lifetime);
+        await _sessions.AdmitInboxAsync(sessionId, MessageId.Create(), new SyntheticInboxPayload(text), ct: ct).ConfigureAwait(false);
+        var current = await _sessions.GetSessionAsync(sessionId, ct).ConfigureAwait(false) ?? throw new SessionMutationNotFoundException(sessionId);
+        if (current.Revert is null) await _execution.WakeAsync(sessionId, _lifetime).ConfigureAwait(false);
     }
 }

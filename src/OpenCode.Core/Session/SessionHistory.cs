@@ -82,14 +82,16 @@ internal static class SessionHistory
                         if (kind != "tool") throw new NotSupportedException("Unsupported assistant content in history.");
                         var state = item.GetProperty("state");
                         var status = state.GetProperty("status").GetString();
-                        if (status is not ("completed" or "error"))
-                            throw new NotSupportedException("Unsettled tool history requires recovery.");
+                        if (status is not ("streaming" or "running" or "completed" or "error"))
+                            throw new NotSupportedException("Unknown tool history status.");
                         var hosted = item.TryGetProperty("executed", out var executed) && executed.GetBoolean();
-                        var reuse = sameModel && (!failed || hosted);
+                        var reuse = sameModel && (!failed || hosted && (status is "completed" or "error"));
                         var id = item.GetProperty("id").GetString()!;
                         var name = item.GetProperty("name").GetString()!;
-                        content.Add(new LlmContent.ToolCall(id, name, state.GetProperty("input").Clone(), hosted)
+                        content.Add(new LlmContent.ToolCall(id, name, ToolInput(state), hosted)
                         { ProviderMetadata = Metadata(item, "providerState", reuse, providerMetadataKey) });
+                        // In-progress calls are real history, but have no result to invent.
+                        if (status is "streaming" or "running") continue;
                         var result = status == "error"
                             ? (LlmToolResult)new LlmToolResult.Error(JsonSerializer.SerializeToElement(new
                             {
@@ -130,6 +132,18 @@ internal static class SessionHistory
                 throw new NotSupportedException("Remote/managed tool files need URI materialization before provider history lowering.");
             return new LlmContent.Media(mime, uri[prefix.Length..], item.TryGetProperty("name", out var name) ? name.GetString() : null);
         }).ToImmutableArray());
+    }
+
+    private static JsonElement ToolInput(JsonElement state)
+    {
+        if (state.GetProperty("status").GetString() != "streaming") return state.GetProperty("input").Clone();
+        var raw = state.GetProperty("input").GetString()!;
+        try
+        {
+            using var parsed = JsonDocument.Parse(raw);
+            return parsed.RootElement.Clone();
+        }
+        catch (JsonException) { return JsonSerializer.SerializeToElement(raw); }
     }
 
     private static ImmutableDictionary<string, JsonElement> Metadata(JsonElement item, string key, bool reuse, string provider) =>

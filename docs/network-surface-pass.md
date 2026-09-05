@@ -359,3 +359,83 @@ owned-compilation result. No diagnostic suppression was added.
 Pass 2 is frozen for parent integration. No tests, app/Server/Client/SDK execution,
 DI startup, plugin loading, DB/SQL/migration, provider/MCP/PTY/native execution, or
 production data access occurred. No Git/push/install/publication or delegation.
+
+## Pass 3 — metadata checkpoint frozen; generation handoff pending
+
+Pass 2 was integrated by parent as `d96f512`. The shared WebSearchReady callback
+remains active in source. This checkpoint changes only
+`src/OpenCode.Server/Documentation/NativeSchemaExporter.cs` and this report.
+No canonical document/hash, generated asset, Schema/Protocol, Core, project/global
+configuration, or test file was edited.
+
+### Completed schema/Protocol-owner exporter handoff
+
+Read the actual converter and serialization callbacks referenced in
+`docs/schema-protocol-pass.md:92–113`. The exporter now handles these constraints
+explicitly rather than inferring unconstrained CLR fields:
+
+- `TuiToastEventJsonConverter` / `TuiToastShowEventData`: required string message,
+  required variant from the actual `TuiToastVariant` enum codec (info, success,
+  warning, error), optional string title, and positive-integer duration. The emitted
+  object requires duration because the encoder always writes it. Its schema carries
+  the default annotation 5000, `x-native-decoding-optional: true`, and an explicit
+  description of the decoding-only default. This does not make emitted duration
+  optional or change the converter/constructor.
+- `ServiceHealthResponse`: healthy is literal true; version is required string;
+  pid is a required nonnegative Int32-range integer. Existing richer native health
+  state/build/channel metadata remains unchanged.
+- `PermissionSource`: type is literal tool; messageID and id remain required
+  strings, without invented ID-prefix restrictions.
+- `PluginInfo`: separate active/failed schema branches. Both require source/status/
+  tui; active additionally requires id and failed requires error. Parent review
+  aligned this emitted-object schema with the subsequently added union converter:
+  active has no error field; failed permits an optional id.
+- `WorktreeErrorResponse`: name is literal WorktreeError and data is required.
+  WorktreeErrorData uses actual JsonTypeInfo metadata so its optional forceRequired
+  codec is not invoked with a null constructor-default sentinel.
+- `InstructionEntryInfo` and `InstructionEntrySnapshot`: key matches the callback's
+  `^[a-z0-9][a-z0-9._-]*$` pattern. Value is required JSON, including JSON null; the
+  snapshot additionally requires boolean removed. The JSON-value schema is
+  intentionally unconstrained JSON, not a fallback for an unknown typed codec.
+
+Mappings are in `Custom`, so they apply to nested occurrences as well as directly
+requested roots. No unsupported codec fallback was added. These are authored
+exporter rules; no exporter, serializer, callback, or `/openapi.json` invocation was
+used to verify them. The schemas describe emitted objects while explicitly noting
+toast's different decoding requirement.
+
+### Global generation: inspected, not wired before owner handoff
+
+Read upstream `packages/protocol/src/groups/generate.ts`,
+`packages/server/src/handlers/generate.ts`, and `packages/core/src/generate.ts`.
+The existing route is global `POST /api/generate` with `{ prompt, model? }` and
+`{ data: { text } }`, not a Session prompt or Session-context generation. Source
+uses the base configuration Location, plugin readiness, and Core Generate error
+mapping. It permits a real empty text result; no fake Session should be created.
+
+The contract worker has authored `GenerateTextInput`, `GenerateTextResult`,
+`GenerateTextResponse`, and `GenerateProtocolJsonContext`. A Core GenerateService
+implementation is also visible, but no explicit foundation/parent service handoff
+was received before this checkpoint. Per instruction, no endpoint, Client method,
+DI registration, or model-execution glue was added against an in-progress service.
+Parent should supply its final constructor, TextAsync signature, error contracts,
+and readiness ownership before this pass resumes generation integration. Existing
+Session generation, detached managed server ownership, and Generic Host architecture
+were not changed.
+
+### Exact build evidence
+
+Pinned repository `.dotnet/dotnet.exe`, SDK `11.0.100-preview.7.26381.103`, unique
+artifacts, `--disable-build-servers`, and `-p:OpenApiGenerateDocuments=false`:
+
+- First build: `C:/tmp/opencode/network-pass-c376bae6f8fa4b4d98d18f83076c878f/`.
+  Blocked by four concurrent Core references to missing SessionText in compaction/
+  title services. Those files were not changed here.
+- Final build: `C:/tmp/opencode/network-pass-888127bdde2c4c8fb97688892efc849a/`.
+  Server and its dependency graph passed with **0 warnings and 0 errors**.
+  Evidence: `server-build.log`. Client source was unchanged in this checkpoint.
+
+Metadata checkpoint is frozen for parent integration; global generation remains
+explicitly pending. No tests, runtime/DI/SDK/app/model/DB/SQL/migration/native/
+provider/MCP/PTY execution, network verification, production data access, Git,
+install, publishing, or delegation occurred. No runtime parity claim is made.

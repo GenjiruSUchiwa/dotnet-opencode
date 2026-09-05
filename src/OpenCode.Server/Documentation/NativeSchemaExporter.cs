@@ -139,6 +139,18 @@ internal sealed class NativeSchemaExporter(JsonObject components)
         }
         var codec = converter?.GetType() ?? _options.GetTypeInfo(original).Converter.GetType();
         var name = codec.Name.Split('`')[0];
+        if (type == typeof(TuiToastShowEventData) && codec == typeof(TuiToastEventJsonConverter))
+        {
+            var duration = Number(true, 1);
+            duration["default"] = 5000;
+            duration["x-native-decoding-optional"] = true;
+            duration["description"] = "Decoding an omitted duration supplies 5000; encoding always writes duration.";
+            return Object(new JsonObject
+            {
+                ["message"] = String(), ["variant"] = Reference(typeof(TuiToastVariant)),
+                ["title"] = String(), ["duration"] = duration
+            }, ["message", "variant", "duration"]);
+        }
         if (codec.IsGenericType)
         {
             var argument = codec.GetGenericArguments()[0];
@@ -198,6 +210,45 @@ internal sealed class NativeSchemaExporter(JsonObject components)
         if (type == typeof(FormValue)) return Any(String(), Number(false), new JsonObject { ["type"] = "boolean" }, Array(String()));
         if (type == typeof(FormConditionValue)) return Any(String(), Number(false), new JsonObject { ["type"] = "boolean" });
         if (type == typeof(FormAnswer)) return Map(Reference(typeof(FormValue)));
+        // These constraints are enforced by serialization callbacks, not the CLR
+        // property types. Keep them in Custom so nested records receive them too.
+        if (type == typeof(ServiceHealthResponse)) return Object(new JsonObject
+        {
+            ["healthy"] = new JsonObject { ["const"] = true }, ["version"] = String(),
+            ["pid"] = Number(true, 0, int.MaxValue)
+        }, ["healthy", "version", "pid"]);
+        if (type == typeof(PermissionSource)) return Object(new JsonObject
+        {
+            ["type"] = new JsonObject { ["const"] = "tool" }, ["messageID"] = String(), ["id"] = String()
+        }, ["type", "messageID", "id"]);
+        if (type == typeof(PluginInfo))
+        {
+            JsonObject Branch(string status, string required)
+            {
+                var properties = new JsonObject
+                {
+                    ["source"] = Reference(typeof(PluginSource)), ["status"] = new JsonObject { ["const"] = status },
+                    ["tui"] = new JsonObject { ["type"] = "boolean" }, ["id"] = Reference(typeof(PluginId))
+                };
+                if (status == "failed") properties["error"] = String();
+                return Object(properties, ["source", "status", "tui", required]);
+            }
+            return Any(Branch("active", "id"), Branch("failed", "error"));
+        }
+        if (type == typeof(WorktreeErrorResponse)) return Object(new JsonObject
+        {
+            ["name"] = new JsonObject { ["const"] = "WorktreeError" }, ["data"] = Reference(typeof(WorktreeErrorData))
+        }, ["name", "data"]);
+        if (type == typeof(WorktreeErrorData)) return RecordMetadata(type);
+        if (type == typeof(InstructionEntryInfo) || type == typeof(InstructionEntrySnapshot))
+        {
+            var properties = new JsonObject
+            {
+                ["key"] = String("^[a-z0-9][a-z0-9._-]*$"), ["value"] = JsonValue.Create(true)
+            };
+            if (type == typeof(InstructionEntrySnapshot)) properties["removed"] = new JsonObject { ["type"] = "boolean" };
+            return Object(properties, type == typeof(InstructionEntrySnapshot) ? ["key", "value", "removed"] : ["key", "value"]);
+        }
         if (type == typeof(TokenCacheUsage)) return Object(new JsonObject { ["read"] = Number(false), ["write"] = Number(false) }, ["read", "write"]);
         if (type == typeof(TokenUsageInfo)) return Object(new JsonObject { ["input"] = Number(false), ["output"] = Number(false),
             ["reasoning"] = Number(false), ["cache"] = Reference(typeof(TokenCacheUsage)) }, ["input", "output", "reasoning", "cache"]);

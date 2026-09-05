@@ -396,8 +396,12 @@ public partial class OpenCodeApp
                 var line = visual.Lines[visual.Position(_cursor).Row];
                 target = command.EndsWith("home", StringComparison.Ordinal) ? line.Start : line.End;
                 break;
-            case "input.word.forward": case "input.select.word.forward": target = TerminalTextEditing.WordBoundary(_input, _cursor, 1); break;
-            case "input.word.backward": case "input.select.word.backward": target = TerminalTextEditing.WordBoundary(_input, _cursor, -1); break;
+            // Source moveWordForward/Backward collapses an existing selection when Shift is
+            // absent. Selecting moves from the active cursor while retaining the original anchor.
+            case "input.word.forward": target = HasSelection ? Math.Max(_cursor, _selectionAnchor!.Value) : TerminalTextEditing.WordBoundary(_input, _cursor, 1); break;
+            case "input.word.backward": target = HasSelection ? Math.Min(_cursor, _selectionAnchor!.Value) : TerminalTextEditing.WordBoundary(_input, _cursor, -1); break;
+            case "input.select.word.forward": target = TerminalTextEditing.WordBoundary(_input, _cursor, 1); break;
+            case "input.select.word.backward": target = TerminalTextEditing.WordBoundary(_input, _cursor, -1); break;
             case "input.select.all": _selectionAnchor = 0; MoveCursor(_input.Length, true); return true;
             case "input.newline": InsertText("\n"); return true;
             case "input.submit": return SubmitPrompt();

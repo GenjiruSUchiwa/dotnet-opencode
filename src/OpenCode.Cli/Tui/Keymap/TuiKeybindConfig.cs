@@ -42,9 +42,21 @@ public sealed class TuiKeybindConfig
         var unknown = overrides.Keys.Where(key => !definitions.ContainsKey(key)).ToArray();
         if (unknown.Length > 0) throw new FormatException($"Unrecognized keybinds: {string.Join(", ", unknown)}");
         if (leaderTimeout is { } timeout && timeout < TimeSpan.Zero) throw new FormatException("Leader timeout cannot be negative.");
-        var values = definitions.ToDictionary(pair => pair.Key, pair => overrides.TryGetValue(pair.Key, out var value)
-            ? BindingValue.Decode(value) : pair.Value.Key == "none" ? (BindingValue)new BindingValue.Disabled()
-            : new BindingValue.Items([new(new BindingKey.Text(pair.Value.Key), PreventDefault: pair.Value.PreventDefault)]));
+        var values = definitions.ToDictionary(pair => pair.Key, pair =>
+        {
+            if (overrides.TryGetValue(pair.Key, out var value)) return BindingValue.Decode(value);
+            // The pinned source lists Alt+Shift word selection, but omits the conventional
+            // Ctrl+Shift arrows despite supplying Ctrl+Arrow movement. Add aliases at the
+            // default-config boundary so explicit remapping/disable still takes precedence.
+            var key = pair.Key switch
+            {
+                "input.select.word.forward" => pair.Value.Key + ",ctrl+shift+right",
+                "input.select.word.backward" => pair.Value.Key + ",ctrl+shift+left",
+                _ => pair.Value.Key
+            };
+            return key == "none" ? (BindingValue)new BindingValue.Disabled()
+                : new BindingValue.Items([new(new BindingKey.Text(key), PreventDefault: pair.Value.PreventDefault)]);
+        });
         return new(values, leaderTimeout ?? TimeSpan.FromMilliseconds(2000));
     }
 

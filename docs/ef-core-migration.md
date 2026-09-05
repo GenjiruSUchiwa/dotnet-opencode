@@ -364,3 +364,13 @@ compilation is not runtime or schema-parity sign-off.
 - No runtime query translation, schema materialization, concurrency, rollback,
   performance, or migration parity has been tested. Those are not implied by the
   build result and must remain a separate explicitly authorized verification step.
+
+## Follow-up after the accepted EF checkpoint
+
+[Persistence parity follow-up](./persistence-parity-pass.md) records the subsequent
+Forms/Reference diagnostic fixes and actual source gaps fixed in Session path
+codecs, direct Core query defaults, previous-page decode order, move history, and
+fork parent/path handling. It also records the missing `session.usage.updated`
+Schema/event-contract counterpart without changing runtime foundations or Schema.
+These changes do not alter migration authority or the documented archive/statistics
+quirks. ServerHost is owned by the network worker and was not edited in that pass.

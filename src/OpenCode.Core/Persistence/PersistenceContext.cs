@@ -165,6 +165,22 @@ internal static class SqliteFunctions
 
 internal static class PersistenceQuery
 {
+    internal static async IAsyncEnumerable<T> ReadPageAsync<T>(this IQueryable<T> query, long limit, bool previous,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!previous)
+        {
+            await foreach (var row in query.ReadAsync(limit, ct).ConfigureAwait(true)) yield return row;
+            yield break;
+        }
+
+        // Upstream reverses the selected rows before decoding. Reversing decoded
+        // DTOs instead reports the wrong first failing row in a previous page.
+        var rows = new List<T>();
+        await foreach (var row in query.ReadAsync(limit, ct).ConfigureAwait(true)) rows.Add(row);
+        for (var index = rows.Count - 1; index >= 0; index--) yield return rows[index];
+    }
+
     // SQLite treats a negative LIMIT as unbounded. Queryable.Take only accepts
     // Int32; stream the exceptional larger limit without narrowing it.
     internal static async IAsyncEnumerable<T> ReadAsync<T>(this IQueryable<T> query, long limit, [EnumeratorCancellation] CancellationToken ct)

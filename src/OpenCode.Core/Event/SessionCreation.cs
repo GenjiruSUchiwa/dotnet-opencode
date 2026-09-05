@@ -4,6 +4,7 @@ using System.Text.Json;
 using OpenCode.Core.Database;
 using Microsoft.EntityFrameworkCore;
 using OpenCode.Core.Persistence;
+using OpenCode.Core.Projects;
 using OpenCode.Schema;
 
 internal sealed class SessionCreation(IDatabase database)
@@ -29,8 +30,8 @@ internal sealed class SessionCreation(IDatabase database)
         var data = committed.Data.Deserialize(OpenCodeJsonContext.Default.SessionCreatedEventData)!;
         if (await SqliteIntrinsics.InsertSessionAsync(transaction.Db, data.SessionId.Value, data.ProjectId.Value,
             data.Location.WorkspaceId?.Value, data.ParentId?.Value, data.Slug,
-            OperatingSystem.IsWindows() ? data.Location.Directory.Replace('\\', '/') : data.Location.Directory,
-            OperatingSystem.IsWindows() ? data.Subpath?.Replace('\\', '/') : data.Subpath, data.Title, data.Agent,
+            ProjectPaths.DirectoryStorage(data.Location.Directory),
+            data.Subpath is null ? null : ProjectPaths.Relative(data.Subpath), data.Title, data.Agent,
             data.Model is null ? null : JsonSerializer.Serialize(data.Model, OpenCodeJsonContext.Default.ModelRef),
             data.Metadata is null ? null : JsonSerializer.Serialize(data.Metadata, OpenCodeJsonContext.Default.Options), data.Version, committed.Created, ct).ConfigureAwait(true) != 1)
             throw new InvalidOperationException("Session was already projected.");

@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using OpenCode.Core.Event;
 using Microsoft.EntityFrameworkCore;
 using OpenCode.Core.Persistence;
+using OpenCode.Core.Projects;
 using OpenCode.Core.Instructions;
 using OpenCode.Schema;
 
@@ -36,6 +37,12 @@ internal static class ForkProjector
     internal static async Task ProjectAsync(EventTransaction transaction, OpenCodeEvent committed, CancellationToken ct)
     {
         var data = committed.Data.Deserialize(TransferJsonContext.Default.SessionForkedData)!;
+        // projectFork reads/decodes the parent before resolving its boundary.
+        var parent = await transaction.Db.Sessions.Where(row => row.id == data.ParentId.Value)
+            .Select(row => new { row.title, row.directory, row.path }).FirstOrDefaultAsync(ct).ConfigureAwait(true)
+            ?? throw new SessionMutationNotFoundException(data.ParentId);
+        var directory = ProjectPaths.DirectoryStorage(parent.directory);
+        var subpath = parent.path is null ? null : ProjectPaths.Relative(parent.path);
         var boundaryId = data.Boundary switch
         {
             ForkBoundaryBefore before => before.MessageId,
@@ -47,8 +54,6 @@ internal static class ForkProjector
         var exclusive = data.Boundary is ForkBoundaryBefore;
         var copiedSeq = await transaction.Db.Messages.Where(row => row.session_id == data.ParentId.Value && (exclusive ? row.seq < boundarySeq : row.seq <= boundarySeq))
             .MaxAsync(row => (long?)row.seq, ct).ConfigureAwait(true);
-        var parent = await transaction.Db.Sessions.Where(row => row.id == data.ParentId.Value).Select(row => new { row.title }).FirstOrDefaultAsync(ct).ConfigureAwait(true)
-            ?? throw new SessionMutationNotFoundException(data.ParentId);
         var title = parent.title;
         if (title is not null)
         {
@@ -59,7 +64,8 @@ internal static class ForkProjector
         }
         if (await SqliteIntrinsics.ForkSessionAsync(transaction.Db, data.SessionId.Value, data.ParentId.Value,
             JsonSerializer.Serialize(data.Boundary, OpenCodeJsonContext.Default.ForkBoundary),
-            $"{Adjectives[Random.Shared.Next(Adjectives.Length)]}-{Nouns[Random.Shared.Next(Nouns.Length)]}", title, committed.Created, ct).ConfigureAwait(true) != 1)
+            $"{Adjectives[Random.Shared.Next(Adjectives.Length)]}-{Nouns[Random.Shared.Next(Nouns.Length)]}", title, directory, subpath,
+            committed.Created, ct).ConfigureAwait(true) != 1)
             throw new InvalidOperationException("Fork session was already projected or its parent is missing.");
 
         if (data.InstructionEntries is not null)

@@ -58,8 +58,7 @@ public sealed class SessionStore : IDisposable
     internal static SessionInfo ReadSession(SessionRow row)
     {
         static DateTimeOffset? Time(long? value) => value is { } time ? DateTimeOffset.FromUnixTimeMilliseconds(time) : null;
-        var directory = OperatingSystem.IsWindows() && ProjectPaths.IsWindowsStorage(row.directory)
-            ? row.directory.Replace('/', '\\') : row.directory;
+        var directory = ProjectPaths.DirectoryPlatform(row.directory);
         var model = row.model is { } modelJson ? JsonSerializer.Deserialize(modelJson, OpenCodeJsonContext.Default.ModelRef) : null;
         return new SessionInfo(
             Id: SessionId.FromExisting(row.id), ProjectId: ProjectId.FromExisting(row.project_id), Slug: row.slug,
@@ -75,7 +74,7 @@ public sealed class SessionStore : IDisposable
             Outcome: row.idle_outcome switch { null => null, "succeeded" => SessionOutcome.Succeeded, "failed" => SessionOutcome.Failed,
                 "interrupted" => SessionOutcome.Interrupted, _ => throw new JsonException("Invalid persisted session outcome.") },
             Location: new LocationRef(directory, row.workspace_id is { Length: > 0 } workspace ? WorkspaceId.FromExisting(workspace) : null),
-            Subpath: row.path is { Length: > 0 } subpath ? subpath : null,
+            Subpath: row.path is { Length: > 0 } subpath ? ProjectPaths.Relative(subpath) : null,
             Metadata: row.metadata is { } metadata ? JsonSerializer.Deserialize<IReadOnlyDictionary<string, JsonElement>>(metadata, OpenCodeJsonContext.Default.Options) : null,
             Revert: row.revert is { } revert ? ReadRevert(revert) : null);
     }

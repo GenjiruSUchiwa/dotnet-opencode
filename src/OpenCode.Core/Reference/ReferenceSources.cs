@@ -20,7 +20,7 @@ internal static class ReferenceSources
             var directory = document.Path is null ? location : Path.GetDirectoryName(Path.GetFullPath(document.Path))!;
             foreach (var entry in entries)
             {
-                if (entry.Key.Length == 0 || Regex.IsMatch(entry.Key, @"[/\s`,]")) continue;
+                if (entry.Key.Length == 0 || Regex.IsMatch(entry.Key, @"[/\s`,]", RegexOptions.NonBacktracking)) continue;
                 string path;
                 string? description = null;
                 bool? hidden = null;

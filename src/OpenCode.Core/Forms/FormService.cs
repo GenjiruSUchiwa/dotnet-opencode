@@ -65,7 +65,7 @@ public sealed class FormService(LocationRef location, Action<OpenCodeEvent> publ
             form = Create(owner, input);
             completion = Require(form.Id).Completion.Task;
         }
-        try { return await completion.WaitAsync(ct); }
+        try { return await completion.WaitAsync(ct).ConfigureAwait(true); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             try { Cancel(form.Id); }

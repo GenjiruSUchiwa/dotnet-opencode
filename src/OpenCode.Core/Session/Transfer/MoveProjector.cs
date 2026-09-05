@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using OpenCode.Core.Event;
 using Microsoft.EntityFrameworkCore;
 using OpenCode.Core.Persistence;
+using OpenCode.Core.Projects;
 using OpenCode.Schema;
 
 internal sealed record SessionMovedData(
@@ -28,8 +29,9 @@ internal static class MoveProjector
         var row = await transaction.Db.Sessions.Where(row => row.id == data.SessionId.Value)
             .Select(row => new { row.directory, row.workspace_id, row.project_id, row.path }).FirstOrDefaultAsync(ct).ConfigureAwait(true)
             ?? throw new SessionMutationNotFoundException(data.SessionId);
-        var previous = new MessageLocation(new LocationRef(row.directory, row.workspace_id is null ? null : WorkspaceId.FromExisting(row.workspace_id)),
-            ProjectId.FromExisting(row.project_id), row.path);
+        var previous = new MessageLocation(new LocationRef(ProjectPaths.DirectoryPlatform(row.directory),
+            row.workspace_id is { Length: > 0 } workspaceId ? WorkspaceId.FromExisting(workspaceId) : null),
+            ProjectId.FromExisting(row.project_id), row.path is null ? null : ProjectPaths.Relative(row.path));
         SessionMessage message = new LocationSwitchedMessage
         {
             Id = MessageId.FromExisting("msg_" + committed.Id.Value[EventId.Prefix.Length..]),
@@ -45,11 +47,12 @@ internal static class MoveProjector
         encoded.Remove("type");
         await SqliteIntrinsics.InsertMessageAsync(transaction.Db, message.Id.Value, data.SessionId.Value, "location-switched",
             checked((long)committed.Durable!.Seq), committed.Created, transaction.Clock.GetUtcNow().ToUnixTimeMilliseconds(), encoded.ToJsonString(), ct).ConfigureAwait(true);
-        var directory = OperatingSystem.IsWindows() ? data.Location.Directory.Replace('\\', '/') : data.Location.Directory;
+        var directory = ProjectPaths.DirectoryStorage(data.Location.Directory);
         var workspace = data.Location.WorkspaceId?.Value;
+        var subpath = data.Subpath is null ? null : ProjectPaths.Relative(data.Subpath);
         await transaction.Db.Sessions.Where(row => row.id == data.SessionId.Value).ExecuteUpdateAsync(setters => setters
             .SetProperty(row => row.directory, directory).SetProperty(row => row.workspace_id, workspace)
-            .SetProperty(row => row.project_id, data.ProjectId.Value).SetProperty(row => row.path, data.Subpath), ct).ConfigureAwait(true);
+            .SetProperty(row => row.project_id, data.ProjectId.Value).SetProperty(row => row.path, subpath), ct).ConfigureAwait(true);
         await SqliteIntrinsics.TouchSessionAsync(transaction.Db, data.SessionId.Value, committed.Created, ct).ConfigureAwait(true);
         // Retain the instruction epoch. Destination observation freezes its delta in later System history.
     }

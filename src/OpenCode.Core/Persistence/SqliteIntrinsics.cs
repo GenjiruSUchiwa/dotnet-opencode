@@ -23,11 +23,12 @@ internal static class SqliteIntrinsics
                 > coalesce((SELECT seq FROM event_sequence WHERE aggregate_id = {session}), -1) AS Value
             """).SingleAsync(ct);
 
-    internal static Task<int> ForkSessionAsync(PersistenceContext db, string id, string parent, string boundary, string slug, string? title, double created, CancellationToken ct) =>
+    internal static Task<int> ForkSessionAsync(PersistenceContext db, string id, string parent, string boundary, string slug, string? title,
+        string directory, string? subpath, double created, CancellationToken ct) =>
         db.Database.ExecuteSqlAsync($"""
             INSERT INTO session_v2 (id, parent_id, fork_session_id, fork_boundary, project_id, workspace_id,
                 slug, directory, path, title, agent, model, metadata, version, time_created, time_updated)
-            SELECT {id}, NULL, id, {boundary}, project_id, workspace_id, {slug}, directory, path, {title},
+            SELECT {id}, NULL, id, {boundary}, project_id, workspace_id, {slug}, {directory}, {subpath}, {title},
                 agent, model, metadata, version, {created}, {created} FROM session_v2 WHERE id = {parent}
             ON CONFLICT DO NOTHING
             """, ct);

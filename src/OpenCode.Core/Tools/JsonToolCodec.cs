@@ -1,6 +1,7 @@
 namespace OpenCode.Core.Tools;
 
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 /// <summary>Explicit JSON Schema subset, not a permissive fallback for arbitrary JSON Schema.
 /// Unsupported assertion keywords fail construction. Decode preserves JSON values; Encode validates serialized JSON.</summary>
@@ -8,6 +9,7 @@ public sealed class JsonToolCodec : IToolValueCodec
 {
     private static readonly JsonSerializerOptions Serialization = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static readonly HashSet<string> Types = ["object", "array", "string", "number", "integer", "boolean", "null"];
+    private readonly Dictionary<string, Regex> _patterns = new(StringComparer.Ordinal);
     public JsonElement JsonSchema { get; }
 
     public JsonToolCodec(JsonElement schema)
@@ -42,7 +44,7 @@ public sealed class JsonToolCodec : IToolValueCodec
         if (issues.Count > 0) throw new ToolValidationException(issues.AsReadOnly());
     }
 
-    private static void CheckSchema(JsonElement schema, string path, int depth)
+    private void CheckSchema(JsonElement schema, string path, int depth)
     {
         if (depth > 64) throw new NotSupportedException("Tool schema exceeds 64 levels.");
         if (schema.ValueKind is JsonValueKind.True or JsonValueKind.False) return;
@@ -98,6 +100,12 @@ public sealed class JsonToolCodec : IToolValueCodec
                     if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0) throw new ArgumentException($"{path}.enum must be a nonempty array.", nameof(schema));
                     break;
                 case "const": break;
+                case "pattern":
+                    if (value.ValueKind != JsonValueKind.String)
+                        throw new NotSupportedException($"Tool schema {path}.pattern must be a string.");
+                    var pattern = value.GetString()!;
+                    if (!_patterns.ContainsKey(pattern)) _patterns.Add(pattern, JsonToolPattern.Compile(pattern, path + ".pattern"));
+                    break;
                 case "minLength": case "maxLength": case "minItems": case "maxItems": case "minProperties": case "maxProperties":
                     if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var count) || count < 0) throw new ArgumentException($"{path}.{item.Name} must be a nonnegative 32-bit integer.", nameof(schema));
                     break;
@@ -110,7 +118,7 @@ public sealed class JsonToolCodec : IToolValueCodec
         }
     }
 
-    private static void CheckValue(JsonElement schema, JsonElement value, string path, List<ToolValidationIssue> issues, CancellationToken ct, int depth)
+    private void CheckValue(JsonElement schema, JsonElement value, string path, List<ToolValidationIssue> issues, CancellationToken ct, int depth)
     {
         ct.ThrowIfCancellationRequested();
         if (issues.Count >= 100) return;
@@ -168,7 +176,27 @@ public sealed class JsonToolCodec : IToolValueCodec
                 foreach (var item in value.EnumerateArray()) CheckValue(itemSchema, item, $"{path}[{index++}]", issues, ct, depth + 1);
             }
         }
-        if (value.ValueKind == JsonValueKind.String) Count("Length", value.GetString()!.EnumerateRunes().Count());
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString()!;
+            Count("Length", text.EnumerateRunes().Count());
+            if (schema.TryGetProperty("pattern", out var pattern))
+            {
+                try
+                {
+                    if (!_patterns[pattern.GetString()!].IsMatch(text))
+                        issues.Add(new(path, $"Value does not match pattern {pattern.GetRawText()}."));
+                }
+                catch (RegexMatchTimeoutException)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    // A timeout is an indeterminate validation, not a mismatch that `not`
+                    // or another combinator could invert into successful validation.
+                    throw new ToolValidationException([new(path, "Pattern validation exceeded its 250 ms match limit.")]);
+                }
+                ct.ThrowIfCancellationRequested();
+            }
+        }
         if (value.ValueKind == JsonValueKind.Number)
         {
             var number = value.GetDecimal();

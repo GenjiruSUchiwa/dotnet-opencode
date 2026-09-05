@@ -104,6 +104,7 @@ dotnet opencode run "Explain the structure of this repository."
 - Managed registration: **`service-dotnet.json`**.
 - Client-local state is isolated in the **`dotnet`** channel; upstream user configuration conventions are retained.
 - No automatic copying of the production OpenCode database or credentials.
+- Provider requests identify the rewrite as **`dotnet-opencode`**, not the upstream application. [HTTP identity](docs/provider-identity.md)
 
 ## Compatibility boundaries
 

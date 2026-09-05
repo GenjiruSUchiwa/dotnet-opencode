@@ -47,7 +47,7 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
     public const string Issuer = "https://auth.openai.com";
     public const string BackendBaseUrl = "https://chatgpt.com/backend-api/codex";
     private const string ClientId = "app_EMoamEEZ73f0CkXaXp7hrann";
-    internal static string DefaultUserAgent => $"opencode/{OpenCodeChannel.Name}/{OpenCodeChannel.ServiceVersion}/opencode";
+    internal static string DefaultUserAgent => OpenCodeChannel.UserAgent;
     // Process-lifetime transport, with no default credentials/headers. Redirects
     // must not forward account/session headers or refresh form data to another host.
     internal static HttpClient PinnedHttp { get; } = new(new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
@@ -316,6 +316,7 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
     {
         if (_userAgent.Contains('\r') || _userAgent.Contains('\n')) throw Invalid("Invalid OAuth User-Agent.");
         request.Headers.TryAddWithoutValidation("User-Agent", _userAgent);
+        ProviderUserAgent.Apply(request);
     }
     private async Task<T> SendJsonAsync<T>(HttpRequestMessage request, JsonTypeInfo<T> type, CancellationToken ct)
     {

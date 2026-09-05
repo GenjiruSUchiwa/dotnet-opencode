@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using OpenCode.Core.Database;
 using OpenCode.Core.Integrations;
+using OpenCode.Core.Llm;
 using OpenCode.Core.Tools;
 using OpenCode.Schema;
 
@@ -71,9 +72,10 @@ public sealed class NativeWebSearchProvider : IWebSearchProvider, IDisposable, I
             var url = Info.Id == "exa" ? _endpoint + "?exaApiKey=" + Uri.EscapeDataString(key) : _endpoint;
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Accept.ParseAdd(_tool is null ? "application/json" : "application/json, text/event-stream");
+            request.Headers.UserAgent.ParseAdd(_userAgent);
+            ProviderUserAgent.Apply(request);
             if (Info.Id != "exa")
             {
-                request.Headers.UserAgent.ParseAdd(_userAgent);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             }
             if (Info.Id == "tavily") request.Headers.Add("X-Client-Name", "opencode2");

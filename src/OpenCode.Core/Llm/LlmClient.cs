@@ -253,7 +253,6 @@ internal static class LlmHttp
         var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json") };
         try
         {
-            request.Headers.UserAgent.ParseAdd("opencode");
             foreach (var (name, value) in headers)
             {
                 if (value is null || name.Contains('\r') || name.Contains('\n') || value.Contains('\r') || value.Contains('\n'))
@@ -263,6 +262,7 @@ internal static class LlmHttp
                 if (!request.Headers.TryAddWithoutValidation(name, value) && !request.Content.Headers.TryAddWithoutValidation(name, value))
                     throw new LlmException(new LlmFailure.InvalidRequest("Invalid configured HTTP header."));
             }
+            ProviderUserAgent.Apply(request);
             return request;
         }
         catch { request.Dispose(); throw; }

@@ -20,5 +20,5 @@ public sealed record SdkHostOptions
     public Func<LocationInfo, IToolExecutionHooks?>? ToolHooks { get; init; }
     /// <summary>An injected store remains caller-owned. Default grants use this host's existing SQLite database.</summary>
     public IPermissionGrantStore? PermissionGrants { get; init; }
-    public SessionRequestIdentity Identity { get; init; } = new("sdk", "OpenCode.Sdk/" + ApplicationBuild.Id);
+    public SessionRequestIdentity Identity { get; init; } = new("sdk", OpenCodeChannel.UserAgent + "/" + ApplicationBuild.Id);
 }

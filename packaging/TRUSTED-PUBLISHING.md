@@ -55,3 +55,4 @@ The .NET tool shim is named `dotnet-opencode`; the .NET CLI resolves that prefix
 - The clean GitHub runner installed the exact pinned SDK, built/packed the tool, and passed static package inspection.
 - `NuGet/login` authenticated with GitHub OIDC. NuGet.org accepted the package upload, and the workflow created the [matching GitHub prerelease](https://github.com/Hona/dotnet-opencode/releases/tag/v0.1.0-ci.20260905021128.33938379734.1).
 - NuGet indexing can lag a successful upload. Publication does not establish tool installation, application startup, database or native-runtime compatibility; none of those were executed for verification.
+- The public [NuGet download index](https://api.nuget.org/v3-flatcontainer/dotnet-opencode/index.json) subsequently listed the first version, confirming that indexing completed. [Run 33938749468](https://github.com/Hona/dotnet-opencode/actions/runs/33938749468) also published successfully from the next `main` push.

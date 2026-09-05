@@ -327,6 +327,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
         ct.ThrowIfCancellationRequested();
         try
         {
+            ProviderUserAgent.Apply(request);
             using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             var context = LlmHttpContext.From(response);
             if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return (default!, context, "");

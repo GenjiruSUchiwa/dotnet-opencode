@@ -5,6 +5,8 @@ public static class OpenCodeChannel
 {
     public const string Name = "dotnet";
     public const string Application = "opencode-" + Name;
+    // Public HTTP identity is independent of the persisted application/channel names.
+    public const string UserAgent = "dotnet-opencode";
     public const string ServiceFileName = "service-" + Name + ".json";
     public const string DatabaseFileName = "opencode-" + Name + ".db";
     public const string ServiceVersion = "10.0.0";

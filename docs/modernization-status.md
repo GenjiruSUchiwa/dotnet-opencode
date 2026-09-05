@@ -6,7 +6,7 @@ multi-agent parity pass. Completed checkpoints are committed and pushed to GitHu
 
 | Work | Current status | Completion evidence still needed |
 | --- | --- | --- |
-| Tool packaging and NuGet Trusted Publishing | First clean-runner build, static package inspection, OIDC login, upload and GitHub prerelease succeeded | Confirm NuGet indexing; retain working publication on subsequent pushes |
+| Tool packaging and NuGet Trusted Publishing | Two automatic releases succeeded; the first version is listed in NuGet's public download index | Retain working publication on subsequent pushes |
 | EF Core 11 + SQLite | Whole persistence conversion committed; final source review resumed | Review mappings, query translation from provider source, transactions, errors, precision and callers; build and hand off to analyzer cleanup |
 | Meziantou analyzers | Enabled across owned source; cleanup incomplete | Re-inventory after EF handoff, resolve diagnostics without blanket suppression, then build the full dependency graph |
 | Vogen | All 25 scalar wrappers and CLI/non-CLI consumers migrated | Include unchanged factories, codecs and enabled analyzers in the final integrated build |

@@ -143,7 +143,7 @@ public class TuiText : PointerComponentBase
     [Parameter] public bool Tail { get; set; }
     [Parameter] public int Scroll { get; set; }
     [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Character;
-    [Parameter] public bool Selectable { get; set; }
+    [Parameter] public bool Selectable { get; set; } = true;
 
     protected override void OnParametersSet()
     {

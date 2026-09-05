@@ -8,7 +8,8 @@
         @Attachments
         <Input Value="@Value" Cursor="Cursor" SelectionAnchor="SelectionAnchor" MaxHeight="@Math.Max(6, TerminalHeight / 3)"
                Placeholder="@(ShellMode ? "Run a command…" : "Ask anything...")" Fg="@Colors.InputText" Bg="@Colors.PromptBackground" PlaceholderFg="@Colors.PlaceholderText"
-               FocusKey="prompt" OnKeyDown="OnKeyDown" OnPaste="OnPaste" OnTextInput="OnTextInput" TextMarks="TextMarks" />
+               FocusKey="prompt" OnKeyDown="OnKeyDown" OnPaste="OnPaste" OnTextInput="OnTextInput" TextMarks="TextMarks"
+               OnPointerDown="OnPointerDown" OnPointerMove="OnPointerMove" OnPointerUp="OnPointerUp" />
         @if (!Compact)
         {
             <Box Height="1" />
@@ -93,5 +94,8 @@
     [Parameter] public RenderFragment? Attachments { get; set; }
     [Parameter] public IReadOnlyList<TerminalTextMark> TextMarks { get; set; } = [];
     [Parameter] public EventCallback<TerminalTextInputEventArgs> OnTextInput { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnPointerDown { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnPointerMove { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnPointerUp { get; set; }
     private bool Compact => TerminalHeight < 6;
 }

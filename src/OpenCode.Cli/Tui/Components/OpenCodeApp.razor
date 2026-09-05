@@ -200,7 +200,8 @@
                 <Composer Value="@_input" Cursor="_cursor" SelectionAnchor="_selectionAnchor" TerminalWidth="_width" TerminalHeight="_height"
                           Home="true" Width="ComposerWidth" CurrentDirectory="@CurrentDirectory" Loading="_configurationBusy" Theme="ComposerColors" ShellMode="ShellMode"
                           CommandShortcut="@Shortcut("command.palette.show")" Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
-                          OnKeyDown="InputKey" OnPaste="InputPaste" OnTextInput="InputText" TextMarks="PromptTextMarks" />
+                           OnKeyDown="InputKey" OnPaste="InputPaste" OnTextInput="InputText" TextMarks="PromptTextMarks"
+                           OnPointerDown="PromptPointerDown" OnPointerMove="PromptPointerMove" OnPointerUp="PromptPointerUp" />
                 </Box>
             }
             @StashFeedback

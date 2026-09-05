@@ -17,7 +17,12 @@ internal sealed class WindowsConsoleInput : IDisposable
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
         _handle = GetStdHandle(-10);
-        if (!GetConsoleMode(_handle, out _mode) || !SetConsoleMode(_handle, _mode | 0x10))
+        // Mouse records must reach the renderer rather than being consumed by
+        // console Quick Edit. Restore the caller's complete original mode on exit.
+        const uint mouseInput = 0x10;
+        const uint quickEdit = 0x40;
+        const uint extendedFlags = 0x80;
+        if (!GetConsoleMode(_handle, out _mode) || !SetConsoleMode(_handle, (_mode | mouseInput | extendedFlags) & ~quickEdit))
             throw new Win32Exception(Marshal.GetLastWin32Error());
     }
 

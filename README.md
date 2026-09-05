@@ -79,7 +79,7 @@ dotnet opencode run "Explain the structure of this repository."
 ## Run from source
 
 - Install PowerShell 7+ and the **exact .NET 11 Preview 7 SDK pinned in [global.json](global.json)** into the repo-local `.dotnet` directory, or configure `OPENCODE_DOTNET_SDK_ROOT`.
-- Use `run.ps1` from the project directory you want OpenCode to work in. It preserves that directory and builds into isolated artifacts.
+- Use `run.ps1` from the project directory you want OpenCode to work in. It preserves that directory, reuses incremental build outputs, and runs a private copy so open clients do not lock the build cache.
 
 ```powershell
 # Native Razor / Blazor terminal client

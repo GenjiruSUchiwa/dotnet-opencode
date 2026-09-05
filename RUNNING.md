@@ -111,15 +111,25 @@ the CLI child still runs in the caller's project directory. Only child processes
 receive `DOTNET_ROOT`, the architecture-specific root, `DOTNET_HOST_PATH`,
 `OPENCODE_DOTNET_HOST`, and the local SDK PATH prefix.
 
-Each invocation fingerprints the source inputs, builds only `OpenCode.Cli.csproj` and its project dependencies
-into a new temporary `--artifacts-path`. It does not build a solution or test
-projects. It uses a fixed `run` artifact pivot, packages the complete Server
-runtime into the CLI's `server` directory, and launches the exact CLI apphost.
+Each invocation fingerprints the source inputs and incrementally builds only
+`OpenCode.Cli.csproj` and its project dependencies. Restore/compiler outputs persist
+under the ignored `artifacts/run/<configuration-key>/` directory in this checkout.
+The key separates the pinned SDK, architecture and optional PTY packaging choices;
+it does not change for every source edit. Normal MSBuild up-to-date checks and
+build-server reuse remain enabled. There is no clean or forced rebuild on launch.
+
+Builds for the same cache wait on a file lock (up to one minute), held through
+runtime copying and released before starting the TUI. The script does not build
+a solution or test projects. It uses the fixed `run` artifact pivot, and the
+existing MSBuild staging target supplies the complete Server runtime in `server/`.
+After verification, the launcher copies the runnable CLI payload—not the build
+cache—to a private temporary directory and launches that copy's exact CLI apphost.
 A failed build never launches an older executable. The script returns the build
-or CLI exit code and attempts to remove only its own artifacts after the child
-exits. If interrupted while the tracked build or CLI child still runs, it leaves
-that invocation's artifacts intact. Cleanup failure is reported without
-terminating any process.
+or CLI exit code and removes only its own temporary runtime copy after the child
+exits. It retains all incremental build outputs. An interrupted build is joined
+before releasing the shared-cache lock; a still-running CLI keeps its runtime copy.
+Cleanup failure is reported without terminating any process. Old temporary builds
+and deployments are not silently swept or deleted.
 The source fingerprint is checked before and after compilation, and the CLI and
 Server output stamps must match it before packaging. A source edit during the
 build fails the invocation instead of launching mixed or stale assets.
@@ -127,7 +137,9 @@ build fails the invocation instead of launching mixed or stale assets.
 ## DLL Locks
 
 `run.ps1` avoids normal project `bin` and `obj` directories, so an older daemon
-holding DLLs in `OpenCode.Server/bin` does not prevent this isolated CLI build.
+holding DLLs in `OpenCode.Server/bin` does not prevent this cached CLI build.
+Running source clients load their private runtime copies, not the mutable cache,
+so they can stay open while a later invocation incrementally builds changed files.
 It does not need to stop or restart that daemon. Standard
 `dotnet run --project src/OpenCode.Cli` still uses mutable outputs and can encounter
 those existing locks; use `run.ps1` for this development workflow.

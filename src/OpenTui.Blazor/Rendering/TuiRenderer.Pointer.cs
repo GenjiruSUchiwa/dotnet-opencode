@@ -19,6 +19,7 @@ public sealed partial class TuiRenderer
         if (!_eventsStopped && _hovered is not null)
             foreach (var node in PointerPath(_hovered).ToArray())
                 if (Attached(node)) InvokePointer(node, _press with { Kind = TerminalPointerKind.Leave }, layout);
+        _pressedTarget?.Editor?.EndPointerSelection();
         _hovered = _pressedTarget = _pressedAction = null;
         _selectionDrag = null;
         _embeddedSelectionDragging = false;
@@ -31,6 +32,16 @@ public sealed partial class TuiRenderer
         if (_eventsStopped) return false;
         EnsureFocus();
         var target = layout.HitTest(FocusScope, input.X, input.Y);
+        var editorNode = input.Kind is TerminalPointerKind.Move or TerminalPointerKind.Up && _pressedTarget?.Editor is not null
+            ? _pressedTarget : target?.Editor is not null ? target : null;
+        if (editorNode?.Editor is { IsMounted: true } editor)
+        {
+            if (input.Kind == TerminalPointerKind.Down && input.Button == TerminalPointerButton.Left &&
+                (!input.Modifiers.HasFlag(ConsoleModifiers.Control) || !ReferenceEquals(_textareaSelectionOwner, editorNode))) ClearSelection(false);
+            if (input.Kind != TerminalPointerKind.Wheel) editor.Pointer(input, input.X - editorNode.X, input.Y - editorNode.Y);
+            if (!Attached(editorNode) || editor.IsDisposed) { _pressedTarget = _pressedAction = null; return true; }
+            RefreshTextareaSelection(editorNode);
+        }
         var embeddedSelection = false;
         var terminalNode = input.Kind is TerminalPointerKind.Move or TerminalPointerKind.Up && _pressedTarget?.EmbeddedTerminal is not null
             ? _pressedTarget : target;
@@ -46,7 +57,7 @@ public sealed partial class TuiRenderer
             }
             embeddedSelection = UpdateEmbeddedSelection(input, terminalNode);
         }
-        if (!embeddedSelection) UpdateSelection(input, target, layout);
+        if (!embeddedSelection && editorNode is null) UpdateSelection(input, target, layout);
         var path = PointerPath(target).ToArray();
         var previous = PointerPath(_hovered).ToArray();
         foreach (var node in previous.Except(path))
@@ -68,11 +79,16 @@ public sealed partial class TuiRenderer
             _dragged = true;
         var destination = input.Kind is TerminalPointerKind.Move or TerminalPointerKind.Up ? _pressedTarget ?? target : target;
         var handled = BubblePointer(destination, input, layout);
+        if (input.Kind == TerminalPointerKind.Wheel && !handled && editorNode?.Editor is { CanFocus: true, IsMounted: true } scrolling)
+        {
+            scrolling.Pointer(input, input.X - editorNode.X, input.Y - editorNode.Y);
+            RefreshTextareaSelection(editorNode); handled = true;
+        }
         // Source dispatchMouseEvent runs handlers before its default autofocus.
         // A handled down event can prevent focus, and callbacks may remove a node.
         if (input.Kind == TerminalPointerKind.Down && input.Button == TerminalPointerButton.Left && !handled &&
-            path.FirstOrDefault(node => node.TagName == "input") is { } editor && Attached(editor) &&
-            PointerPath(editor).Contains(FocusScope)) SetFocus(editor);
+            path.FirstOrDefault(node => node.TagName == "input" || node.Editor?.CanFocus == true) is { } focusTarget && Attached(focusTarget) &&
+            PointerPath(focusTarget).Contains(FocusScope)) SetFocus(focusTarget);
         if (input.Kind == TerminalPointerKind.Wheel && !handled && input.DeltaY != 0)
         {
             foreach (var node in path)
@@ -102,17 +118,20 @@ public sealed partial class TuiRenderer
 
     private bool BubblePointer(TuiNode? target, TerminalPointerInput input, TuiLayoutEngine layout)
     {
+        var prevented = false;
         // Snapshot the path because a synchronous callback may close a component.
         foreach (var node in PointerPath(target).ToArray())
         {
             if (!Attached(node)) continue;
-            if (InvokePointer(node, input, layout)) return true;
+            var args = InvokePointer(node, input, layout, prevented);
+            prevented |= args?.DefaultPrevented == true;
+            if (args?.PropagationStopped == true) break;
             if (ReferenceEquals(node, FocusScope)) break;
         }
-        return false;
+        return prevented;
     }
 
-    private bool InvokePointer(TuiNode node, TerminalPointerInput input, TuiLayoutEngine layout)
+    private TerminalPointerEventArgs? InvokePointer(TuiNode node, TerminalPointerInput input, TuiLayoutEngine layout, bool prevented = false)
     {
         var handler = input.Kind switch
         {
@@ -125,8 +144,8 @@ public sealed partial class TuiRenderer
             TerminalPointerKind.Wheel => node.WheelHandlerId,
             _ => 0UL
         };
-        if (handler == 0) return false;
-        int? index = null;
+        if (handler == 0) return null;
+        int? index = node.Editor?.Snapshot.CursorUtf16;
         if (node.TagName == "input")
         {
             var text = layout.MeasureInput(node.Content, Math.Max(1, node.LayoutWidth));
@@ -136,9 +155,10 @@ public sealed partial class TuiRenderer
                 .Select(position => position.Index).DefaultIfEmpty(text.Lines[row].Start).Last();
         }
         var args = new TerminalPointerEventArgs(input, input.X - node.X, input.Y - node.Y, index, _eventCancellation.Token);
+        if (prevented) args.PreventDefault();
         TrackCallback(DispatchEventAsync(handler, null, args));
         Dirty = true;
-        return args.Handled;
+        return args;
     }
 
     private bool Attached(TuiNode node) => PointerPath(node).Contains(RootNode);

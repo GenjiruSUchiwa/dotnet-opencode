@@ -9,7 +9,7 @@ public readonly record struct TerminalPointerInput(TerminalPointerKind Kind, int
     int DeltaX = 0, int DeltaY = 0);
 
 public sealed class TerminalPointerEventArgs(TerminalPointerInput input, int x, int y,
-    int? textIndex, CancellationToken cancellationToken = default) : EventArgs
+    int? textIndex, CancellationToken cancellationToken = default) : TerminalRoutedEventArgs(cancellationToken)
 {
     public TerminalPointerKind Kind => input.Kind;
     public TerminalPointerButton Button => input.Button;
@@ -22,7 +22,11 @@ public sealed class TerminalPointerEventArgs(TerminalPointerInput input, int x, 
     public int DeltaY => input.DeltaY;
     /// <summary>For inputs, a UTF-16 grapheme boundary at the pointer; null for other nodes.</summary>
     public int? TextIndex { get; } = textIndex;
-    public CancellationToken CancellationToken { get; } = cancellationToken;
-    /// <summary>Set before the first await to stop bubbling and wheel defaults.</summary>
-    public bool Handled { get; set; }
+    /// <summary>Compatibility shorthand: true prevents defaults and stops propagation.
+    /// False cannot undo prevention performed by an earlier handler.</summary>
+    public bool Handled
+    {
+        get => DefaultPrevented || PropagationStopped;
+        set { if (value) { PreventDefault(); StopPropagation(); } }
+    }
 }

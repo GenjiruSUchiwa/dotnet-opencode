@@ -13,10 +13,14 @@ public abstract class PointerComponentBase : ComponentBase
     [Parameter] public EventCallback<TerminalPointerEventArgs> OnPointerLeave { get; set; }
     [Parameter] public EventCallback<TerminalPointerEventArgs> OnClick { get; set; }
     [Parameter] public EventCallback<TerminalPointerEventArgs> OnWheel { get; set; }
+    [Parameter] public EventCallback<TerminalRoutedKeyEventArgs> OnKeyInput { get; set; }
+    [Parameter] public EventCallback<TerminalRoutedPasteEventArgs> OnPasteInput { get; set; }
 
     // Call after component-specific attributes (<100), before content (>=108).
     protected void AddPointerAttributes(RenderTreeBuilder builder)
     {
+        builder.AddAttribute(98, "onkeyinput", OnKeyInput);
+        builder.AddAttribute(99, "onpasteinput", OnPasteInput);
         builder.AddAttribute(100, "pointer-events", PointerEvents.ToString());
         builder.AddAttribute(101, "onpointerdown", OnPointerDown);
         builder.AddAttribute(102, "onpointerup", OnPointerUp);

@@ -37,6 +37,14 @@ public sealed class NativeTextView : IDisposable
     /// <summary>Immutable native width method: 0=wcwidth, 1=unicode, 3=unicode-wide.</summary>
     public byte WidthMethod { get; }
     internal uint ViewHandle { get { Guard(); return _view; } }
+    internal uint DisplayLength
+    {
+        get
+        {
+            Guard(); var lines = OpenTuiNative.TextLineCount(_buffer);
+            return checked(OpenTuiNative.TextDisplayWidth(_buffer) + (lines > 0 ? lines - 1 : 0));
+        }
+    }
 
     public NativeTextView(byte widthMethod = 1)
     {

@@ -27,6 +27,10 @@ public sealed partial class TuiRenderer
     private void ClearSelection(bool resetClicks)
     {
         Dispatcher.AssertAccess();
+        var textarea = _textareaSelectionOwner?.Editor;
+        _textareaSelectionOwner = null;
+        if (textarea is { IsMounted: true } && textarea.Snapshot.Selection is { } editorRange && editorRange.End > editorRange.Start)
+            textarea.ClearSelection();
         var embedded = _embeddedSelectionOwner?.EmbeddedTerminal;
         _embeddedSelectionOwner = null;
         _embeddedSelectionDragging = false;
@@ -47,6 +51,7 @@ public sealed partial class TuiRenderer
 
     private void EnsureSelection()
     {
+        if (_textareaSelectionOwner is { } editor && (!Attached(editor) || editor.Editor?.IsMounted != true)) ClearSelection();
         if (_embeddedSelectionOwner is { } embedded && (!Attached(embedded) || embedded.EmbeddedTerminal?.IsDisposed != false)) ClearSelection();
         if (_selectedViews.Any(item => !Attached(item.Key) || !item.Key.Selectable || item.Key.LayoutWidth <= 0 || item.Key.LayoutHeight <= 0 ||
             item.Value.Source != item.Key.PlainText || item.Key.TextView is { } view && view.WidthMethod != item.Value.WidthMethod))

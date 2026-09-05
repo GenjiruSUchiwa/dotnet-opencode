@@ -68,7 +68,7 @@ public sealed partial class TuiLayoutEngine
         LayoutWithYoga(root, width, height);
     }
 
-    private static bool FocusedTerminal(TuiNode node) => node.Focused && node.EmbeddedTerminal is not null || node.LayoutChildren.Any(FocusedTerminal);
+    private static bool FocusedTerminal(TuiNode node) => node.Focused && (node.EmbeddedTerminal is not null || node.Editor is not null) || node.LayoutChildren.Any(FocusedTerminal);
 
     private void FindModals(TuiNode node)
     {
@@ -124,6 +124,7 @@ public sealed partial class TuiLayoutEngine
         var bottom = (int)Math.Min(clipBottom, (long)node.Y + node.LayoutHeight);
         var fg = node.Fg ?? foreground;
         var bg = node.ShouldFill ? node.Bg ?? background : background;
+        if (node.Editor is { Visible: false } or { IsDisposed: true }) return;
         if (right <= left || bottom <= top)
         {
             if (node.Overflow == TuiOverflow.Visible)
@@ -136,7 +137,7 @@ public sealed partial class TuiLayoutEngine
         {
             // Bordered boxes use the native primitive's interior fill and border
             // background handling, not an opaque prefill followed by glyph text.
-            if (borderSides == TuiBorderSides.None && node.ShouldFill && node.Bg.HasValue)
+            if (borderSides == TuiBorderSides.None && node.ShouldFill && node.Bg.HasValue && node.Editor is null)
                 OpenTuiNative.FillRect(buffer, left, top, right - left, bottom - top, bg);
             var selectionFg = node.SelectionForeground ?? Colors.SelectionForeground;
             var selectionBg = node.SelectionBackground ?? Colors.SelectionBackground;
@@ -145,6 +146,28 @@ public sealed partial class TuiLayoutEngine
             // Passing the inherited canvas as an opaque text default changes
             // native selection inversion (and styled-run background composition).
             var textBackground = node.Bg ?? new NativeRgba(0, 0, 0, 0);
+            if (node.Editor is { } editor)
+            {
+                var native = editor.Editor;
+                editor.Resize(node.LayoutWidth, node.LayoutHeight);
+                native.SetStyle(node.Focused ? node.FocusedForeground ?? fg : fg,
+                    node.Focused ? node.FocusedBackground ?? textBackground : textBackground, selectionBg, selectionFg);
+                native.SetHighlights(node.EditorRules, editor.Marks.All.Where(mark => mark.StyleKey is not null).Select(mark =>
+                    (checked((uint)(mark.Start - native.TextRange(0, checked((uint)mark.Start)).Count(character => character == '\n'))),
+                     checked((uint)(mark.End - native.TextRange(0, checked((uint)mark.End)).Count(character => character == '\n'))),
+                     mark.StyleKey!, (byte)Math.Clamp(mark.Priority, 0, 255))));
+                native.Draw(buffer, node.X, node.Y);
+                if (node.Focused && editor.CanFocus)
+                {
+                    var cursor = native.VisualCursor;
+                    var x = (long)node.X + cursor.Column;
+                    var y = (long)node.Y + cursor.Row;
+                    OpenTuiNative.SetCursorPosition(renderer, Coordinate(x + 1), Coordinate(y + 1), x >= left && x < right && y >= top && y < bottom);
+                    OpenTuiNative.SetCursorColor(renderer, node.CursorColor ?? Colors.Cursor ?? fg);
+                    OpenTuiNative.SetCursorAppearance(renderer, node.EditorCursorStyle);
+                }
+                return;
+            }
             if (borderSides != TuiBorderSides.None)
             {
                 var characters = node.BorderCodepoints ?? (node.BorderStyle is "left" or "heavy" ? HeavyBorder

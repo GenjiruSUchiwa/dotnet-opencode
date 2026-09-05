@@ -8,6 +8,7 @@ public sealed class TerminalTextMarksHistory
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
     public void Save(TerminalTextMarks marks) { _undo.Push(marks.Snapshot()); _redo.Clear(); }
+    public void Save(TerminalTextMarksSnapshot snapshot) { _undo.Push(snapshot); _redo.Clear(); }
     public bool Undo(TerminalTextMarks marks) => Restore(_undo, _redo, marks);
     public bool Redo(TerminalTextMarks marks) => Restore(_redo, _undo, marks);
     public void Clear() { _undo.Clear(); _redo.Clear(); }

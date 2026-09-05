@@ -34,6 +34,12 @@ public sealed class TuiNode
     internal IComponent? Component;
     internal TerminalScrollState? ScrollState;
     internal EmbeddedTerminalState? EmbeddedTerminal;
+    internal TextareaState? Editor;
+    internal IReadOnlyList<NativeSyntaxRule> EditorRules = [];
+    internal NativeCursorAppearance EditorCursorStyle;
+    internal NativeRgba? FocusedForeground, FocusedBackground;
+    internal ulong RoutedKeyHandlerId, RoutedPasteHandlerId;
+    internal ulong EditorContentHandlerId, EditorCursorHandlerId, EditorSubmitHandlerId, EditorReadyHandlerId, EditorFocusHandlerId;
     internal ImageState? Image;
     internal ImageFit ImageFit;
     internal NativeImageProtocol ImageProtocol;

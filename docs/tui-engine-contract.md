@@ -255,3 +255,23 @@ LayoutAbsoluteChildren/IntrinsicTextWidth helpers. No C# source changes followed
 the successful final build. This checkpoint supplies the active Yoga allocator
 and E5 native text properties; E6 and the explicitly listed API/runtime gaps
 remain required before claiming the complete Prompt translation is ready.
+
+## E6 / coupled E7 continuation
+
+The new native-owned `Textarea` / `TextareaState` path now supersedes the E6
+implementation blocker above. It binds existing EditBuffer/EditorView exports,
+uses Yoga native measure target 2, paints with bufferDrawEditorView, and owns
+movement/selection/undo/edit operations once. Legacy Input remains explicitly
+controlled for compatibility and is not the production Prompt target.
+
+`docs/native-textarea-contract.md` contains the source/ABI ownership evidence,
+public command and routed-event contract, typed mark/payload snapshot handoff,
+adapter removal gate, and exact limits. No app translation or native ABI/package
+change was made. Compile success does not lift the runtime acceptance gate.
+
+**E6/E7 implementation checkpoint frozen:** full CLI dependency build passed with
+0 warnings and 0 errors (29.78 seconds), pinned SDK preview 7,
+`OpenApiGenerateDocuments=false`, artifacts `C:\tmp\opencode\native-textarea-e6`.
+The implementation is available for adapter review, not claimed visually or
+interactively verified. Application editing-handler migration remains a separate
+explicit handoff; do not keep two editors active for the same Prompt.

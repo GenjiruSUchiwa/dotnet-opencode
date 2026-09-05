@@ -266,7 +266,9 @@ public sealed class OpenTuiHost : IAsyncDisposable
         }
         if (Renderer.DispatchEmbeddedKey(key, app.OnInputError)) return;
         var routed = app.DispatchKeymap(key, Renderer.KeymapContext(layout), TimeSpan.FromMilliseconds(Clock.GetTimestampMilliseconds()));
-        if (!press || routed?.PreventDefault == true || routed?.StopPropagation == true) return;
+        if (routed?.StopPropagation == true) return;
+        if (Renderer.DispatchTextareaKey(key, routed?.PreventDefault == true)) return;
+        if (!press || routed?.PreventDefault == true) return;
         if (Renderer.DispatchTextInput(key)) return;
         var projection = key.ProjectConsoleKeys();
         const TerminalKeyProjectionLoss compatible = TerminalKeyProjectionLoss.Utf16Split | TerminalKeyProjectionLoss.LinefeedAlias;

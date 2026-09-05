@@ -13,6 +13,8 @@ public sealed class NativeYogaTree : IDisposable
     private readonly HashSet<nint> _nodes = [];
     private readonly List<uint> _measureOwners = [];
     private readonly List<NativeTextView> _views = [];
+    private readonly List<NativeEditor> _editors = [];
+    private readonly List<IDisposable> _editorLeases = [];
     private readonly Dictionary<nint, nint> _parents = [];
     private readonly Dictionary<nint, uint> _childCounts = [];
     private readonly HashSet<nint> _leaves = [];
@@ -118,11 +120,25 @@ public sealed class NativeYogaTree : IDisposable
         OpenTuiNative.YogaSetMeasure(node, true);
     }
 
+    public void MeasureEditor(nint node, NativeEditor editor)
+    {
+        Require(node);
+        if (_childCounts.GetValueOrDefault(node) != 0 || !_leaves.Add(node)) throw new InvalidOperationException("Measure target requires an unmeasured Yoga leaf.");
+        _editorLeases.Add(editor.BorrowForMeasure());
+        var handle = OpenTuiNative.CreateMeasureRenderable();
+        if (handle == 0) throw new InvalidOperationException("Native measure-target allocation failed.");
+        _measureOwners.Add(handle);
+        if (!OpenTuiNative.AttachMeasureYoga(handle, node) || !OpenTuiNative.SetMeasureTarget(handle, 2, editor.ViewHandle))
+            throw new InvalidOperationException("Native editor measure target could not be attached to Yoga.");
+        _editors.Add(editor);
+    }
+
     public unsafe void Calculate(nint root, float width = float.NaN, float height = float.NaN)
     {
         ObjectDisposedException.ThrowIf(_config == 0, this);
         Require(root);
         foreach (var view in _views) _ = view.ViewHandle;
+        foreach (var editor in _editors) _ = editor.ViewHandle;
         lock (CalculationGate)
         {
             if (_calculating is not null) throw new InvalidOperationException("A Yoga measure callback cannot recursively calculate layout.");
@@ -170,6 +186,8 @@ public sealed class NativeYogaTree : IDisposable
         foreach (var node in _nodes) OpenTuiNative.YogaNodeFree(node);
         OpenTuiNative.YogaConfigFree(_config);
         _config = 0;
-        _measureOwners.Clear(); _nodes.Clear(); _measures.Clear(); _parents.Clear(); _views.Clear(); _childCounts.Clear(); _leaves.Clear();
+        foreach (var lease in _editorLeases) lease.Dispose();
+        _editorLeases.Clear();
+        _measureOwners.Clear(); _nodes.Clear(); _measures.Clear(); _parents.Clear(); _views.Clear(); _editors.Clear(); _childCounts.Clear(); _leaves.Clear();
     }
 }

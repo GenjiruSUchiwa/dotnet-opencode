@@ -72,6 +72,14 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             _modalFocus.Add((modal, _focused));
             SetFocus(null);
         }
+        if (_focused?.Editor is { BlurRequested: true } blurring)
+        {
+            blurring.BlurRequested = false; SetFocus(null);
+        }
+        if (Inputs(FocusScope).FirstOrDefault(node => node.Editor?.FocusRequested == true && Visible(node)) is { } editorRequest)
+        {
+            editorRequest.Editor!.FocusRequested = false; SetFocus(editorRequest); return;
+        }
         if (Inputs(FocusScope).FirstOrDefault(node => node.EmbeddedTerminal?.FocusRequested == true && Visible(node)) is { } requested)
         {
             requested.EmbeddedTerminal!.FocusRequested = false;
@@ -81,7 +89,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
         if (_focused is not null && Visible(_focused))
             for (var parent = _focused; parent is not null; parent = parent.Parent)
                 if (ReferenceEquals(parent, FocusScope)) return;
-        SetFocus(Inputs(FocusScope).FirstOrDefault(Visible));
+        SetFocus(Inputs(FocusScope).FirstOrDefault(node => Visible(node) && node.Editor?.AutoFocusAllowed != false));
     }
 
     private static IEnumerable<TuiNode> Modals(TuiNode node)
@@ -93,6 +101,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
 
     private static bool Visible(TuiNode node)
     {
+        if (node.Editor is { CanFocus: false } or { IsMounted: false }) return false;
         if (node.TagName == "modal") return node.LayoutWidth > 0 && node.LayoutHeight > 0;
         var left = (long)node.X;
         var top = (long)node.Y;
@@ -116,15 +125,15 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
     private void SetFocus(TuiNode? node)
     {
         if (ReferenceEquals(_focused, node)) return;
-        if (_focused is not null) { _focused.Focused = false; _focused.EmbeddedTerminal?.Focus(false); }
+        if (_focused is not null) { _focused.Focused = false; _focused.EmbeddedTerminal?.Focus(false); _focused.Editor?.SetFocused(false); }
         _focused = node;
-        if (node is not null) { node.Focused = true; node.EmbeddedTerminal?.Focus(true); }
+        if (node is not null) { node.Focused = true; node.EmbeddedTerminal?.Focus(true); node.Editor?.SetFocused(true); }
         Dirty = true;
     }
 
     private static IEnumerable<TuiNode> Inputs(TuiNode node)
     {
-        if (node.TagName == "input" || node.EmbeddedTerminal is not null || node.FocusKey is not null && node.KeyHandlerId != 0) yield return node;
+        if (node.TagName == "input" || node.Editor?.CanFocus == true || node.EmbeddedTerminal is not null || node.FocusKey is not null && node.KeyHandlerId != 0) yield return node;
         foreach (var child in node.LayoutChildren)
             foreach (var input in Inputs(child)) yield return input;
     }
@@ -170,8 +179,9 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             Data = new Dictionary<string, object?>
             {
                 ["terminal.modal"] = _modalFocus.Count > 0,
-                ["terminal.editor"] = _focused?.TagName == "input",
-                ["terminal.multiline"] = _focused?.TagName == "input" && _focused.MaxHeight > 1,
+                ["terminal.editor"] = _focused?.TagName == "input" || _focused?.Editor is not null,
+                ["terminal.multiline"] = _focused?.Editor is not null || _focused?.TagName == "input" && _focused.MaxHeight > 1,
+                ["terminal.textarea"] = _focused?.Editor,
                 ["terminal.focusKey"] = _focused?.FocusKey,
                 ["terminal.measure"] = (Func<string, int?, TerminalTextLayout>)((text, width) => layout.MeasureInput(text, width ?? Math.Max(1, _focused?.LayoutWidth ?? 1)))
             }
@@ -183,6 +193,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
         Dispatcher.AssertAccess();
         if (_eventsStopped) return false;
         EnsureFocus();
+        if (_focused?.Editor is { } editor) return DispatchTextareaPaste(_focused, editor, text);
         if (_focused?.EmbeddedTerminal is { } terminal) { terminal.Paste(text); return true; }
         if (_focused is not { PasteHandlerId: > 0 } node) return _modalFocus.Count > 0;
         var args = new TerminalPasteEventArgs(text, _eventCancellation.Token);
@@ -199,6 +210,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
     public void ObservePendingEvents()
     {
         Dispatcher.AssertAccess();
+        ObserveTextareas();
         for (var i = _callbacks.Count - 1; i >= 0; i--)
         {
             if (!_callbacks[i].IsCompleted) continue;
@@ -285,6 +297,8 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             // stringifies those. The generic text component owns its immutable runs.
             if (component.Component is TuiText text && component.Children.Count == 1)
                 component.Children[0].TextRuns = text.Runs;
+            if (component.Component is Textarea textarea && component.Children.Count == 1)
+                BindTextarea(component.Children[0], textarea);
             if (component.Component is Box box && component.Children.Count == 1)
                 component.Children[0].BorderCodepoints = box.BorderCodepoints;
             if (component.Component is Input input && component.Children.Count == 1)
@@ -516,6 +530,15 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             case "onkeydown": node.KeyHandlerId = EventHandler(node, name, value, handlerId); break;
             case "onsizechanged": node.SizeHandlerId = EventHandler(node, name, value, handlerId); break;
             case "onpaste": node.PasteHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "onkeyinput": node.RoutedKeyHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "onpasteinput": node.RoutedPasteHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "editor-content": node.EditorContentHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "editor-cursor": node.EditorCursorHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "editor-submit": node.EditorSubmitHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "editor-ready": node.EditorReadyHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "editor-focus": node.EditorFocusHandlerId = EventHandler(node, name, value, handlerId); break;
+            case "focused-fg": node.FocusedForeground = Color(node, name, value); break;
+            case "focused-bg": node.FocusedBackground = Color(node, name, value); break;
             case "ontextinput": node.TextInputHandlerId = EventHandler(node, name, value, handlerId); break;
             case "onclose": node.CloseHandlerId = EventHandler(node, name, value, handlerId); break;
             case "placeholder": node.Placeholder = value?.ToString(); break;

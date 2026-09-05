@@ -107,6 +107,18 @@ public sealed partial class TuiLayoutEngine
         yoga.SetBorder(handle, 0, node.BorderLeft); yoga.SetBorder(handle, 1, node.BorderTop);
         yoga.SetBorder(handle, 2, node.BorderRight); yoga.SetBorder(handle, 3, node.BorderBottom);
 
+        if (node.Editor is { } editor)
+        {
+            if (editor.IsDisposed) { yoga.SetEnum(handle, NativeYogaEnum.Display, 1); return entry; }
+            editor.EnsureNative(_widthMethod);
+            editor.SetWrapMode(node.WrapMode);
+            editor.Editor.SetPlaceholder(node.Placeholder, node.PlaceholderFg ?? new NativeRgba(102, 102, 102));
+            if (node.MinHeight is null) yoga.SetValue(handle, NativeYogaValue.MinHeight, NativeYogaUnit.Point, 1);
+            if (!editor.Visible) yoga.SetEnum(handle, NativeYogaEnum.Display, 1);
+            yoga.MeasureEditor(handle, editor.Editor);
+            return entry;
+        }
+
         if (node.TagName == "input")
         {
             var view = TextView(node);

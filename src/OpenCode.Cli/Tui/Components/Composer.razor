@@ -49,7 +49,7 @@
     @if (!Compact)
     {
         <Box Direction="TuiFlexDirection.Row" Width="Width" Height="1" Bg="@Colors.PageBackground">
-            <TuiText Value="@(Colors.OpaquePrompt ? "╹" : " ")" Fg="@Colors.Border" Bg="@Colors.PageBackground" Width="1" Height="1" Selectable="false" />
+            <TuiText Value="@(Colors.OpaquePrompt ? "╹" : " ")" Fg="@Colors.Border" Bg="@Colors.PromptBackground" Width="1" Height="1" Selectable="false" />
             <TuiText Value="@(new string(Colors.OpaquePrompt ? '▀' : ' ', Math.Max(0, Width - 1)))" Fg="@Colors.PromptBackground" Bg="@Colors.PageBackground" Width="@Math.Max(0, Width - 1)" Height="1" Selectable="false" />
         </Box>
         <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">

@@ -198,3 +198,29 @@ The separate compiler-output inspection build also passed cleanly; its emitted
 Razor sources stayed under `C:\tmp\opencode` and were only read, never edited or
 executed. No tests or runtime probes ran. No source changes followed the final
 successful build; production caller integration is complete.
+
+## Single-cell corner follow-up
+
+The subsequent user screenshot isolates one remaining black cell behind `╹`,
+not the earlier 12-column whitespace gap. Home explicitly gave this decorative
+cell `Colors.PageBackground`; Session had the equivalent `Theme.Background`.
+Upstream prompt/index.tsx 1925–1949 represents this as a left Box border with
+borderHighlight foreground, beside a separate promptBg half-block bottom border;
+it does not assign an explicit page-black text background to the corner glyph.
+
+The corner cell now uses its owning composer surface: `Colors.PromptBackground`
+on Home and `Theme.ElevatedBackground` on Session. The foreground remains the
+existing border/agent/shell color, so this does not turn the full cell blue.
+The adjacent `▀` run and its page background are unchanged. No overlay, new color,
+geometry, native API, input handler, or draft change is involved. Both Session
+decorative runs now explicitly use Selectable=false, matching Home and their
+source border role; real text selection and native inversion are unchanged.
+
+Visual confirmation remains pending: verify that the corner's uncovered pixels
+are composer grey while its half-height stroke retains the border color, on Home
+and Session (including alternate themes). No runtime or tests were invoked.
+
+**Corner fix frozen:** pinned SDK 11.0.100-preview.7.26381.103 full CLI dependency
+build passed with **0 warnings and 0 errors** (54.17 seconds), with
+`OpenApiGenerateDocuments=false` and the same isolated incremental artifact path.
+Log: `C:\tmp\opencode\composer-corner-build.log`. No source changes after build.

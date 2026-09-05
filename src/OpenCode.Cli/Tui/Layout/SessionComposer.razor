@@ -44,9 +44,9 @@
         </Box>
     </Box>
     <Box Direction="TuiFlexDirection.Row" Width="Width" Height="1" Bg="@Theme.Background">
-        <TuiText Value="╹" Width="1" Height="1" Fg="@(ShellMode ? ShellColor : Theme.Agent)" Bg="@Theme.Background" />
+        <TuiText Value="╹" Width="1" Height="1" Fg="@(ShellMode ? ShellColor : Theme.Agent)" Bg="@Theme.ElevatedBackground" Selectable="false" />
         <TuiText Value="@(new string('▀', Math.Max(0, Width - 1)))" Width="@Math.Max(0, Width - 1)" Height="1"
-                 Fg="@Theme.ElevatedBackground" Bg="@Theme.Background" />
+                 Fg="@Theme.ElevatedBackground" Bg="@Theme.Background" Selectable="false" />
     </Box>
     <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">
         <TuiText Value="@(Running ? "[⋯] " + InterruptShortcut + " interrupt" : Directory)" Grow="1" Height="1" Fg="@Theme.Subdued" />

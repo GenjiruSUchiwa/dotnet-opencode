@@ -80,18 +80,33 @@ public sealed class IntegrationHostService : IHostedService, IAsyncDisposable
     public async ValueTask<IntegrationLocationLease> AcquireAsync(LocationRef location, ToolLocationFactory factory,
         PermissionLocationMap map, bool observe = true, CancellationToken ct = default)
     {
-        var tools = await factory.AcquireAsync(map, location, ct);
+        ToolLocationLease? tools = null;
+        var stage = "tool-location";
         try
         {
+            tools = await factory.AcquireAsync(map, location, ct);
+            stage = "integration-location";
             var entry = ForLocation(tools.Location, tools.Mcp);
             if (observe)
             {
-                await tools.Mcp.ObserveAsync(InstructionCatalog.ReadMcpConfiguration(tools.Location.Directory), ct);
+                stage = "mcp-configuration";
+                var configuration = InstructionCatalog.ReadMcpConfiguration(tools.Location.Directory);
+                stage = "mcp-observation";
+                await tools.Mcp.ObserveAsync(configuration, ct);
+                stage = "integration-catalog";
                 await ReloadAsync(entry, ct);
             }
             return new IntegrationLocationLease(tools, entry.Runtime);
         }
-        catch { await tools.DisposeAsync(); throw; }
+        catch (Exception error)
+        {
+            // This path can touch credential-bearing MCP configuration. Record
+            // only our fixed phase and CLR type, never exception text/config/URLs.
+            if (error is not OperationCanceledException || !ct.IsCancellationRequested)
+                _log.LogWarning("Integration acquisition failed in {Stage} ({ExceptionType}).", stage, error.GetType().Name);
+            if (tools is not null) await tools.DisposeAsync();
+            throw;
+        }
     }
 
     private Entry ForLocation(LocationInfo location, McpRuntime mcp)

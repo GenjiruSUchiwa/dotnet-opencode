@@ -439,3 +439,86 @@ Metadata checkpoint is frozen for parent integration; global generation remains
 explicitly pending. No tests, runtime/DI/SDK/app/model/DB/SQL/migration/native/
 provider/MCP/PTY execution, network verification, production data access, Git,
 install, publishing, or delegation occurred. No runtime parity claim is made.
+
+## Focused integration HTTP 503 — diagnostic checkpoint
+
+Observed user symptom: the selected local .NET service returns 503 for
+`GET /api/integration?location[directory]=C:\Repos\Hona\opencode-dotnet`.
+The response body and an authenticated integration probe were not available to this
+pass. **The observed failure's root cause is not yet confirmed.** No 503 was changed
+to 200, no empty catalog was substituted, and no readiness/config failure was ignored.
+
+### Source trace
+
+1. Server readiness middleware can return 503 before endpoint execution.
+2. IntegrationEndpoints resolves the request Location, then calls
+   IntegrationHostService.AcquireAsync with observation enabled. Its filter maps
+   NotSupportedException and CatalogLocationUnavailableException to 503.
+3. Acquisition enters the authoritative ToolLocationFactory. LocalToolOptionsFor
+   resolves LoadReadInstructions, ripgrep, Forms, MCP OAuth, Shell/Subagent jobs,
+   and native plugins. A missing/invalid ripgrep executable is an explicit
+   NotSupportedException and therefore a concrete possible 503 source. Native
+   catalog access currently requires this tool dependency too.
+4. The factory initializes backend plugins before WebSearchToolBinding.RefreshAsync.
+   Its WebSearchReady callback reads the existing WebSearchPluginSource directly;
+   it does not recursively acquire CommandHostService/the factory. Forms.ForLocation
+   similarly does not reenter Location acquisition. The inspected registrations for
+   these services and shared job instances are present; no missing DI registration
+   was established from source.
+5. After factory acquisition, ReadMcpConfiguration calls
+   ProducerConfiguration.RequireNoPluginSources. Configured/discovered JS plugin
+   sources produce explicit NotSupportedException even before MCP observation.
+   Those guards remain intact; this pass did not inspect or dump user configuration.
+6. ObserveAsync initializes/reconciles configured MCP servers. Only afterward does
+   IntegrationProviders read their real OAuth registrations and combine native
+   providers, WebSearch integrations, and registered command methods. ListAsync
+   projects these definitions with the channel credential store.
+
+The upstream integration handler reads its Location's Integration service. Native
+provider definition creation does not call provider login/model endpoints. However,
+the existing native list acquisition explicitly observes MCP: an integration GET is
+not a pure health probe and can initialize configured plugins/MCP/processes. No such
+request or provider network call was made for this investigation.
+
+### Authored diagnostic change
+
+Only `src/OpenCode.Server/Integrations/IntegrationHostService.cs` changed, plus this
+report. Acquisition now logs a fixed stage and CLR exception type before rethrowing:
+`tool-location`, `integration-location`, `mcp-configuration`, `mcp-observation`, or
+`integration-catalog`. Normal caller cancellation is not logged as a failure. The
+log intentionally excludes exception text, request values, configuration, URLs,
+credentials, and successful catalog contents. Incomplete acquisitions still release
+the borrowed tool Location. Existing public status/body mapping remains unchanged.
+
+This is diagnostic instrumentation, **not a claimed fix of the user's 503**.
+Removing ripgrep requirements, changing MCP initialization, or bypassing config guards
+without identifying the actual branch would be speculative and was not done.
+
+### Exact diagnostic permission/evidence needed from parent
+
+First preference: the already-observed failing response's `_tag`, `service`, and
+sanitized `message`, without headers/authentication or a config/credential dump.
+These distinguish a pre-ready host response from an Integration capability/config
+failure. If the existing response cannot be recovered, authorize **one authenticated
+GET of that exact Integration URL against the verified registered .NET instance**,
+explicitly acknowledging that it may initialize MCP/plugins. Prior health-only
+permission does not authorize it. Keep the credential in memory and never display it.
+On success report status only; do not dump connection/credential inventory.
+
+If the response message is insufficient, the new stage-only warning requires an
+explicitly authorized deployment/restart to be loaded; this pass did not stop or
+replace any process. Old PID 27896 was not touched. Parent can then supply the stage
+and exception type for the same single authorized request.
+
+### Build / freeze
+
+Pinned SDK `11.0.100-preview.7.26381.103`, repository `.dotnet/dotnet.exe`,
+`OpenApiGenerateDocuments=false`. Server and dependency graph passed with
+**0 warnings / 0 errors**.
+
+Evidence: `C:/tmp/opencode/integration-503-f52e4d13641646f5809fa294c9082fb1/server-build.log`.
+
+Frozen pending the diagnostic permission/evidence above. No tests, app/TUI/DI startup,
+integration/health request, provider/MCP/DB/SQL/native/PTY runtime, production data,
+credential/config dump, service mutation, Git operation, or delegation occurred.
+Persistent server/UI separation and strict local-build negotiation remain unchanged.

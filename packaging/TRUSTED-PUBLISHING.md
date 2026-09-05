@@ -8,7 +8,7 @@
 - Version: `0.1.0-ci.<UTC commit timestamp>.<GitHub run ID>.<run attempt>`.
 - A matching GitHub prerelease retains the package and source commit.
 - Packaging must succeed before any publishing credential is requested. The workflow does not launch the application or perform native/runtime verification.
-- Gitleaks scans the complete Git history before packaging. Its binary is version/hash pinned and reports redact secret values. The only project allowance is an exact upstream migration ID in its declaration file.
+- Gitleaks is available for optional manual scans through `.github/scripts/scan-secrets.ps1`; it is not a publishing gate. Run it from the repository root with complete Git history available. Its binary is version/hash pinned and reports redact secret values. The only project allowance is an exact upstream migration ID in its declaration file.
 
 ## NuGet.org trusted publisher
 

@@ -24,6 +24,10 @@
         {
             <TuiText Value="@_error" Height="1" Fg="@Theme.Error" />
         }
+        @if (SourceError is not null)
+        {
+            <TuiText Value="@SourceError" Fg="@Theme.Error" />
+        }
     </Box>
     <Box Direction="@(TerminalWidth < 80 ? TuiFlexDirection.Column : TuiFlexDirection.Row)"
          PaddingLeft="2" PaddingRight="@(Width < 44 ? 1 : 3)" PaddingTop="1" PaddingBottom="1" Gap="1" Bg="@Theme.RaisedBackground">
@@ -32,8 +36,9 @@
             <Box Direction="@(Width < 44 ? TuiFlexDirection.Column : TuiFlexDirection.Row)" Gap="1">
                 @for (var index = 0; index < Labels.Length; index++)
                 {
+                    var action = index;
                     var disabled = _pending is not null || _submitted || index == 1 && _stage == Stage.Permission && !AlwaysEnabled;
-                    <Box PaddingX="1" Height="1" Bg="@(!disabled && index == _selected ? Theme.FocusedActionBackground : Theme.ActionBackground)">
+                    <Box PaddingX="1" Height="1" Bg="@(!disabled && index == _selected ? Theme.FocusedActionBackground : Theme.ActionBackground)" OnClick="@(args => ChooseAction(action, args))">
                         <TuiText Value="@Labels[index]" Height="1"
                                  Fg="@(disabled ? Theme.DisabledText : index == _selected ? Theme.FocusedActionText : Theme.ActionText)" />
                     </Box>

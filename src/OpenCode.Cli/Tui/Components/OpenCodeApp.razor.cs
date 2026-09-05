@@ -59,6 +59,9 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private bool _agents;
     private bool _variants;
     private bool _sessions;
+    private bool PromptOverlayOpen => _palette || _models || _agents || _variants || _sessions || _settings || _tabList
+        || _tabRename is not null || _transcriptRowPicker || _messageTarget is not null || _imagePreview is not null
+        || _skillsOpen || _integrations || _mcps || _inboxDialog || _statusDialog || _themesDialog || _stashOpen || _recoveryMovePicker is not null;
     private bool _catalogLoading;
     private string? _catalogError;
     private AppCatalog? _catalog;
@@ -76,7 +79,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private PermissionRequest? ActivePermission => _childSession ? null : _permissions.FirstOrDefault(permission =>
         permission.SessionId == _sessionId || _formScope is { } scope && scope.Session == _sessionId && scope.Descendants.Contains(permission.SessionId));
     private AssistantToolContent? PermissionTool => ActivePermission?.Source is { } source
-        ? _transcriptMessages.OfType<AssistantMessage>().FirstOrDefault(message => message.Id.Value == source.MessageId)?
+        ? PermissionMessages.OfType<AssistantMessage>().FirstOrDefault(message => message.Id.Value == source.MessageId)?
             .Content.OfType<AssistantToolContent>().FirstOrDefault(tool => tool.Id == source.Id) : null;
     private IReadOnlyDictionary<string, JsonElement>? PermissionInput => PermissionTool?.State switch
     {
@@ -205,10 +208,21 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private async Task ApplyAgentSelection(AgentId agent, CancellationToken token)
     {
         if (ChangeAgent is null) throw new InvalidOperationException("Agent selection is not connected to the server.");
-        var configured = _catalog?.Agents.FirstOrDefault(item => item.Id == agent)?.Model;
-        var selection = _agentModelChoices.GetValueOrDefault(agent) ?? configured ?? _creationFallback;
+        var configured = _catalog?.Agents.FirstOrDefault(item => item.Id == agent)
+            ?? throw new InvalidOperationException("The selected agent is no longer in the catalog.");
+        var previousAgent = _agentSelection;
+        var previousModel = CurrentModelSelection;
+        var selection = _agentModelChoices.GetValueOrDefault(agent) ?? configured.Model ?? _creationFallback;
         ConfigureNewSession?.Invoke(agent, selection);
-        ApplyConfiguration(await ChangeAgent(agent, token));
+        try
+        {
+            var configuration = await ChangeAgent(agent, token);
+            token.ThrowIfCancellationRequested();
+            if (configuration.AgentSelection != agent || configuration.SelectionError is not null)
+                throw new InvalidOperationException(configuration.SelectionError ?? "The requested agent selection was not accepted.");
+            ApplyConfiguration(configuration);
+        }
+        catch { ConfigureNewSession?.Invoke(previousAgent, previousModel); throw; }
     }
 
     private Task CycleSelection(string kind, int direction = 1) => RunConfigurationAction(async token =>
@@ -367,6 +381,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
         ReadObservedSession();
         if (!ReferenceEquals(_previousTheme, ThemeView)) { _previousTheme = ThemeView; ApplyHostTheme(); _dirty = true; }
         ReadSessionPresentation();
+        ReadTranscriptImageSource();
         ReadShellMode();
         ReadActivities();
         ReadTerminalSelection();
@@ -388,6 +403,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
             _dirty = true;
         }
         ReadFormState();
+        ReadPermissionContext();
         var canPersist = ReadPersistentPermissionGrants?.Invoke() == true;
         if (canPersist != _canPersistAlways) { _canPersistAlways = canPersist; _dirty = true; }
         if (ReloadOnStart && !_initialReloadStarted)
@@ -414,7 +430,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private async Task RefreshPermissionState()
     {
         if (RefreshPermissions is null || _configurationLifetime.IsCancellationRequested) return;
-        try { await RefreshPermissions(_configurationLifetime.Token); }
+        try { await RefreshPermissions(_configurationLifetime.Token); _permissionContextKey = null; _dirty = true; }
         catch (OperationCanceledException) when (_configurationLifetime.IsCancellationRequested) { }
         catch (Exception exception) { ExecutionError = SessionClientAdapter.Describe(exception); _dirty = true; }
     }
@@ -430,7 +446,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
 
     public void Paste(string text)
     {
-        if (PromptBlocked) return;
+        if (PromptBlocked || PromptOverlayOpen || _activitiesOpen || _terminalFocused || _terminalListOpen) return;
         try { InsertText(TerminalTextEditing.NormalizePaste(text)); }
         catch (ArgumentException exception) { OnInputError(exception.Message); }
     }
@@ -445,7 +461,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     {
         // Keymap callbacks own editing and commands. Only unmatched character input
         // reaches this fallback, preventing a handled operation from running twice.
-        if (PromptBlocked || !_focusedPrompt || char.IsControl(key.KeyChar) || key.Modifiers.HasFlag(ConsoleModifiers.Control)) return;
+        if (PromptBlocked || PromptOverlayOpen || !_focusedPrompt || char.IsControl(key.KeyChar) || key.Modifiers.HasFlag(ConsoleModifiers.Control)) return;
         if (!key.Modifiers.HasFlag(ConsoleModifiers.Alt) && EnterShellMode(key.KeyChar.ToString())) return;
         if (char.IsHighSurrogate(key.KeyChar)) { _highSurrogate = key.KeyChar; return; }
         var text = char.IsLowSurrogate(key.KeyChar) ? _highSurrogate is char high ? new string([high, key.KeyChar]) : "" : key.KeyChar.ToString();

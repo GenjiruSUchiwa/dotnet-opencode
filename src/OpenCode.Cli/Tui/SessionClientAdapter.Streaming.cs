@@ -53,6 +53,7 @@ public sealed partial class SessionClientAdapter
             if (_disposed != 0) return new(false, "The session client is disposed.", unknown);
             if (_feed.Phase != SessionFeedPhase.Live) return new(false, _feed.Error ?? "The event feed is not connected.", unknown);
             if (entry is { Deleted: true }) return new(false, "The Session was deleted.", unknown);
+            if (entry?.NeedsReconciliation == true) return new(false, entry.Error ?? "Reload the Session before submitting input.", unknown);
             if (sessionId is not null && entry is null) return new(false, "Hydrate this Session before submitting input.", unknown);
             if (entry is not null && entry.Synchronization != SessionSynchronization.Live && entry.Creation is null)
                 return new(false, entry.Error ?? "The Session is synchronizing.", unknown);

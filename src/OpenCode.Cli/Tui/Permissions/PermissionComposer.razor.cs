@@ -17,6 +17,7 @@ public partial class PermissionComposer : ComponentBase, IDisposable
     [Parameter] public bool RequestRejectionFeedback { get; set; }
     [Parameter] public IReadOnlyDictionary<string, JsonElement>? SourceInput { get; set; }
     [Parameter] public IReadOnlyDictionary<string, JsonElement>? SourceMetadata { get; set; }
+    [Parameter] public string? SourceError { get; set; }
     [Parameter] public int Width { get; set; } = 75;
     [Parameter] public int TerminalWidth { get; set; } = 80;
     [Parameter] public int TerminalHeight { get; set; } = 24;
@@ -116,6 +117,30 @@ public partial class PermissionComposer : ComponentBase, IDisposable
         }
     }
 
+    private async Task ConfirmSelection(CancellationToken cancellationToken)
+    {
+        if (_disposed || _submitted || _pending is not null) return;
+        if (_stage == Stage.Reject) { await Send(PermissionReply.Reject, cancellationToken); return; }
+        if (_stage == Stage.Always)
+        {
+            if (_selected == 0 && AlwaysEnabled) await Send(PermissionReply.Always, cancellationToken);
+            else { _stage = Stage.Permission; _selected = _scroll = 0; }
+            return;
+        }
+        if (_selected == 0) { await Send(PermissionReply.Once, cancellationToken); return; }
+        if (_selected == 1 && AlwaysEnabled) { _stage = Stage.Always; _selected = _scroll = 0; return; }
+        if (_selected == 2) await Reject(cancellationToken);
+    }
+
+    private async Task ChooseAction(int index, TerminalPointerEventArgs args)
+    {
+        args.Handled = true;
+        if (_disposed || _submitted || _pending is not null || _stage == Stage.Reject || index < 0 || index >= Labels.Length
+            || _stage == Stage.Permission && index == 1 && !AlwaysEnabled) return;
+        _selected = index;
+        await ConfirmSelection(CancellationToken.None);
+    }
+
     private static string Display(JsonElement value) => value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : value.ToString();
     private string? InputText(string key) => SourceInput?.TryGetValue(key, out var value) == true && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     private JsonElement? Metadata(string key) => Request.Metadata?.TryGetValue(key, out var value) == true ? value
@@ -174,15 +199,7 @@ public partial class PermissionComposer : ComponentBase, IDisposable
         }
         if (key.Key == ConsoleKey.Enter)
         {
-            if (_stage == Stage.Reject) await Send(PermissionReply.Reject, args.CancellationToken);
-            else if (_stage == Stage.Always)
-            {
-                if (_selected == 0 && AlwaysEnabled) await Send(PermissionReply.Always, args.CancellationToken);
-                else { _stage = Stage.Permission; _selected = _scroll = 0; }
-            }
-            else if (_selected == 0) await Send(PermissionReply.Once, args.CancellationToken);
-            else if (_selected == 1 && AlwaysEnabled) { _stage = Stage.Always; _selected = _scroll = 0; }
-            else if (_selected == 2) await Reject(args.CancellationToken);
+            await ConfirmSelection(args.CancellationToken);
             return;
         }
         if (_stage != Stage.Reject)

@@ -1,10 +1,17 @@
 @namespace OpenCode.Cli.Tui.Transcript
+@using OpenCode.Cli.Tui.Images
+@using OpenCode.Cli.Tui.Theme
 
 @switch (Message)
 {
     case UserMessage user:
-        <Box Border="left" BorderFg="@Theme.Agent" Bg="@Theme.ElevatedBackground" PaddingLeft="2" PaddingRight="1" PaddingTop="1" PaddingBottom="1"
-             OnClick="@MessageClick">
+        <Box Border="left" BorderFg="@Theme.Agent" Bg="@Theme.ElevatedBackground">
+            @if (ShowImages && ImageLoader is not null && ImageTheme is not null)
+            {
+                <ImageStrip Images="@(TranscriptImages.User(user))" Enabled="true" Loader="ImageLoader" Theme="ImageTheme"
+                            PaddingLeft="2" TerminalHeight="TerminalHeight" OnPreview="OnImagePreview" />
+            }
+            <Box PaddingLeft="2" PaddingRight="1" PaddingTop="1" PaddingBottom="1" OnClick="@MessageClick">
             <TuiText Value="@user.Text" Fg="@Theme.Text" Selectable="true" />
             @foreach (var file in user.Files ?? [])
             {
@@ -18,6 +25,7 @@
             {
                 <TuiText Value="@($"@{attachedAgent.Name}")" Fg="@Theme.Agent" />
             }
+            </Box>
         </Box>
         break;
     case SyntheticMessage synthetic:
@@ -66,6 +74,11 @@
     [Parameter, EditorRequired] public SessionMessage Message { get; set; } = default!;
     [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
     [Parameter] public EventCallback<MessageId> OnMessageActions { get; set; }
+    [Parameter] public bool ShowImages { get; set; }
+    [Parameter] public ImageSourceLoader? ImageLoader { get; set; }
+    [Parameter] public ThemeTokens? ImageTheme { get; set; }
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
     private EventCallback<TerminalPointerEventArgs> MessageClick => OnMessageActions.HasDelegate
         ? EventCallback.Factory.Create<TerminalPointerEventArgs>(this, async args =>
         {

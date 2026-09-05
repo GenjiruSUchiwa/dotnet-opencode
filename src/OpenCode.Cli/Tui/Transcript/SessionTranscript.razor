@@ -3,6 +3,7 @@
 @using OpenCode.Cli.Tui.Images
 @using OpenTui.Blazor.Code
 @using OpenTui.Native
+@using OpenCode.Cli.Tui.Theme
 
 <ScrollBox State="ScrollState">
     @foreach (var row in _rows)
@@ -15,7 +16,8 @@
                     {
                         <TuiText Value="@message.Message.Time.Created.ToLocalTime().ToString("HH:mm")" Fg="@Theme.Subdued" Height="1" />
                     }
-                    <SessionMessageRow Message="message.Message" Theme="Theme" OnMessageActions="OnMessageActions" />
+                    <SessionMessageRow Message="message.Message" Theme="Theme" OnMessageActions="OnMessageActions"
+                                       ShowImages="ShowImages" ImageLoader="ImageLoader" ImageTheme="ImageTheme" TerminalHeight="TerminalHeight" OnImagePreview="OnImagePreview" />
                     break;
                 case ReasoningRow reasoning:
                     <ReasoningBlock Row="reasoning" Theme="Theme" Expanded="@IsExpanded(row.Key, ShowReasoning)" Presentation="MarkdownMode" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" />
@@ -32,6 +34,11 @@
                             <ToolRow @key="part.Key" Part="((AssistantToolContent)part.Part)" Theme="Theme"
                                      Width="@Math.Max(1, Width - 3)"
                                      Expanded="@IsExpanded(part.Key, IsExpanded(row.Key, ShowToolOutput))" />
+                            @if (ShowImages && ImageLoader is not null && ImageTheme is not null)
+                            {
+                                <ImageStrip Images="@(TranscriptImages.Tool((AssistantToolContent)part.Part))" Enabled="true" Loader="ImageLoader" Theme="ImageTheme"
+                                            PaddingLeft="0" TerminalHeight="TerminalHeight" OnPreview="OnImagePreview" />
+                            }
                         }
                     </Box>
                     break;
@@ -44,6 +51,11 @@
                         @if (part.Part is AssistantToolContent tool)
                         {
                             <ToolRow Part="tool" Theme="Theme" Expanded="@IsExpanded(row.Key, ShowToolOutput)" Width="@Math.Max(1, Width - 3)" />
+                            @if (ShowImages && ImageLoader is not null && ImageTheme is not null)
+                            {
+                                <ImageStrip Images="@(TranscriptImages.Tool(tool))" Enabled="true" Loader="ImageLoader" Theme="ImageTheme"
+                                            PaddingLeft="0" TerminalHeight="TerminalHeight" OnPreview="OnImagePreview" />
+                            }
                         }
                     </Box>
                     break;
@@ -81,6 +93,11 @@
     [Parameter] public bool ShowToolOutput { get; set; }
     [Parameter] public bool ShowUsage { get; set; }
     [Parameter] public bool ShowTimestamps { get; set; }
+    [Parameter] public bool GroupExploration { get; set; } = true;
+    [Parameter] public bool ShowImages { get; set; }
+    [Parameter] public ImageSourceLoader? ImageLoader { get; set; }
+    [Parameter] public ThemeTokens? ImageTheme { get; set; }
+    [Parameter] public int TerminalHeight { get; set; } = 24;
     [Parameter] public int Width { get; set; } = 80;
     [Parameter] public MarkdownPresentation MarkdownMode { get; set; }
     [Parameter] public EventCallback<string> OnCopyCode { get; set; }
@@ -102,12 +119,14 @@
     private bool IsExpanded(string key, bool fallback) => !CollapsedRows.Contains(key) && (ExpandedRows.Contains(key) || fallback);
     private ImmutableArray<TranscriptRow> _rows = [];
     private IReadOnlyList<SessionMessage>? _previous;
+    private bool _previousGrouping;
 
     protected override void OnParametersSet()
     {
-        if (ReferenceEquals(_previous, Messages)) return;
+        if (ReferenceEquals(_previous, Messages) && _previousGrouping == GroupExploration) return;
         _previous = Messages;
-        _rows = TranscriptRows.Create(Messages);
+        _previousGrouping = GroupExploration;
+        _rows = TranscriptRows.Create(Messages, GroupExploration);
     }
 
     private string Footer(AssistantMessage message)

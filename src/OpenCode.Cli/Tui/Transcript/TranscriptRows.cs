@@ -17,7 +17,7 @@ public sealed record AssistantFooterRow(AssistantMessage Message)
 public static class TranscriptRows
 {
     // Input order is canonical history order. Queued inputs remain the caller's responsibility.
-    public static ImmutableArray<TranscriptRow> Create(IReadOnlyList<SessionMessage> messages)
+    public static ImmutableArray<TranscriptRow> Create(IReadOnlyList<SessionMessage> messages, bool groupExploration = true)
     {
         var rows = new List<TranscriptRow>();
         foreach (var message in messages)
@@ -53,7 +53,7 @@ public static class TranscriptRows
                     }
                     continue;
                 }
-                if (part is AssistantToolContent exploration && exploration.Name.ToLowerInvariant() is "read" or "glob" or "grep")
+                if (groupExploration && part is AssistantToolContent exploration && exploration.Name.ToLowerInvariant() is "read" or "glob" or "grep")
                 {
                     if (rows.LastOrDefault() is ExplorationRow previous)
                         rows[^1] = previous with { Parts = previous.Parts.Add(row) };

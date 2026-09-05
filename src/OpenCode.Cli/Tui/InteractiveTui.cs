@@ -91,10 +91,10 @@ public static class InteractiveTui
             var agents = catalog?.Agents ?? (api is not null ? (await api.ListAgentsAsync(location, ct: cancellationToken)).Data : []);
             // Native AgentCatalog places the configured selectable default first;
             // ResolveAsync(null) uses this same order. Do not invent a local agent.
-            var agent = session?.Agent is { } selectedAgent ? agents.FirstOrDefault(item => item.Id.Value == selectedAgent)
+            var agent = (session?.Agent ?? (session is null ? creationAgent?.Value : null)) is { } selectedAgent ? agents.FirstOrDefault(item => item.Id.Value == selectedAgent)
                 : agents.FirstOrDefault(item => !item.Hidden && item.Mode != AgentMode.Subagent);
             var creationFallback = defaultModel is null ? null : new ModelRef(defaultModel.ProviderId.Value, defaultModel.Id.Value);
-            var selected = session?.Model ?? (session is null ? agent?.Model ?? creationFallback : null);
+            var selected = session?.Model ?? (session is null ? creationModel ?? agent?.Model ?? creationFallback : null);
             var model = selected is { } selectedModel
                 ? catalog?.Models.FirstOrDefault(item => item.ProviderId.Value == selectedModel.ProviderId && item.Id.Value == selectedModel.Id)
                 : defaultModel;
@@ -106,7 +106,7 @@ public static class InteractiveTui
             return new(agent?.Name ?? session?.Agent, model?.Name ?? selected?.Id, provider?.Name ?? providerId,
                 selected?.Variant, ExecutionError: reason, Connection: $"Server {uri.Host}:{uri.Port}",
                 SessionTitle: session?.Title, SessionId: session?.Id,
-                ModelSelection: session?.Model, AgentSelection: agent?.Id,
+                ModelSelection: session?.Model ?? (session is null ? creationModel : null), AgentSelection: agent?.Id,
                 ChildSession: session?.ParentId is not null, AgentModel: agent?.Model, CreationFallback: creationFallback,
                 Directory: location);
         }
@@ -174,8 +174,9 @@ public static class InteractiveTui
                 Limit = query.Limit, Order = SessionOrder.Descending, RootOnly = true, Search = query.Search,
                 Cursor = query.Cursor, Directory = query.AllProjects ? null : adapter?.CurrentSession?.Location.Directory ?? directory
             }, cancellationToken);
-            try { activeSessions = (await client.ActiveAsync(cancellationToken)).Data.Keys.Select(SessionId.FromExisting).ToHashSet(); }
-            catch (SessionApiException) { activeSessions = new HashSet<SessionId>(); }
+            // A failed active read is not an empty/idle projection. Let the picker report it
+            // while retaining its previous page and the last successful active snapshot.
+            activeSessions = (await client.ActiveAsync(cancellationToken)).Data.Keys.Select(SessionId.FromExisting).ToHashSet();
             sessionCache = sessionCache.Concat(page.Data).GroupBy(session => session.Id).Select(group => group.Last()).ToArray();
             return new(page.Data, page.Cursor.Next);
         }
@@ -248,6 +249,14 @@ public static class InteractiveTui
                     return await adapter!.ExecuteObservedCommandAsync(submission, ready, token);
                 }),
                 [nameof(OpenCodeApp.CopyFormLink)] = (Func<string, CancellationToken, Task>)host.Clipboard.WriteTextAsync,
+                [nameof(OpenCodeApp.ReadFormClipboard)] = (Func<CancellationToken, Task<string?>>)(async token =>
+                {
+                    // Called only by the form/integration's explicit paste action on the dispatcher.
+                    var result = await host.ReadClipboardAsync(new(["text/plain"]), token);
+                    if (result.Status == ClipboardReadStatus.Empty) return null;
+                    if (result.Status == ClipboardReadStatus.Read && result.Representation is { MimeType: "text/plain" } text) return text.ReadText();
+                    throw new InvalidOperationException(result.Error?.Message ?? $"Clipboard text read did not complete: {result.Status}.");
+                }),
                 [nameof(OpenCodeApp.StageMessageRevert)] = (Func<MessageTarget, CancellationToken, Task<SessionRevert>>)(async (target, token) =>
                     (await (await RequireApi(token)).StageRevertAsync(target.SessionId, target.MessageId, ct: token)).Data),
                 [nameof(OpenCodeApp.ForkBeforeMessage)] = (Func<MessageTarget, CancellationToken, Task<SessionInfo>>)(async (target, token) =>
@@ -279,15 +288,28 @@ public static class InteractiveTui
                 [nameof(OpenCodeApp.ChangeModel)] = (Func<ModelRef, CancellationToken, Task<PromptConfiguration>>)(async (model, token) =>
                 {
                     await RequireApi(token);
-                    if (adapter!.SessionId is null) await adapter.CreateSessionAsync(token, model, creationAgent);
-                    else await adapter.SwitchModelAsync(model, token);
+                    if (adapter!.SessionId is null)
+                    {
+                        // Source Home model selection is a local creation preference, not Session admission.
+                        var previous = creationModel;
+                        creationModel = model;
+                        try { return await ReadReadiness(null, token); }
+                        catch { creationModel = previous; throw; }
+                    }
+                    await adapter.SwitchModelAsync(model, token);
                     return await adapter.PrepareAsync(token);
                 }),
                 [nameof(OpenCodeApp.ChangeAgent)] = (Func<AgentId, CancellationToken, Task<PromptConfiguration>>)(async (agent, token) =>
                 {
                     await RequireApi(token);
-                    if (adapter!.SessionId is null) await adapter.CreateSessionAsync(token, creationModel, agent);
-                    else await adapter.SwitchAgentAsync(agent, token);
+                    if (adapter!.SessionId is null)
+                    {
+                        var previous = creationAgent;
+                        creationAgent = agent;
+                        try { return await ReadReadiness(null, token); }
+                        catch { creationAgent = previous; throw; }
+                    }
+                    await adapter.SwitchAgentAsync(agent, token);
                     return await adapter.PrepareAsync(token);
                 }),
                 [nameof(OpenCodeApp.LoadSessions)] = (Func<SessionPickerQuery, CancellationToken, Task<SessionPickerPage>>)LoadSessions,

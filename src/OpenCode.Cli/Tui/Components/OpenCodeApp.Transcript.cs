@@ -11,7 +11,7 @@ public partial class OpenCodeApp
     private ImmutableHashSet<string> _expandedRows = [];
     private ImmutableHashSet<string> _collapsedRows = [];
 
-    private IReadOnlyList<SelectOption<string>> TranscriptRowOptions() => TranscriptRows.Create(_transcriptMessages)
+    private IReadOnlyList<SelectOption<string>> TranscriptRowOptions() => TranscriptRows.Create(_transcriptMessages, _groupExploration)
         .Where(row => row is ReasoningRow or ExplorationRow or PartRow { Part: AssistantToolContent })
         .Select((row, index) =>
         {
@@ -29,7 +29,7 @@ public partial class OpenCodeApp
 
     private void ToggleTranscriptRow(string key)
     {
-        var row = TranscriptRows.Create(_transcriptMessages).FirstOrDefault(row => row.Key == key);
+        var row = TranscriptRows.Create(_transcriptMessages, _groupExploration).FirstOrDefault(row => row.Key == key);
         if (row is not (ReasoningRow or ExplorationRow or PartRow { Part: AssistantToolContent })) return;
         var expanded = !_collapsedRows.Contains(key) && (_expandedRows.Contains(key) ||
             (row is ReasoningRow ? ShowReasoning : ShowToolDetails));

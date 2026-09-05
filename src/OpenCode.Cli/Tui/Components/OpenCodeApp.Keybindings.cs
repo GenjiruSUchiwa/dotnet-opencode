@@ -124,6 +124,8 @@ public partial class OpenCodeApp
             Command("opencode.settings", _ => { _keyTasks.Add(OpenSettings()); return true; }, "Open settings", () => Settings is not null),
             Command("app.toggle.diffwrap", _ => { _keyTasks.Add(Settings!.ChangeAsync("diffs.wrap", 1, _configurationLifetime.Token)); return true; },
                 "Toggle diff wrapping", () => Settings?.Loaded == true && !Settings.Saving),
+            Command("session.toggle.exploration_grouping", _ => { _keyTasks.Add(Settings!.ChangeAsync("session.grouping", 1, _configurationLifetime.Token)); return true; },
+                "Toggle related tool call grouping", () => Settings?.Loaded == true && !Settings.Saving),
             Command("session.sidebar.toggle", _ => { ToggleSidebar(); return true; }, "Toggle sidebar", () => _hasConversation && !_childSession),
             Command("session.tools.toggle", _ => { ShowToolDetails = !ShowToolDetails; _dirty = true; return true; }, "Toggle tool details", () => _hasConversation, false),
             Command("session.usage.toggle", _ => { ShowUsage = !ShowUsage; _dirty = true; return true; }, "Toggle token usage", () => _hasConversation, false),

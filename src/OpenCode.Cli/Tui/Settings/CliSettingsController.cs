@@ -7,7 +7,7 @@ using OpenCode.Cli.Tui.Dialogs;
 public sealed class CliSettingsController(CliSettingsStore store)
 {
     private readonly List<SettingRegistration> _settings = [];
-    private static readonly string[] SourceOrder = ["theme.name", "theme.mode", "session.sidebar", "session.thinking", "session.markdown", "session.grouping", "diffs.view", "diffs.wrap", "scroll.speed", "mouse", "leader.timeout"];
+    private static readonly string[] SourceOrder = ["theme.name", "theme.mode", "session.sidebar", "session.thinking", "session.markdown", "session.grouping", "session.image_preview", "diffs.view", "diffs.wrap", "scroll.speed", "mouse", "leader.timeout"];
     private IEnumerable<SettingRegistration> Available => _settings.Where(setting => setting.Available).OrderBy(setting => Array.IndexOf(SourceOrder, setting.Id));
     private JsonElement _config = JsoncSettingsEditor.Parse("{}");
     public bool Loaded { get; private set; }

@@ -32,10 +32,31 @@ public sealed partial class SessionClientAdapter
                     throw new InvalidOperationException("Reconcile the session before admitting a command.");
             // This HTTP call may wait for an explicit permission reply during
             // interpolation. Do not impose the ordinary short lookup timeout.
-            await _client.ExecuteCommandAsync(session.Id, submission.Command, submission.Prompt, submission.Delivery, cancellationToken);
+            try { await _client.ExecuteCommandAsync(session.Id, submission.Command, submission.Prompt, submission.Delivery, cancellationToken); }
+            catch
+            {
+                lock (_gate)
+                {
+                    observed.NeedsReconciliation = true;
+                    observed.Invalidated = true;
+                    observed.Error = "Command request failed or its outcome is unknown. Reload the Session before submitting again.";
+                    PublishObservation(observed);
+                }
+                throw;
+            }
             // All content/events flow through the existing process-wide receiver and
             // Session read model. Refresh is not a second subscription or model loop.
-            await RefreshObservationAsync(session.Id, cancellationToken);
+            try { await RefreshObservationAsync(session.Id, cancellationToken); }
+            catch (Exception exception)
+            {
+                // The POST was acknowledged. A read failure must not restore a runnable draft.
+                lock (_gate)
+                {
+                    observed.Invalidated = true;
+                    observed.Error = "Command was admitted, but Session refresh failed: " + Describe(exception);
+                    PublishObservation(observed);
+                }
+            }
             return session;
         }
         finally { observed.Admission.Release(); }

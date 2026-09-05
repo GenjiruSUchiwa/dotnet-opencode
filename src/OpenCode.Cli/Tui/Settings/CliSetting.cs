@@ -39,6 +39,7 @@ public static class CliSettings
     public static CliSetting<string> Thinking { get; } = Choice("session.thinking", "Thinking", "Session", "hide", ["hide", "show"], "reasoning chain of thought");
     public static CliSetting<string> Markdown { get; } = Choice("session.markdown", "Markdown", "Session", "rendered", ["source", "rendered"], "syntax concealment rendering");
     public static CliSetting<string> Grouping { get; } = Choice("session.grouping", "Tool grouping", "Session", "auto", ["none", "auto"], "transcript messages reads searches");
+    public static CliSetting<bool> SessionImagePreview { get; } = Toggle("session.image_preview", "Image previews", "Session", false, "image thumbnails attachments previews");
     public static CliSetting<string> Sidebar { get; } = Choice("session.sidebar", "Sidebar", "Session", "auto", ["hide", "auto"], "side panel");
     public static CliSetting<string> DiffView { get; } = Choice("diffs.view", "Layout", "Diffs", "auto", ["auto", "split", "unified"], "diff layout split diff unified diff");
     public static CliSetting<string> DiffWrap { get; } = Choice("diffs.wrap", "Wrapping", "Diffs", "word", ["none", "word"], "diff wrap word wrap line wrap");

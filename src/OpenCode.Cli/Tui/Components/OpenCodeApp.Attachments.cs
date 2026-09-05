@@ -22,9 +22,8 @@ public partial class OpenCodeApp
     private string? _referenceError;
     private string? _dismissedReferenceText;
     private int _referenceIndex;
-    private bool ReferenceAutocompleteVisible => _referenceQuery is not null && _referenceAnchor is not null && !PromptBlocked
-        && !_configurationBusy && !_palette && !_settings && !_models && !_agents && !_variants && !_sessions && !_tabList
-        && !ShellMode && !_stashOpen && !_activitiesOpen && !_integrations && !_mcps && !_inboxDialog && !_terminalListOpen && !_terminalFocused && !_skillsOpen && _messageTarget is null;
+    private bool ReferenceAutocompleteVisible => _referenceQuery is not null && _referenceAnchor is not null && !PromptBlocked && !PromptOverlayOpen
+        && !_configurationBusy && !ShellMode && !_activitiesOpen && !_terminalListOpen && !_terminalFocused;
 
     private void UpdateReferenceAutocomplete()
     {

@@ -45,6 +45,8 @@
                                OnToggleRow="ToggleTranscriptRow"
                                MarkdownMode="_markdownMode" OnMessageActions="OpenMessageActions" OnCopyCode="CopyCode"
                                OnImagePreview="OpenImagePreview"
+                               GroupExploration="_groupExploration" ShowImages="_sessionImagePreview" ImageLoader="_transcriptImageLoader"
+                               ImageTheme="ElevatedColors" TerminalHeight="_height"
                                PendingToolIds="@(_permissions.Where(permission => permission.SessionId == _sessionId && permission.Source?.Type == "tool").Select(permission => permission.Source!.Id).ToHashSet())"
                                ShowReasoning="ShowReasoning" ShowToolOutput="ShowToolDetails"
                                ShowUsage="ShowUsage" ShowTimestamps="ShowTimestamps" />
@@ -59,7 +61,8 @@
         {
             <PermissionComposer @key="permission.Id" Request="permission" Theme="PermissionColors" OnReply="SendPermission"
                                 OnCancel="RefreshPermissionState" CanPersistAlways="_canPersistAlways" RequestRejectionFeedback="@(permission.SessionId != _sessionId)"
-                                SourceInput="PermissionInput" SourceMetadata="PermissionMetadata" Width="ComposerWidth"
+                                 SourceInput="PermissionInput" SourceMetadata="PermissionMetadata" Width="ComposerWidth"
+                                 SourceError="@_permissionContextError"
                                 TerminalWidth="_width" TerminalHeight="_height" FocusKey="permission" />
         }
         else if (ActiveForm is not null && _formScope is { } formScope)

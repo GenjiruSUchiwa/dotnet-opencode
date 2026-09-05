@@ -84,7 +84,8 @@ public partial class OpenCodeApp
 
     protected override Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_activityPromptFocus && !_activitiesOpen) { _activityPromptFocus = false; FocusSessionPane(); }
+        if (_activityPromptFocus && !_activitiesOpen && !PromptOverlayOpen && !_terminalListOpen)
+        { _activityPromptFocus = false; FocusSessionPane(); }
         return Task.CompletedTask;
     }
 

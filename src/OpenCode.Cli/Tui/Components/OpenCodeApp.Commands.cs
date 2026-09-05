@@ -3,6 +3,7 @@ namespace OpenCode.Cli.Tui.Components;
 using Microsoft.AspNetCore.Components;
 using OpenCode.Cli.Tui.Commands;
 using OpenCode.Cli.Tui.Keymap;
+using OpenCode.Cli.Tui.Attachments;
 using OpenCode.Schema;
 using OpenTui.Blazor.Keymap;
 using System.Text;
@@ -19,9 +20,18 @@ public partial class OpenCodeApp
     private string? _commandQuery;
     private string? _dismissedCommandInput;
     private int _commandIndex;
-    private bool CommandAutocompleteVisible => _commandQuery is not null && _commandAnchor is not null && !PromptBlocked
-        && !_palette && !_settings && !_models && !_agents && !_variants && !_sessions && !_tabList && !_integrations && !_mcps && !_inboxDialog
-        && !ShellMode && !_stashOpen && !_activitiesOpen && !_terminalListOpen && !_terminalFocused && !_skillsOpen && _messageTarget is null;
+    private static readonly SlashCommand[] LocalSlashCommands = [
+        new("sessions", null, "session.list", ["resume", "continue"]),
+        new("new", null, "session.new", ["clear"]),
+        new("models", null, "model.list", ["mo"]),
+        new("agents", null, "agent.list"), new("variants", null, "variant.list"),
+        new("settings", null, "opencode.settings"), new("status", null, "opencode.status"),
+        new("themes", null, "theme.switch"), new("connect", null, "provider.connect"),
+        new("mcps", null, "mcp.list"), new("terminal", null, "session.terminal"),
+        new("exit", null, "app.exit", ["quit", "q"])
+    ];
+    private bool CommandAutocompleteVisible => _commandQuery is not null && _commandAnchor is not null && !PromptBlocked && !PromptOverlayOpen
+        && !ShellMode && !_activitiesOpen && !_terminalListOpen && !_terminalFocused;
 
     private void UpdateCommandAutocomplete()
     {
@@ -42,21 +52,7 @@ public partial class OpenCodeApp
             Data = new Dictionary<string, object?>(_lastKeyContext.Data) { [TuiKeymapLayer.ModeKey] = TuiKeymapLayer.BaseMode }
         };
         var commands = _keyLayers.ReachableCommands(context).ToDictionary(command => command.Name);
-        SlashCommand[] local = [
-            new("sessions", null, "session.list", ["resume", "continue"]),
-            new("new", null, "session.new", ["clear"]),
-            new("models", null, "model.list", ["mo"]),
-            new("agents", null, "agent.list"),
-            new("variants", null, "variant.list"),
-            new("settings", null, "opencode.settings"),
-            new("status", null, "opencode.status"),
-            new("themes", null, "theme.switch"),
-            new("connect", null, "provider.connect"),
-            new("mcps", null, "mcp.list"),
-            new("terminal", null, "session.terminal"),
-            new("exit", null, "app.exit", ["quit", "q"])
-        ];
-        _commandOptions = SlashCompletion.Filter(local.Where(item => commands.ContainsKey(item.ClientCommand!))
+        _commandOptions = SlashCompletion.Filter(LocalSlashCommands.Where(item => commands.ContainsKey(item.ClientCommand!))
             .Select(item => item with { Description = commands[item.ClientCommand!].Description ?? commands[item.ClientCommand!].Title })
             .Concat((_presentation?.Commands ?? []).Select(command => new SlashCommand(command.Name, command.Description)))
             .Concat((ActiveSkills?.SlashCommands((_presentation?.Commands ?? []).Select(command => command.Name).ToHashSet(StringComparer.Ordinal)) ?? [])
@@ -161,7 +157,8 @@ public partial class OpenCodeApp
     {
         var slash = SlashHead.Parse(_input);
         if (slash is null) return false;
-        if (slash.Name is "status" or "themes" && slash.Arguments.Length == 0)
+        var local = LocalSlashCommands.FirstOrDefault(command => command.Name == slash.Name || command.Aliases?.Contains(slash.Name) == true);
+        if (local?.ClientCommand is { } id && string.IsNullOrWhiteSpace(slash.Arguments))
         {
             if (delivery == InboxDeliveryMode.Queue)
             { _inputError = "This command cannot be queued."; _dirty = true; return true; }
@@ -169,12 +166,14 @@ public partial class OpenCodeApp
             {
                 Data = new Dictionary<string, object?>(_lastKeyContext.Data) { [TuiKeymapLayer.ModeKey] = TuiKeymapLayer.BaseMode }
             };
-            var id = slash.Name == "status" ? "opencode.status" : "theme.switch";
-            if (_keyDispatcher?.DispatchCommand(id, _keyLayers, context).Handled != true)
+            if (!_keyLayers.ReachableCommands(context).Any(command => command.Name == id))
             { _inputError = $"Command '/{slash.Name}' is unavailable."; _dirty = true; return true; }
+            // Clear this origin synchronously before a local command can navigate to another tab.
             if (!ReplacePromptRange(0, _input.Length, "")) return true;
             ClearPromptAttachments(_tabs.Selected);
             RememberPromptMetadata(_tabs.Selected, null);
+            if (_keyDispatcher?.DispatchCommand(id, _keyLayers, context).Handled != true)
+            { _inputError = $"Command '/{slash.Name}' could not run."; _dirty = true; }
             return true;
         }
         if (_configurationBusy)
@@ -189,15 +188,30 @@ public partial class OpenCodeApp
             _dirty = true;
             return true;
         }
-        if (AdmitCommand is null || _presentation?.CommandError is not null)
+        if (_presentation?.CommandError is not null)
         {
-            _inputError = _presentation?.CommandError ?? "Command admission is not connected to the session observer.";
+            _inputError = _presentation.CommandError;
             _dirty = true;
             return true;
         }
-        if (!(_presentation?.Commands ?? []).Any(command => command.Name == slash.Name))
+        // Upstream submits unknown slash-prefixed text as an ordinary prompt.
+        if (!(_presentation?.Commands ?? []).Any(command => command.Name == slash.Name)) return false;
+        if (AdmitCommand is null)
         {
-            _inputError = $"Command '/{slash.Name}' is not available in this location. Use completion to choose an available command.";
+            _inputError = "Command admission is not connected to the session observer.";
+            _dirty = true;
+            return true;
+        }
+        if (_retryPromptInputs.ContainsKey(_tabs.Selected))
+        {
+            _inputError = "This draft retains a prompt admission. Reconcile it instead of submitting it as a new command.";
+            _dirty = true;
+            return true;
+        }
+        var availability = ReadAdmissionAvailability?.Invoke(_sessionId, CapturePromptAdmission(_input));
+        if (availability?.Allowed != true)
+        {
+            _inputError = availability?.Reason ?? "Session admission state is not connected.";
             _dirty = true;
             return true;
         }
@@ -219,11 +233,11 @@ public partial class OpenCodeApp
         }
         var tab = _tabs.Selected;
         _commandErrors.Remove(tab);
-        var entry = CapturePromptInput(_input);
+        var entry = new PromptEditDocument(CapturePromptInput(_input), _promptMetadata.GetValueOrDefault(tab), GetPromptMarks().Snapshot(), ShellMode);
         RememberPromptHistory(CapturePromptAdmission(_input));
         var submission = new CommandSubmission(_sessionId, _presentation?.Location ?? new LocationRef(CurrentDirectory),
-            slash.Name, entry with { Text = slash.Arguments }, _agentSelection, model, delivery);
-        _history.Add(entry.Text);
+            slash.Name, entry.Input with { Text = slash.Arguments }, _agentSelection, model, delivery);
+        _history.Add(entry.Input.Text);
         _historyIndex = _history.Count;
         _input = _draft = "";
         _cursor = 0;
@@ -231,6 +245,8 @@ public partial class OpenCodeApp
         _preferredColumn = null;
         _editHistory.Clear();
         ClearPromptAttachments(tab);
+        RememberPromptMetadata(tab, null);
+        _highSurrogate = null;
         _draftRevision++;
         _commandQuery = null;
         _commandAdmissions.Add(tab);
@@ -239,30 +255,41 @@ public partial class OpenCodeApp
         return true;
     }
 
-    private async Task AdmitSlashCommand(Guid origin, PromptInput entry, CommandSubmission submission)
+    private async Task AdmitSlashCommand(Guid origin, PromptEditDocument entry, CommandSubmission submission)
     {
+        var target = submission.Session;
         try
         {
-            await AdmitCommand!(submission, session => BindCommandSession(origin, submission.Session, session), _configurationLifetime.Token);
+            await AdmitCommand!(submission, session =>
+            {
+                target = session.Id;
+                return BindCommandSession(origin, submission.Session, session);
+            }, _configurationLifetime.Token);
         }
         catch (OperationCanceledException) when (_configurationLifetime.IsCancellationRequested) { }
         catch (Exception exception)
         {
-            var error = $"Failed to run command: {SessionClientAdapter.Describe(exception)}";
+            var error = $"Command failed or its outcome is unknown; it was not retried. {SessionClientAdapter.Describe(exception)}";
             _commandErrors[origin] = error;
-            if (_tabs.Selected == origin) _inputError = error;
-            if (_tabs.Selected == origin && _input.Length == 0)
+            var visible = _tabs.Selected == origin && (_sessionId == target || submission.Session is null && _sessionId is null);
+            if (visible) _inputError = error;
+            if (visible && _input.Length == 0)
             {
-                _input = entry.Text;
+                _input = entry.Input.Text;
                 _cursor = _input.Length;
                 _selectionAnchor = null;
-                RestorePromptAttachments(origin, entry);
+                RestoreEditDocument(entry);
+                _shellModes[origin] = entry.ShellMode;
                 _draftRevision++;
             }
-            else if (_tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
+            else if (_tabs.Selected != origin && _tabs.Tabs.Any(tab => tab.Key == origin && tab.SessionId == target)
+                && _tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
             {
-                _tabViews[origin] = view with { Input = entry.Text, Cursor = entry.Text.Length, SelectionAnchor = null };
-                RestorePromptAttachments(origin, entry);
+                _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null };
+                RestorePromptAttachments(origin, entry.Input);
+                RememberPromptMetadata(origin, entry.Metadata);
+                if (entry.Marks is { } marks) _promptMarkStates[origin] = AttachmentTextMarks.Restore(entry.Input, marks);
+                _shellModes[origin] = entry.ShellMode;
             }
         }
         finally { _commandAdmissions.Remove(origin); _dirty = true; }

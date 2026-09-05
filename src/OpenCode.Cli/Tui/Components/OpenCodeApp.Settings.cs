@@ -14,6 +14,8 @@ public partial class OpenCodeApp
     private string? _settingsError;
     private string? _settingsPersistenceError;
     private bool _configuredThinking;
+    private bool _groupExploration = true;
+    private bool _sessionImagePreview;
     private Task _settingsUpdate = Task.CompletedTask;
 
     private void ConnectSettings()
@@ -24,6 +26,8 @@ public partial class OpenCodeApp
         Settings.Register(CliSettings.Markdown, value => { _markdownMode = value == "source"
             ? OpenCode.Cli.Tui.Transcript.MarkdownPresentation.Source : OpenCode.Cli.Tui.Transcript.MarkdownPresentation.Rendered; _dirty = true; });
         Settings.Register(CliSettings.Sidebar, value => { _frame.SetSidebarPreference(value == "hide"); _dirty = true; });
+        Settings.Register(CliSettings.Grouping, value => { _groupExploration = value == "auto"; _dirty = true; });
+        Settings.Register(CliSettings.SessionImagePreview, value => { _sessionImagePreview = value; _dirty = true; });
         Settings.Register(CliSettings.DiffView, value =>
         {
             _toolDiffView = value switch { "auto" => ToolDiffView.Auto, "split" => ToolDiffView.Split, "unified" => ToolDiffView.Unified,

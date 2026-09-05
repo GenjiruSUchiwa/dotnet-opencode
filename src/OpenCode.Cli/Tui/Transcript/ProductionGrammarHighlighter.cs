@@ -97,7 +97,7 @@ internal static class ProductionGrammarHighlighter
             // file fails plain; mutable upstream URLs are never fetched at runtime.
             var origins = manifest.Entries.SelectMany(entry => entry.Highlights.Prepend(entry.Wasm))
                 .Select(pin => new Uri(pin.Source.GetLeftPart(UriPartial.Authority))).Distinct();
-            var cache = new TreeSitterGrammarCache(Path.Combine(directory, "content"), origins, offline: true);
+            var cache = new TreeSitterGrammarCache(Path.Combine(directory, "content"), origins, offline: true, clock: clock);
             return (new TreeSitterHighlighter(registry, cache, clock), cache);
         }
 

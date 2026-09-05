@@ -111,7 +111,7 @@ public partial class OpenCodeApp
     private void InputText(TerminalTextInputEventArgs args)
     {
         args.Handled = true;
-        if (!PromptBlocked && !EnterShellMode(args.Text)) InsertText(args.Text);
+        if (!PromptBlocked && !PromptOverlayOpen && !EnterShellMode(args.Text)) InsertText(args.Text);
     }
 
 }

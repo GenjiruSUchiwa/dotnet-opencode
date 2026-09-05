@@ -1,34 +1,55 @@
-# Analyzer migration — in progress
+# Analyzer migration — selected wave verified
 
-This wave is **not complete**. There are now **eight parallel, disjoint owners**.
-Each owner fixes diagnostics in its assigned paths; the EF owner also owns its
-persistence analyzer cleanup. Independent owners do not wait for EF and must not
-edit one another's files. The parent alone owns integration, commits, pushes,
-releases, and the final full CLI dependency build/sign-off.
+The parent independently verified the selected modernization wave at the
+**source/build/package boundary** from archived commit
+`a051b00c7c745eeac4138bcd1bb622dd020c3cbc`. The exported `packaging/pack.ps1`, using
+the original pinned SDK and `OpenApiGenerateDocuments=false`, completed with
+**0 build/pack warnings and 0 errors**. Static inspection verified 352 runtime
+hashes, 58 server files, 65 grammar assets and 26 dependencies.
 
-The latest parent-supplied full-graph baseline reported **1,979 warnings and
+Evidence: `C:\tmp\opencode\modernization-checkpoint-5a163642e6f64e6081e7ba3247f26862\pack.log`.
+Verification-only package: `0.1.0-local.modernization`, SHA-256
+`b5d44816c26b960c0972da5edf5a2e9501f9ebe0c68f8e122113ee83fffb1135`.
+See also `docs/modernization-status.md`. This is not runtime parity or a full-port
+completion claim, and it does not certify edits made after that snapshot.
+
+Eight disjoint owners contributed to the checkpoint. The parent owns integration,
+commits, pushes and releases. Current stateless Generate/provider work is a new
+foundation pass whose own build result is recorded separately below.
+
+The historical pre-checkpoint full-graph baseline reported **1,979 warnings and
 0 errors** in `provider-identity-build.log`, beneath the directory recorded by
 `C:\tmp\opencode\modernization-integration-location.txt`. This is a historical
 baseline, not a count of work currently remaining across concurrent owners.
 
 ### Core foundations handoff
 
-The foundation owner has finished enabled-diagnostic cleanup in
+**Pass 3 stateless Generate is frozen for parent integration.** Its separate Core
+dependency build reports **0 warnings / 0 errors**, including the newly owned
+`Core/Generate` area. Evidence:
+`C:\tmp\opencode\foundations-pass3-f945-20260905-final.log`.
+See the pass 3 section of [Core foundations pass](core-foundations-pass.md) for
+the Core API, source semantics and network-owner handoff. This build does not
+replace the independent archived packaging checkpoint or certify an endpoint
+that another owner has not yet integrated.
+
+Pass 1 finished enabled-diagnostic cleanup in
 `Core/{Agent,CodeMode,Commands,Config,Filesystem,Instructions,Llm,Plugins,Snapshot,Vcs}`
-and `Core/Locations` **except CatalogLocation.cs**. Its isolated Core build reports
+and `Core/Locations` **except CatalogLocation.cs**. Its historical Core build reported
 **0 diagnostics in that subset**, from **320 unique baseline warnings**, without
 changing global analyzer policy, project/package configuration, or generated assets.
 The same build succeeded with **10 warnings and 0 errors overall**; its remaining
 warnings belong to other owners. This is not full-graph sign-off.
 
-Pass 1 was integrated by the parent as `3194600`. Foundation **pass 2 is frozen**
-with 0 owned diagnostics and a successful Core dependency build with **0 warnings,
+Pass 1 was integrated by the parent as `3194600`; pass 2 as `d698de6`. Pass 2 had
+0 owned diagnostics and a successful Core dependency build with **0 warnings,
 0 errors** (`C:\tmp\opencode\foundations-pass2-f945-20260905-verified.log`).
 This records only this owner's result, not other workers' sign-off. It fixes
 configuration provenance/capability composition, custom model defaults, provider
 error evidence, plugin registration identity and the provider cache-lineage
 rejection handed off by the Session owner. The remaining Session initializer
-patch is documented for the parent; no Session source was edited.
+patch was subsequently completed by the parent in `a051b00`; no Session source
+was edited by the foundation owner.
 
 Details, exact exceptions, source-parity fixes, modified-file inventories,
 and build evidence are in [Core foundations pass](core-foundations-pass.md).

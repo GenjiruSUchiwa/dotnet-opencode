@@ -8,6 +8,7 @@ using OpenCode.Core.Config;
 
 public sealed class AnthropicLlmClient : ILlmClient
 {
+    internal bool OmitAuthentication { get; init; }
     private readonly HttpClient _http;
     private readonly string? _apiKey;
     private readonly string? _authToken;
@@ -43,7 +44,7 @@ public sealed class AnthropicLlmClient : ILlmClient
     {
         ct.ThrowIfCancellationRequested();
         var token = _authToken ?? _apiKey;
-        if (string.IsNullOrEmpty(token) || token.Contains('\r') || token.Contains('\n'))
+        if (!OmitAuthentication && (string.IsNullOrEmpty(token) || token.Contains('\r') || token.Contains('\n')))
             throw new LlmException(new LlmFailure.Authentication("Anthropic requires a usable API key or auth token."));
         var options = _options.DeepClone().AsObject();
         ConfigLoader.MergeOverlay(options, JsonSerializer.SerializeToNode(input.ProviderOptions)!.AsObject());
@@ -62,8 +63,8 @@ public sealed class AnthropicLlmClient : ILlmClient
         foreach (var (key, value) in _headers) headers[key] = value;
         foreach (var (key, value) in input.Http.Headers) headers[key] = value;
         using var request = LlmHttp.Request(endpoint.Uri.ToString(), body, headers);
-        if (_authToken is not null) request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-        else
+        if (!OmitAuthentication && _authToken is not null) request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        else if (!OmitAuthentication)
         {
             request.Headers.Remove("x-api-key");
             request.Headers.Add("x-api-key", token);

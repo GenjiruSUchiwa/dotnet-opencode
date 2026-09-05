@@ -25,6 +25,7 @@ public interface ILlmClient
 public sealed class GoogleLlmClient : ILlmClient
 {
     private readonly LlmTransport _transport;
+    internal bool OmitAuthentication { init => _transport.OmitAuthentication = value; }
     public string ProviderId => "google";
     public string ProviderMetadataKey => _transport.ProviderMetadataKey;
 
@@ -44,6 +45,7 @@ public sealed class GoogleLlmClient : ILlmClient
 public sealed class OpenAiLlmClient : ILlmClient
 {
     private readonly LlmTransport _transport;
+    internal bool OmitAuthentication { init => _transport.OmitAuthentication = value; }
     private readonly JsonObject? _nativeOptions;
     public string ProviderId => "openai";
     public string ProviderMetadataKey => _transport.ProviderMetadataKey;
@@ -131,6 +133,7 @@ internal static class LlmAnswerText
 
 internal sealed class LlmTransport
 {
+    internal bool OmitAuthentication { get; set; }
     internal string ProviderMetadataKey => _google ? "google" : "openai";
     private readonly HttpClient _http;
     private readonly string _key;
@@ -188,10 +191,13 @@ internal sealed class LlmTransport
         if (_google)
         {
             if (_orgId is not null) { request.Headers.Remove("x-org-id"); request.Headers.Add("x-org-id", _orgId); }
-            request.Headers.Remove("x-goog-api-key");
-            request.Headers.Add("x-goog-api-key", _key);
+            if (!OmitAuthentication)
+            {
+                request.Headers.Remove("x-goog-api-key");
+                request.Headers.Add("x-goog-api-key", _key);
+            }
         }
-        else request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _key);
+        else if (!OmitAuthentication) request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _key);
         using var response = await LlmHttp.SendAsync(_http, request, ct).ConfigureAwait(false);
         LlmStreamParser parser = _google ? new GoogleStreamParser(ProviderMetadataKey) : new ChatStreamParser(input.Compatibility, ProviderMetadataKey);
         await foreach (var frame in LlmHttp.Frames(response, ct).ConfigureAwait(false))

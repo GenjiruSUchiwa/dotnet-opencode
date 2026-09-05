@@ -50,6 +50,13 @@ public sealed partial class ProviderResolver
                 ?? throw new LlmException(new LlmFailure.InvalidRequest("No available model is present in the configured catalog."));
             selection = (preferred.ProviderId, preferred.Id, preferred.Variant);
         }
+        return await ResolveSelectionAsync(snapshot, selection, requestedVariant, ct, sessionId).ConfigureAwait(false);
+    }
+
+    private async Task<ResolvedModel> ResolveSelectionAsync(CatalogSnapshot snapshot,
+        (string Provider, string Model, string? Variant) selection, string? requestedVariant,
+        CancellationToken ct, string? sessionId = null, bool stateless = false, StoredCredential? generationCredential = null)
+    {
         var selectedVariant = requestedVariant ?? selection.Variant;
         var variantId = selectedVariant == "default" ? null : selectedVariant;
         if (variantId is not null && (variantId.Length == 0 || variantId.Contains('#')))
@@ -67,9 +74,13 @@ public sealed partial class ProviderResolver
         if (provider.Options is not null || provider.Api is not null || provider.Npm is not null
             || model.Options is not null || model.Id is not null)
             throw new NotSupportedException("Legacy provider fields must use the provider configuration map, not the canonical providers map.");
-        if (model.Disabled == true) throw new InvalidOperationException("Selected model is disabled.");
+        // ModelResolver.resolve(requested) uses model.get, not model.available.
+        // Preserve the existing Session entrypoint's stricter enabled check.
+        if (!stateless && model.Disabled == true) throw new InvalidOperationException("Selected model is disabled.");
         var variant = variantId is null ? null : model.Variants?.FirstOrDefault(item => item.Id == variantId)
-            ?? throw new InvalidOperationException("Selected variant is unavailable for this model.");
+            ?? throw (stateless
+                ? new GenerationModelResolutionException($"Variant unavailable for {selection.Provider}/{selection.Model}: {variantId}", selection.Provider)
+                : new InvalidOperationException("Selected variant is unavailable for this model."));
         var package = model.Package ?? provider.Package;
         // Package identity, not provider-name substrings, determines the wire protocol.
         var google = package is "@opencode-ai/ai/providers/google" or "aisdk:@ai-sdk/google";
@@ -88,20 +99,8 @@ public sealed partial class ProviderResolver
             if (source is not null)
                 foreach (var (name, value) in source) headers[name] = value;
 
-        StoredCredential? credential;
         var consoleBound = discovered is not null || selection.Provider == ConsoleIntegrationService.IntegrationId;
-        try
-        {
-            credential = discovered is not null
-                ? console!.Credential ?? throw new LlmException(new LlmFailure.Authentication("Console catalog has no credential snapshot."))
-                : consoleBound ? await _console.ResolveCredentialAsync(ct).ConfigureAwait(false)
-                : selection.Provider == OpenAiOAuthService.IntegrationId ? snapshot.OpenAiCredential
-                : await _credentialStore.GetActiveCredentialAsync(selection.Provider, ct).ConfigureAwait(false);
-        }
-        catch (InvalidDataException)
-        {
-            throw new LlmException(new LlmFailure.Authentication("The channel contains an invalid credential for the selected integration."));
-        }
+        var credential = stateless ? generationCredential : await ResolveCatalogCredentialAsync(snapshot, selection.Provider, ct).ConfigureAwait(false);
         var oauth = credential?.Value.GetProperty("type").GetString() == "oauth";
         var chatGpt = !consoleBound && credential is not null && OpenAiOAuthService.IsChatGptCredential(credential);
         if (oauth && !consoleBound && !chatGpt)
@@ -171,6 +170,13 @@ public sealed partial class ProviderResolver
         var baseUrl = StringSetting(settings, "baseURL");
         if (baseUrl is not null)
             baseUrl = Regex.Replace(baseUrl, @"\$\{(?<name>[^}]+)\}", match => Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value, RegexOptions.NonBacktracking);
+        if (stateless && baseUrl is not null)
+        {
+            var variables = Regex.Matches(baseUrl, @"\$\{(?<name>[^}]+)\}", RegexOptions.NonBacktracking)
+                .Select(match => match.Groups["name"].Value).Distinct(StringComparer.Ordinal).ToArray();
+            if (variables.Length > 0) throw new GenerationModelResolutionException(
+                $"Cannot initialize {selection.Provider}/{selection.Model}: {string.Join(", ", variables)} {(variables.Length == 1 ? "is" : "are")} required to resolve the provider endpoint", selection.Provider);
+        }
         if (chat && string.IsNullOrWhiteSpace(baseUrl))
             throw new InvalidOperationException("An OpenAI-compatible provider requires settings.baseURL.");
         if (package == "@opencode-ai/ai/providers/anthropic-compatible" && string.IsNullOrWhiteSpace(baseUrl))
@@ -200,9 +206,11 @@ public sealed partial class ProviderResolver
         if (key is not null && authToken is not null)
             throw new LlmException(new LlmFailure.InvalidRequest("Anthropic apiKey and authToken cannot be combined."));
         var secret = authToken ?? key;
-        if (string.IsNullOrEmpty(secret))
+        var anonymous = stateless && credential is null && snapshot.LocalProviderIds.Contains(selection.Provider)
+            && !HasInlineAuth(settings);
+        if (string.IsNullOrEmpty(secret) && !anonymous)
             throw new LlmException(new LlmFailure.Authentication("Selected provider has no usable credential. Configure a channel credential, provider env connection, or explicit authentication setting. Shared auth files and databases are not consulted."));
-        if (secret.Contains('\r') || secret.Contains('\n'))
+        if (secret is not null && (secret.Contains('\r') || secret.Contains('\n')))
             throw new LlmException(new LlmFailure.Authentication("The selected credential cannot be encoded as an HTTP header."));
         var query = responses || nativeChat ? QuerySettings(settings["queryParams"]) : null;
         var organization = responses || nativeChat ? StringSetting(settings, "organization") : null;
@@ -220,12 +228,12 @@ public sealed partial class ProviderResolver
         ILlmClient transport = chatGpt
             ? new OpenAiResponsesLlmClient(credential!, headers, body, providerOptions, sessionId)
             : responses
-            ? new OpenAiResponsesLlmClient(_http, secret, baseUrl, headers, body, providerOptions, organization, project, query)
-            : nativeChat ? new OpenAiLlmClient(_http, secret, baseUrl, headers, body, providerOptions, query, true, organization, project)
+            ? new OpenAiResponsesLlmClient(_http, secret ?? "", baseUrl, headers, body, providerOptions, organization, project, query) { OmitAuthentication = anonymous }
+            : nativeChat ? new OpenAiLlmClient(_http, secret ?? "", baseUrl, headers, body, providerOptions, query, true, organization, project) { OmitAuthentication = anonymous }
             : anthropic
-            ? new AnthropicLlmClient(_http, key, authToken, baseUrl, headers, body, providerOptions, selection.Provider)
-            : google ? new GoogleLlmClient(_http, secret, baseUrl, extraHeaders: headers, body: body, providerOptions: providerOptions)
-            : new OpenAiLlmClient(_http, secret, baseUrl, extraHeaders: headers, body: body, providerOptions: providerOptions);
+            ? new AnthropicLlmClient(_http, key, authToken, baseUrl, headers, body, providerOptions, selection.Provider) { OmitAuthentication = anonymous }
+            : google ? new GoogleLlmClient(_http, secret ?? "", baseUrl, extraHeaders: headers, body: body, providerOptions: providerOptions) { OmitAuthentication = anonymous }
+            : new OpenAiLlmClient(_http, secret ?? "", baseUrl, extraHeaders: headers, body: body, providerOptions: providerOptions) { OmitAuthentication = anonymous };
         var generationConfig = google && body["generationConfig"] is { } generation
             ? generation is JsonObject ? (JsonElement?)JsonSerializer.SerializeToElement(generation)
                 : throw new JsonException("generationConfig must be an object.")
@@ -234,6 +242,25 @@ public sealed partial class ProviderResolver
         {
             Selection = new ModelRef(selection.Provider, selection.Model, selectedVariant)
         };
+    }
+
+    private async Task<StoredCredential?> ResolveCatalogCredentialAsync(CatalogSnapshot snapshot, string providerId, CancellationToken ct)
+    {
+        var consoleBound = snapshot.Console?.Providers.ContainsKey(providerId) == true;
+        var integrationId = consoleBound ? ConsoleIntegrationService.IntegrationId : providerId;
+        if (snapshot.IntegrationErrors.TryGetValue(integrationId, out var error)) throw error;
+        try
+        {
+            return consoleBound
+                ? snapshot.Console!.Credential ?? throw new LlmException(new LlmFailure.Authentication("Console catalog has no credential snapshot."))
+                : providerId == ConsoleIntegrationService.IntegrationId ? await _console.ResolveCredentialAsync(ct).ConfigureAwait(false)
+                : providerId == OpenAiOAuthService.IntegrationId ? snapshot.OpenAiCredential
+                : await _credentialStore.GetActiveCredentialAsync(providerId, ct).ConfigureAwait(false);
+        }
+        catch (InvalidDataException)
+        {
+            throw new LlmException(new LlmFailure.Authentication("The channel contains an invalid credential for the selected integration."));
+        }
     }
 
     private static IReadOnlyDictionary<string, string>? QuerySettings(JsonNode? node)

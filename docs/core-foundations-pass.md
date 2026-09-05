@@ -344,3 +344,123 @@ Unimplemented config watchers/well-known composition, extra plugin domains,
 request cache-policy controls and other previously documented unsupported routes
 were not replaced by successful stubs. Parent integration still owns the full CLI
 build and any cross-owner follow-up.
+
+## Pass 3 — stateless Generate service
+
+**Frozen for parent integration.** The final Core dependency build completed with
+**0 warnings and 0 errors**. No Schema, Protocol, Server, SDK, Session, database or
+package configuration files were edited. The endpoint remains network-owner work.
+
+### Source contract and integration API
+
+Reviewed source:
+
+- `core/src/generate.ts`: complete text service and error mapping.
+- `protocol/src/groups/generate.ts`: prompt, optional Model.Ref, and
+  `{ data: { text } }`. There is no structured-output mode, public usage/metadata,
+  generation-option payload or streaming endpoint in this API.
+- `server/src/handlers/generate.ts`: global config Location and plugin readiness.
+- `core/src/model-resolver.ts`: explicit/default/package selection, credentials
+  before variants, and explicitly enabled anonymous routes.
+- `ai/src/route/client.ts:486-491`, `schema/events.ts:335-366,398-419,630-638`:
+  one structured stream, authoritative fragments and terminal text projection.
+
+The Core API does not duplicate the contract owner's wire records:
+
+```csharp
+var generate = new OpenCode.Core.Generate.GenerateService(providerResolver);
+var text = await generate.TextAsync(prompt, model, cancellationToken);
+```
+
+`TextAsync(string prompt, ModelRef? model = null, CancellationToken ct = default)`
+returns Task<string>. Map `GenerateModelSelectionException` to InvalidRequestError
+with the same message. Map `GenerateUnavailableException` to ServiceUnavailableError
+with the same message and optional `Service` property. The network owner should
+wrap the returned string in the shared `{ data: { text } }` response; no separate
+Server model loop or temporary Session is required.
+
+The service captures `ConfigLoader.GetDefaultConfigDirectory()` as its base
+Location and accepts no per-request directory. It borrows ProviderResolver and
+its transport/store lifetimes. Construction does not load catalogs, read
+credentials, connect providers or create projects. Execution rejects configured
+or discovered plugin sources with service `model.catalog` until a real configured
+plugin runtime can supply the catalog. Host-level readiness remains network-owned.
+
+### Resolution and request semantics
+
+- Resolution uses one catalog snapshot and the existing provider overlays,
+  protocol selection, credential logic and transport constructors.
+- Explicit input uses model.get, not available-model filtering. This intentionally
+  retains source behavior for an explicitly selected disabled model; the existing
+  Session resolver keeps its stricter enabled check.
+- Omitted input uses the catalog default when it has a package, otherwise the first
+  available model with a nonempty package. A declared but unsupported package is
+  an error, not a reason to substitute another model.
+- Omitted input does not inherit the configured default's variant; source passes
+  only the explicit request's variant. Existing explicit `default` alias behavior
+  is unchanged.
+- Missing selections report `Model unavailable: provider/model` or
+  `No model specified and no supported model is available` exactly as upstream.
+- Active credentials resolve before variants/package initialization. Refresh
+  failures report `Generation credentials are unavailable`, without a service
+  label. The resolved credential snapshot is reused rather than refreshed twice.
+- Variant/package/unresolved-variable errors map to model selection for explicit
+  input and unavailable with provider ID for implicit input. Initialization
+  exceptions retain their original causes. Route authentication and failed-stream
+  errors map to unavailable with the selected provider ID. Cancellation propagates.
+- Explicitly enabled providers with neither credentials nor configured auth can
+  make an unauthenticated request, matching Auth.none. Only the stateless resolver
+  enables internal transport flags for this mode; configured headers are retained.
+  Direct constructors and Session resolution gain no anonymous fallback.
+
+One LlmRequest contains the exact selected API model ID and the user prompt, and
+one real StreamAsync call executes it. There is no Session instruction discovery,
+tool registry, affinity/cache-lineage header, event, retry, usage ledger or prompt
+admission. Provider overlays/defaults, Anthropic automatic caching and the mandated
+`dotnet-opencode` User-Agent still apply.
+
+### Response semantics
+
+- Empty/whitespace prompts and empty output are valid; null prompts are rejected.
+- Fragment order is first delta or authoritative end, not text-start. TextEnd
+  replaces accumulated deltas, including retractions; later deltas append.
+- Finish of any reason or a ProviderError event completes the source response.
+  A ProviderError event is distinct from a thrown AI error. Length/tool-call
+  outcomes are not rejected by the stricter legacy text-stream adapter.
+- StepFinish alone is not terminal. EOF without terminal completion reports
+  `The provider response ended unexpectedly.` as unavailable.
+- The full stream is consumed before return. A later read/disposal failure or
+  cancellation does not return partial text as success.
+- Reasoning, tools, usage and provider metadata are not in Generate.text's public
+  result. No tool executes or accounting event is emitted. Thrown LlmException
+  details remain in the cause; the wire mapping exposes only message/service.
+
+### Pass 3 files and verification
+
+New files:
+
+- `src/OpenCode.Core/Generate/GenerateService.cs`.
+- `src/OpenCode.Core/Llm/ProviderResolver.Generation.cs`.
+
+Updated source: `Llm/ProviderResolver.cs` (shared selection/credential helpers),
+`Llm/LlmClient.cs`, `Llm/AnthropicLlmClient.cs`, and
+`Llm/OpenAiResponsesLlmClient.cs` (internal explicit anonymous-auth mode).
+Public client constructor signatures are unchanged. No new suppressions,
+dependencies, generated types or global analyzer changes were added.
+
+Artifacts: `C:\tmp\opencode\foundations-pass3-f945-20260905`.
+Final log: `C:\tmp\opencode\foundations-pass3-f945-20260905-final.log`.
+
+```powershell
+& .\.dotnet\dotnet.exe build .\src\OpenCode.Core\OpenCode.Core.csproj `
+  --no-restore -f net11.0 `
+  --artifacts-path C:\tmp\opencode\foundations-pass3-f945-20260905 `
+  -p:NuGetAudit=false -p:OpenApiGenerateDocuments=false -v:quiet
+```
+
+The initial build performed restore. Initial and final Core dependency builds
+passed with **0 warnings / 0 errors** using the pinned preview SDK. This does not
+certify the future endpoint/contract integration. No tests, runtime/DI/SDK,
+provider/credential/database/evaluator/regex/codec/native probes, Git commands,
+installs or publication occurred. Authentication, response collection, error
+mapping, cancellation and endpoint wiring remain runtime-unverified.

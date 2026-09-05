@@ -10,6 +10,7 @@ using OpenCode.Core.Database;
 /// <summary>One HTTP/SSE Responses attempt. ChatGPT binding is created only from a validated channel credential.</summary>
 public sealed class OpenAiResponsesLlmClient : ILlmClient
 {
+    internal bool OmitAuthentication { get; init; }
     private readonly HttpClient _http;
     private readonly string _apiKey;
     private readonly string _baseUrl;
@@ -58,7 +59,7 @@ public sealed class OpenAiResponsesLlmClient : ILlmClient
     private async IAsyncEnumerable<LlmEvent> StreamCoreAsync(LlmRequest input, [EnumeratorCancellation] CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (string.IsNullOrEmpty(_apiKey) || _apiKey.Contains('\r') || _apiKey.Contains('\n'))
+        if (!OmitAuthentication && (string.IsNullOrEmpty(_apiKey) || _apiKey.Contains('\r') || _apiKey.Contains('\n')))
             throw new LlmException(new LlmFailure.Authentication("Responses requires a usable API credential."));
         if (!Uri.TryCreate(_baseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme is not ("http" or "https")
             || baseUri.Query.Length > 0 || baseUri.Fragment.Length > 0)
@@ -104,7 +105,7 @@ public sealed class OpenAiResponsesLlmClient : ILlmClient
             if (_sessionId is not null) headers["session-id"] = _sessionId;
         }
         using var request = LlmHttp.Request(endpoint.Uri.ToString(), body, headers);
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+        if (!OmitAuthentication) request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
         using var response = await LlmHttp.SendAsync(_http, request, ct).ConfigureAwait(false);
         var parser = new ResponsesStreamParser();
         await foreach (var frame in LlmHttp.Frames(response, ct, parseErrorEvents: true, classifyHttpError: ResponsesStreamParser.HttpFailure).ConfigureAwait(false))

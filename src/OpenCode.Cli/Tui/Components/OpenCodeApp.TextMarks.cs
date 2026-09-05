@@ -26,8 +26,8 @@ public partial class OpenCodeApp
     private AttachmentTextMarks GetPromptMarks()
     {
         var input = CapturePromptInput(_input);
-        if (!_promptMarkStates.TryGetValue(_tabs.Selected, out var state))
-            _promptMarkStates[_tabs.Selected] = state = new(input);
+        if (!_promptMarkStates.TryGetValue(EditorKey, out var state))
+            _promptMarkStates[EditorKey] = state = new(input);
         else if (!ReferenceEquals(state.Input, input)) state.Reconcile(input);
         return state;
     }

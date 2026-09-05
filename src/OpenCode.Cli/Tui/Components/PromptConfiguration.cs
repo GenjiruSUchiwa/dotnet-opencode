@@ -19,4 +19,5 @@ public sealed record PromptConfiguration(
     bool ChildSession = false,
     ModelRef? AgentModel = null,
     ModelRef? CreationFallback = null,
-    string? Directory = null);
+    string? Directory = null,
+    LocationRef? Location = null);

@@ -40,7 +40,7 @@ public partial class OpenCodeApp
             _referenceFiles = null;
             return;
         }
-        var key = (_tabs.Selected, _presentation?.Location ?? new LocationRef(CurrentDirectory), query.Path);
+        var key = (EditorKey, SelectionLocation, query.Path);
         if (_referenceSearch != key)
         {
             _referenceOperation?.Cancel();
@@ -163,7 +163,7 @@ public partial class OpenCodeApp
                 var file = new PromptInputFileAttachment(option.Key, option.Label, option.Description, mention);
                 prompt = prompt with { Files = (prompt.Files ?? []).Where(item => item.Uri != file.Uri).Append(file).ToArray() };
             }
-            RestorePromptAttachments(_tabs.Selected, prompt);
+            RestorePromptAttachments(EditorKey, prompt);
             _dismissedReferenceText = _input;
             _referenceQuery = null;
             _dirty = true;
@@ -200,7 +200,7 @@ public partial class OpenCodeApp
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
             { _inputError = exception.Message; _dirty = true; return; }
         }
-        RestorePromptAttachments(_tabs.Selected, input with
+        RestorePromptAttachments(EditorKey, input with
         {
             Files = target.Kind == AttachmentKind.File ? input.Files?.Where(file => file.Uri != target.Key).ToArray() : input.Files,
             Agents = target.Kind == AttachmentKind.Agent ? input.Agents?.Where(agent => agent.Name != target.Key).ToArray() : input.Agents,

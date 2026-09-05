@@ -63,6 +63,7 @@
                                 OnCancel="RefreshPermissionState" CanPersistAlways="_canPersistAlways" RequestRejectionFeedback="@(permission.SessionId != _sessionId)"
                                  SourceInput="PermissionInput" SourceMetadata="PermissionMetadata" Width="ComposerWidth"
                                  SourceError="@_permissionContextError"
+                                 DiffTheme="PermissionDiffTheme" DiffBindings="PermissionDiffBindings"
                                 TerminalWidth="_width" TerminalHeight="_height" FocusKey="permission" />
         }
         else if (ActiveForm is not null && _formScope is { } formScope)

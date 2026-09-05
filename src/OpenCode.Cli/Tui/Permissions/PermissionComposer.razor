@@ -1,4 +1,5 @@
 @namespace OpenCode.Cli.Tui.Permissions
+@using OpenCode.Cli.Tui.ToolViews
 
 <Box Width="@Math.Max(1, Width)" Shrink="0" Border="left"
      BorderFg="@(_stage == Stage.Reject ? Theme.Error : Theme.FocusedActionBackground)" Bg="@Theme.ElevatedBackground">
@@ -17,8 +18,33 @@
             }
         </Box>
         <Box PaddingLeft="1">
-            <TuiText Value="@Body" Height="BodyHeight" Scroll="_scroll"
-                     Fg="@(_stage == Stage.Permission && Action is "shell" or "subagent" ? Theme.Text : Theme.Subdued)" />
+            @if (RichEdit)
+            {
+                <Box Height="EditHeight">
+                    <ScrollBox State="_editScroll">
+                        @if (EditDiff is { Length: > 0 } diff)
+                        {
+                            <PatchDiff Patch="@diff" FilePath="@Path" Theme="DiffTheme!" Bindings="DiffBindings"
+                                       Width="@Math.Max(1, Width - 6)" ViewportWidth="TerminalWidth" />
+                        }
+                        else if (InputText("patchText") is { Length: > 0 } patch)
+                        {
+                            <TuiCode Content="@patch" Filetype="diff" Highlighter="DiffBindings?.CodeHighlighter"
+                                     SyntaxRules="@(DiffBindings?.SyntaxRules ?? [])" Streaming="true" DrawUnstyledText="false" Conceal="false"
+                                     Fg="@Theme.Subdued" />
+                        }
+                        else
+                        {
+                            <TuiText Value="No diff provided" Fg="@Theme.Subdued" />
+                        }
+                    </ScrollBox>
+                </Box>
+            }
+            else
+            {
+                <TuiText Value="@Body" Height="BodyHeight" Scroll="_scroll"
+                         Fg="@(_stage == Stage.Permission && Action is "shell" or "subagent" ? Theme.Text : Theme.Subdued)" />
+            }
         </Box>
         @if (_error is not null)
         {

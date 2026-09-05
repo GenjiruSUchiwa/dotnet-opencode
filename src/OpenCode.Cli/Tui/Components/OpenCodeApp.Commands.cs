@@ -35,10 +35,10 @@ public partial class OpenCodeApp
 
     private void UpdateCommandAutocomplete()
     {
-        if (_commandView != _tabs.Selected)
+        if (_commandView != EditorKey)
         {
-            _commandView = _tabs.Selected;
-            if (_commandErrors.TryGetValue(_tabs.Selected, out var error)) { _inputError = error; _dirty = true; }
+            _commandView = EditorKey;
+            if (_commandErrors.TryGetValue(EditorKey, out var error)) { _inputError = error; _dirty = true; }
         }
         var query = ShellMode || _dismissedCommandInput == _input ? null : SlashCompletion.Query(_input, _cursor);
         var anchor = query is null ? null : ReadComposerAnchor?.Invoke();
@@ -170,8 +170,8 @@ public partial class OpenCodeApp
             { _inputError = $"Command '/{slash.Name}' is unavailable."; _dirty = true; return true; }
             // Clear this origin synchronously before a local command can navigate to another tab.
             if (!ReplacePromptRange(0, _input.Length, "")) return true;
-            ClearPromptAttachments(_tabs.Selected);
-            RememberPromptMetadata(_tabs.Selected, null);
+            ClearPromptAttachments(EditorKey);
+            RememberPromptMetadata(EditorKey, null);
             if (_keyDispatcher?.DispatchCommand(id, _keyLayers, context).Handled != true)
             { _inputError = $"Command '/{slash.Name}' could not run."; _dirty = true; }
             return true;
@@ -182,7 +182,7 @@ public partial class OpenCodeApp
             _dirty = true;
             return true;
         }
-        if (_commandAdmissions.Contains(_tabs.Selected))
+        if (_commandAdmissions.Contains(EditorKey))
         {
             _inputError = "A command admission is already in progress for this tab; the draft was kept.";
             _dirty = true;
@@ -202,7 +202,7 @@ public partial class OpenCodeApp
             _dirty = true;
             return true;
         }
-        if (_retryPromptInputs.ContainsKey(_tabs.Selected))
+        if (_retryPromptInputs.ContainsKey(EditorKey))
         {
             _inputError = "This draft retains a prompt admission. Reconcile it instead of submitting it as a new command.";
             _dirty = true;
@@ -215,8 +215,7 @@ public partial class OpenCodeApp
             _dirty = true;
             return true;
         }
-        var model = _modelSelection ?? (_agentSelection is { } agent ? _agentModelChoices.GetValueOrDefault(agent) : _unassignedModelChoice)
-            ?? _configuredAgentModel ?? _creationFallback;
+        var model = CurrentModelSelection;
         if (_sessionId is null && (_agentSelection is null || model is null))
         {
             _inputError = "Select an available agent and model before starting a command session.";
@@ -232,10 +231,11 @@ public partial class OpenCodeApp
             return true;
         }
         var tab = _tabs.Selected;
-        _commandErrors.Remove(tab);
-        var entry = new PromptEditDocument(CapturePromptInput(_input), _promptMetadata.GetValueOrDefault(tab), GetPromptMarks().Snapshot(), ShellMode);
+        var editor = EditorKey;
+        _commandErrors.Remove(editor);
+        var entry = new PromptEditDocument(CapturePromptInput(_input), _promptMetadata.GetValueOrDefault(editor), GetPromptMarks().Snapshot(), ShellMode);
         RememberPromptHistory(CapturePromptAdmission(_input));
-        var submission = new CommandSubmission(_sessionId, _presentation?.Location ?? new LocationRef(CurrentDirectory),
+        var submission = new CommandSubmission(_sessionId, SelectionLocation,
             slash.Name, entry.Input with { Text = slash.Arguments }, _agentSelection, model, delivery);
         _history.Add(entry.Input.Text);
         _historyIndex = _history.Count;
@@ -244,18 +244,18 @@ public partial class OpenCodeApp
         _selectionAnchor = null;
         _preferredColumn = null;
         _editHistory.Clear();
-        ClearPromptAttachments(tab);
-        RememberPromptMetadata(tab, null);
+        ClearPromptAttachments(editor);
+        RememberPromptMetadata(editor, null);
         _highSurrogate = null;
         _draftRevision++;
         _commandQuery = null;
-        _commandAdmissions.Add(tab);
-        _keyTasks.Add(AdmitSlashCommand(tab, entry, submission));
+        _commandAdmissions.Add(editor);
+        _keyTasks.Add(AdmitSlashCommand(tab, editor, entry, submission));
         _dirty = true;
         return true;
     }
 
-    private async Task AdmitSlashCommand(Guid origin, PromptEditDocument entry, CommandSubmission submission)
+    private async Task AdmitSlashCommand(Guid tab, Guid origin, PromptEditDocument entry, CommandSubmission submission)
     {
         var target = submission.Session;
         try
@@ -263,7 +263,7 @@ public partial class OpenCodeApp
             await AdmitCommand!(submission, session =>
             {
                 target = session.Id;
-                return BindCommandSession(origin, submission.Session, session);
+                return BindCommandSession(tab, origin, submission.Session, session);
             }, _configurationLifetime.Token);
         }
         catch (OperationCanceledException) when (_configurationLifetime.IsCancellationRequested) { }
@@ -271,7 +271,7 @@ public partial class OpenCodeApp
         {
             var error = $"Command failed or its outcome is unknown; it was not retried. {SessionClientAdapter.Describe(exception)}";
             _commandErrors[origin] = error;
-            var visible = _tabs.Selected == origin && (_sessionId == target || submission.Session is null && _sessionId is null);
+            var visible = EditorKey == origin && (_sessionId == target || submission.Session is null && _sessionId is null);
             if (visible) _inputError = error;
             if (visible && _input.Length == 0)
             {
@@ -282,10 +282,9 @@ public partial class OpenCodeApp
                 _shellModes[origin] = entry.ShellMode;
                 _draftRevision++;
             }
-            else if (_tabs.Selected != origin && _tabs.Tabs.Any(tab => tab.Key == origin && tab.SessionId == target)
-                && _tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
+            else if (!visible && RetainsEditor(origin) && _tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
             {
-                _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null };
+                _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null, InputError = error };
                 RestorePromptAttachments(origin, entry.Input);
                 RememberPromptMetadata(origin, entry.Metadata);
                 if (entry.Marks is { } marks) _promptMarkStates[origin] = AttachmentTextMarks.Restore(entry.Input, marks);
@@ -295,15 +294,19 @@ public partial class OpenCodeApp
         finally { _commandAdmissions.Remove(origin); _dirty = true; }
     }
 
-    private async Task BindCommandSession(Guid origin, SessionId? previous, SessionInfo session)
+    private async Task BindCommandSession(Guid origin, Guid editor, SessionId? previous, SessionInfo session)
     {
         if (previous is not null) return;
-        var tab = _tabs.Tabs.FirstOrDefault(tab => tab.Key == origin);
+        AdoptEditorSession(origin, editor, session.Id, new(session.Location, session.Agent is { } agent ? AgentId.FromExisting(agent) : null, session.Model));
+        var tab = _tabs.Tabs.Concat(_tabs.Closed).FirstOrDefault(tab => tab.Key == origin);
         if (tab is null) return; // Closing a view never deletes the admitted server session.
         var before = _tabs.Persisted;
-        _tabs = _tabs with { Tabs = _tabs.Tabs.Replace(tab, tab with { SessionId = session.Id, Title = session.Title ?? tab.Title }) };
+        var bound = tab with { SessionId = session.Id, Title = session.Title ?? tab.Title };
+        _tabs = _tabs.Tabs.Contains(tab) ? _tabs with { Tabs = _tabs.Tabs.Replace(tab, bound) }
+            : _tabs with { Closed = _tabs.Closed.Replace(tab, bound) };
         QueueTabWrite(before, _tabs.Persisted);
-        if (_tabs.Selected != origin || OpenTabSession is null) return;
+        if (_configurationBusy) await _configurationTask.WaitAsync(_configurationLifetime.Token);
+        if (_tabs.Selected != origin || EditorKey != editor || OpenTabSession is null) return;
         await RunTabNavigation(async token =>
         {
             var configuration = await OpenTabSession(session.Id, token);

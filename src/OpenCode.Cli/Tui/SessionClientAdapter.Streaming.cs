@@ -18,14 +18,20 @@ public sealed record SessionAdmissionSnapshot(SessionId SessionId, MessageId Id,
 {
     public SessionPromptInput? Input { get; init; }
     public bool Unconfirmed { get; init; }
+    public PromptSelection? Selection { get; init; }
+    public bool SelectionCommitted { get; init; }
+    public long SelectionRevision { get; init; }
 }
 public sealed record SessionAdmissionAvailability(bool Allowed, string? Reason, IReadOnlyList<MessageId> Unconfirmed);
 
 public sealed partial class SessionClientAdapter
 {
-    private sealed class AdmissionRecord(SessionPromptInput input)
+    private sealed class AdmissionRecord(SessionPromptInput input, PromptSelection? selection = null)
     {
         internal readonly SessionPromptInput Input = input;
+        internal readonly PromptSelection? Selection = selection;
+        internal bool SelectionCommitted;
+        internal long SelectionRevision;
         internal SessionAdmissionPhase Phase = SessionAdmissionPhase.Waiting;
         internal InboxDeliveryMode Delivery = input.Delivery ?? InboxDeliveryMode.Steer;
         internal bool Admitted;
@@ -33,7 +39,8 @@ public sealed partial class SessionClientAdapter
         internal long FactVersion;
         internal long Attempt;
         internal bool Unconfirmed;
-        internal SessionAdmissionSnapshot Snapshot(SessionId session) => new(session, Input.Id!.Value, Phase, Delivery, Admitted, Error) { Input = Input, Unconfirmed = Unconfirmed };
+        internal SessionAdmissionSnapshot Snapshot(SessionId session) => new(session, Input.Id!.Value, Phase, Delivery, Admitted, Error)
+        { Input = Input, Unconfirmed = Unconfirmed, Selection = Selection, SelectionCommitted = SelectionCommitted, SelectionRevision = SelectionRevision };
     }
     private sealed record Submission(SessionId SessionId, MessageId InputId)
     {
@@ -41,6 +48,7 @@ public sealed partial class SessionClientAdapter
         internal readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
     private readonly Dictionary<Guid, Submission> _submissions = [];
+    private long _selectionCommitRevision;
     private readonly Dictionary<MessageId, Pending> _pendingRequests = [];
 
     public SessionAdmissionAvailability CanAdmit(SessionId? sessionId, SessionPromptInput? input = null)
@@ -92,7 +100,7 @@ public sealed partial class SessionClientAdapter
     }
 
     private async IAsyncEnumerable<SessionResponseSnapshot> PromptForOrigin(SessionId? origin, SessionPromptInput input,
-        SessionCreateInput? create, long viewVersion, [EnumeratorCancellation] CancellationToken ct)
+        SessionCreateInput? create, long viewVersion, [EnumeratorCancellation] CancellationToken ct, PromptSelection? selection = null)
     {
         ArgumentNullException.ThrowIfNull(input.Text);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
@@ -126,7 +134,7 @@ public sealed partial class SessionClientAdapter
             else
             {
                 input = input with { Id = input.Id ?? MessageId.Create() };
-                record = new(input);
+                record = new(input, selection);
                 entry.Admissions.Add(input.Id.Value, record);
             }
             if (origin is null) entry.Creation ??= (create ?? throw new InvalidOperationException("Session creation input is unavailable.")) with { Id = id };
@@ -210,6 +218,20 @@ public sealed partial class SessionClientAdapter
                 }
                 if (!pending.Admitted)
                 {
+                    if (!record.SelectionCommitted && record.Selection is { } capturedSelection)
+                    {
+                        // The capture belongs to this item, not the currently selected UI route.
+                        // Agent choice does not select that agent's preferred model for an existing Session.
+                        if (capturedSelection.Agent is { } agent && info.Agent != agent.Value)
+                            await _client.SwitchAgentAsync(entry.Id, agent, ct);
+                        if (info.Revert is not null) await _client.CommitRevertAsync(entry.Id, ct);
+                        if (capturedSelection.Model is { } model) await _client.SwitchModelAsync(entry.Id, model, ct);
+                        lock (_gate) { record.SelectionCommitted = true; record.SelectionRevision = ++_selectionCommitRevision; }
+                        // Hydrate the accepted selection (or a subsequent external selection) through
+                        // the same observer. Retrying an unconfirmed prompt must not rewind it.
+                        await RefreshObservationAsync(entry.Id, ct);
+                        lock (_gate) PublishObservation(entry);
+                    }
                     try
                     {
                         ct.ThrowIfCancellationRequested();

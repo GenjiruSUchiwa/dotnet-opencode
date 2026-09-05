@@ -34,14 +34,14 @@ public partial class OpenCodeApp
         if (!StashReady) return new(false, null, "The prompt stash is not ready.");
         // Inspect the retained retry before CapturePromptAdmission: that method deliberately
         // clears an ID when edited text differs, which is not stash admission authority.
-        if (_retryPromptInputs.TryGetValue(_tabs.Selected, out var retry))
+        if (_retryPromptInputs.TryGetValue(EditorKey, out var retry))
             return new(false, retry.Id, "This draft retains a retry admission. Reconcile it before stashing or replacing it.");
         var origin = _originRequests.Values.FirstOrDefault(request => !request.Admitted
-            && (request.Key == _tabs.Selected || _sessionId is { } session && request.Session == session));
+            && (request.Key == EditorKey || _sessionId is { } session && request.Session == session));
         if (origin is not null) return new(false, origin.Input, "An input admission is still in flight.");
-        if (_commandAdmissions.Contains(_tabs.Selected) || _shellPreparing.Contains(_tabs.Selected))
+        if (_commandAdmissions.Contains(EditorKey) || _shellPreparing.Contains(EditorKey))
             return new(false, null, "A command or shell admission is still in flight.");
-        if (_commandErrors.ContainsKey(_tabs.Selected) || _shellErrors.ContainsKey(_tabs.Selected))
+        if (_commandErrors.ContainsKey(EditorKey) || _shellErrors.ContainsKey(EditorKey))
             return new(false, null, "Resolve the previous command or shell outcome before stashing or replacing this draft.");
         if (_configurationBusy || PromptBlocked || _terminalFocused || _terminalListOpen || _activitiesOpen)
             return new(false, null, "Return to an editable prompt before stashing or replacing it.");
@@ -73,14 +73,14 @@ public partial class OpenCodeApp
             var mutation = _promptStash.Push(StashPrompt.Capture(document, Array.Empty<StashPastedText>()), access);
             if (mutation.Entry is null) throw new InvalidOperationException("The stash did not accept the prompt in memory.");
             _input = _draft = "";
-            ClearPromptAttachments(_tabs.Selected);
-            RememberPromptMetadata(_tabs.Selected, null);
+            ClearPromptAttachments(EditorKey);
+            RememberPromptMetadata(EditorKey, null);
             _cursor = 0;
             _selectionAnchor = null;
             _highSurrogate = null;
             _preferredColumn = null;
             _historyIndex = _history.Count;
-            _historyDrafts.Remove(_tabs.Selected);
+            _historyDrafts.Remove(EditorKey);
             _editHistory.Clear();
             _draftRevision++;
             _stashActionError = _inputError = null;
@@ -160,17 +160,17 @@ public partial class OpenCodeApp
         // No await: admission validation, undo capture, and complete restore are one dispatcher action.
         _editHistory.Record(CurrentEdit);
         _input = restored.Document.Input.Text;
-        _promptParts[_tabs.Selected] = restored.Document.Input;
-        _promptMarkStates[_tabs.Selected] = restored.Marks;
-        RememberPromptMetadata(_tabs.Selected, restored.Document.Metadata);
-        _shellModes[_tabs.Selected] = restored.Document.ShellMode;
+        _promptParts[EditorKey] = restored.Document.Input;
+        _promptMarkStates[EditorKey] = restored.Marks;
+        RememberPromptMetadata(EditorKey, restored.Document.Metadata);
+        _shellModes[EditorKey] = restored.Document.ShellMode;
         _cursor = _input.Length;
         _selectionAnchor = null;
         _highSurrogate = null;
         _preferredColumn = null;
         _historyIndex = _history.Count;
         _draft = "";
-        _historyDrafts.Remove(_tabs.Selected);
+        _historyDrafts.Remove(EditorKey);
         _dismissedReferenceText = _dismissedCommandInput = _input;
         _draftRevision++;
         _stashActionError = _inputError = null;

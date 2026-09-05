@@ -33,6 +33,7 @@ public static class InteractiveTui
     {
         clock ??= TimeProvider.System;
         var directory = Directory.GetCurrentDirectory();
+        var homeLocation = new LocationRef(directory);
         var themeCatalog = new ThemeCatalog();
         var settingsStore = new CliSettingsStore();
         var settings = new CliSettingsController(settingsStore);
@@ -51,6 +52,7 @@ public static class InteractiveTui
         SessionClientAdapter? adapter = null;
         SessionHttpClient? api = null;
         AppCatalog? catalog = null;
+        LocationRef? catalogLocation = null;
         SessionPresentation? presentation = null;
         AgentId? creationAgent = null;
         ModelRef? creationModel = null;
@@ -61,40 +63,40 @@ public static class InteractiveTui
         async Task<PromptConfiguration> ReadReadiness(SessionInfo? session, CancellationToken cancellationToken)
         {
             var capabilities = await readiness!.ReadAsync(cancellationToken);
-            if (catalog is null || presentation?.Location != (session?.Location ?? new LocationRef(directory)))
-                await LoadCatalogAt(session?.Location ?? new LocationRef(directory), cancellationToken);
+            var placement = session?.Location ?? homeLocation;
+            if (catalog is null || catalogLocation != placement) await LoadCatalogAt(placement, cancellationToken);
             IReadOnlyList<McpServer> mcp = [];
             string? mcpError = null;
-            try { mcp = (await api!.ListMcpServersAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)).Data; }
+            try { mcp = (await api!.ListMcpServersAsync(placement.Directory, placement.WorkspaceId?.Value, cancellationToken)).Data; }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { mcpError = SessionClientAdapter.Describe(exception); }
             IReadOnlyList<CommandInfo> commands = [];
             string? commandError = null;
-            try { commands = (await api!.ListCommandsAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)).Data; }
+            try { commands = (await api!.ListCommandsAsync(placement.Directory, placement.WorkspaceId?.Value, cancellationToken)).Data; }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { commandError = SessionClientAdapter.Describe(exception); }
             SkillCatalogSnapshot? skills = null;
             string? skillError = null;
-            try { skills = new(await api!.ListSkillsAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)); }
+            try { skills = new(await api!.ListSkillsAsync(placement.Directory, placement.WorkspaceId?.Value, cancellationToken)); }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { skillError = SessionClientAdapter.Describe(exception); }
-            presentation = new(session, session?.Location ?? new LocationRef(directory), catalog?.Models ?? [], mcp, mcpError,
+            presentation = new(session, placement, catalog?.Models ?? [], mcp, mcpError,
                 catalog?.Agents, catalog?.Providers, commands, commandError, skills, skillError);
             ModelInfo? defaultModel = null;
             if (session?.Model is null && api is not null)
             {
-                try { defaultModel = (await api.DefaultModelAsync(session?.Location.Directory ?? directory, ct: cancellationToken)).Data; }
+                try { defaultModel = (await api.DefaultModelAsync(placement.Directory, placement.WorkspaceId?.Value, cancellationToken)).Data; }
                 catch (SessionApiException) { }
                 catch (SessionProtocolException) { }
             }
-            var location = session?.Location.Directory ?? directory;
-            var agents = catalog?.Agents ?? (api is not null ? (await api.ListAgentsAsync(location, ct: cancellationToken)).Data : []);
+            var location = placement.Directory;
+            var agents = catalog?.Agents ?? (api is not null ? (await api.ListAgentsAsync(location, placement.WorkspaceId?.Value, cancellationToken)).Data : []);
             // Native AgentCatalog places the configured selectable default first;
             // ResolveAsync(null) uses this same order. Do not invent a local agent.
-            var agent = (session?.Agent ?? (session is null ? creationAgent?.Value : null)) is { } selectedAgent ? agents.FirstOrDefault(item => item.Id.Value == selectedAgent)
+            var agent = session?.Agent is { } selectedAgent ? agents.FirstOrDefault(item => item.Id.Value == selectedAgent)
                 : agents.FirstOrDefault(item => !item.Hidden && item.Mode != AgentMode.Subagent);
             var creationFallback = defaultModel is null ? null : new ModelRef(defaultModel.ProviderId.Value, defaultModel.Id.Value);
-            var selected = session?.Model ?? (session is null ? creationModel ?? agent?.Model ?? creationFallback : null);
+            var selected = session?.Model ?? (session is null ? agent?.Model ?? creationFallback : null);
             var model = selected is { } selectedModel
                 ? catalog?.Models.FirstOrDefault(item => item.ProviderId.Value == selectedModel.ProviderId && item.Id.Value == selectedModel.Id)
                 : defaultModel;
@@ -106,9 +108,9 @@ public static class InteractiveTui
             return new(agent?.Name ?? session?.Agent, model?.Name ?? selected?.Id, provider?.Name ?? providerId,
                 selected?.Variant, ExecutionError: reason, Connection: $"Server {uri.Host}:{uri.Port}",
                 SessionTitle: session?.Title, SessionId: session?.Id,
-                ModelSelection: session?.Model ?? (session is null ? creationModel : null), AgentSelection: agent?.Id,
+                ModelSelection: session?.Model, AgentSelection: agent?.Id,
                 ChildSession: session?.ParentId is not null, AgentModel: agent?.Model, CreationFallback: creationFallback,
-                Directory: location);
+                Directory: location, Location: placement);
         }
 
         async Task<PromptConfiguration> Reload(CancellationToken cancellationToken)
@@ -126,7 +128,7 @@ public static class InteractiveTui
                     readiness = new(selected);
                     api = new(selected);
                     catalog = null;
-                    adapter = new(selected, ReadReadiness, () => new SessionCreateInput(Location: new LocationRef(directory),
+                    adapter = new(selected, ReadReadiness, () => new SessionCreateInput(Location: homeLocation,
                         Agent: creationAgent?.Value, Model: creationModel), sessionId, clock: clock);
                 }
                 return await adapter.PrepareAsync(cancellationToken);
@@ -146,7 +148,7 @@ public static class InteractiveTui
         }
 
         Task<AppCatalog> LoadCatalog(CancellationToken cancellationToken) =>
-            LoadCatalogAt(adapter?.CurrentSession?.Location ?? new LocationRef(directory), cancellationToken);
+            LoadCatalogAt(adapter?.CurrentSession?.Location ?? homeLocation, cancellationToken);
 
         async Task<AppCatalog> LoadCatalogAt(LocationRef location, CancellationToken cancellationToken)
         {
@@ -163,6 +165,7 @@ public static class InteractiveTui
             try { integrations = (await client.ListIntegrationsAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken)).Data; }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception exception) { integrationError = "Could not load integrations: " + SessionClientAdapter.Describe(exception); }
+            catalogLocation = location;
             return catalog = new((await models).Data, (await providers).Data, (await agents).Data, fallback, integrations, integrationError);
         }
 
@@ -200,6 +203,15 @@ public static class InteractiveTui
                 [nameof(OpenCodeApp.NetworkPrompt)] = (Func<string, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>)Prompt,
                 [nameof(OpenCodeApp.NetworkPromptInput)] = (Func<SessionId?, SessionPromptInput, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>)((origin, input, token) =>
                     (adapter ?? throw new InvalidOperationException("The server is not connected.")).PromptAsync(origin, input, token)),
+                [nameof(OpenCodeApp.NetworkSelectedPrompt)] = (Func<SessionId?, SessionPromptInput, PromptSelection, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>)((origin, input, selection, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).PromptAsync(origin, input, selection, token)),
+                [nameof(OpenCodeApp.OpenHomeLocation)] = (Func<LocationRef, CancellationToken, Task<PromptConfiguration>>)(async (location, token) =>
+                {
+                    await RequireApi(token);
+                    homeLocation = location;
+                    adapter!.NewConversation();
+                    return await adapter.PrepareAsync(token);
+                }),
                 [nameof(OpenCodeApp.ReadAdmissionAvailability)] = (Func<SessionId?, SessionPromptInput?, SessionAdmissionAvailability>)((origin, input) =>
                     adapter?.CanAdmit(origin, input) ?? new(false, "The server is not connected.", [])),
                 [nameof(OpenCodeApp.ReloadConfiguration)] = (Func<CancellationToken, Task<PromptConfiguration>>)Reload,
@@ -284,33 +296,6 @@ public static class InteractiveTui
                 {
                     creationAgent = agent;
                     creationModel = model;
-                }),
-                [nameof(OpenCodeApp.ChangeModel)] = (Func<ModelRef, CancellationToken, Task<PromptConfiguration>>)(async (model, token) =>
-                {
-                    await RequireApi(token);
-                    if (adapter!.SessionId is null)
-                    {
-                        // Source Home model selection is a local creation preference, not Session admission.
-                        var previous = creationModel;
-                        creationModel = model;
-                        try { return await ReadReadiness(null, token); }
-                        catch { creationModel = previous; throw; }
-                    }
-                    await adapter.SwitchModelAsync(model, token);
-                    return await adapter.PrepareAsync(token);
-                }),
-                [nameof(OpenCodeApp.ChangeAgent)] = (Func<AgentId, CancellationToken, Task<PromptConfiguration>>)(async (agent, token) =>
-                {
-                    await RequireApi(token);
-                    if (adapter!.SessionId is null)
-                    {
-                        var previous = creationAgent;
-                        creationAgent = agent;
-                        try { return await ReadReadiness(null, token); }
-                        catch { creationAgent = previous; throw; }
-                    }
-                    await adapter.SwitchAgentAsync(agent, token);
-                    return await adapter.PrepareAsync(token);
                 }),
                 [nameof(OpenCodeApp.LoadSessions)] = (Func<SessionPickerQuery, CancellationToken, Task<SessionPickerPage>>)LoadSessions,
                 [nameof(OpenCodeApp.ReadSessionCache)] = (Func<IReadOnlyList<SessionInfo>>)(() => sessionCache),
@@ -407,7 +392,8 @@ public static class InteractiveTui
                 [nameof(OpenCodeApp.CreateSession)] = (Func<CancellationToken, Task<PromptConfiguration>>)(async token =>
                 {
                     await RequireApi(token);
-                    await adapter!.CreateSessionAsync(token);
+                    homeLocation = adapter!.CurrentSession?.Location ?? homeLocation;
+                    await adapter.CreateSessionAsync(token, creationModel, creationAgent);
                     return await adapter.PrepareAsync(token);
                 }),
                 [nameof(OpenCodeApp.CurrentDirectory)] = directory,

@@ -18,10 +18,10 @@ public partial class OpenCodeApp
         if (_clipboardReading || PromptBlocked || ReadPromptClipboard is null) return;
         _clipboardReading = true;
         var origin = (_tabs.Selected, _sessionId, _draftRevision, _cursor, _selectionAnchor, ShellMode);
-        var location = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+        var location = SelectionLocation;
         var client = ReadSessionClient?.Invoke();
         bool Changed() => origin != (_tabs.Selected, _sessionId, _draftRevision, _cursor, _selectionAnchor, ShellMode)
-            || location != (_presentation?.Location ?? new LocationRef(CurrentDirectory)) || client != ReadSessionClient?.Invoke() || PromptBlocked;
+            || location != SelectionLocation || client != ReadSessionClient?.Invoke() || PromptBlocked;
         try
         {
             // Called by the explicit prompt.paste action on the renderer dispatcher only.
@@ -104,7 +104,7 @@ public partial class OpenCodeApp
         // The entire list is one edit: rejected entries never leave a partial paste.
         if (!ReplacePromptRange(start, length, text)) return;
         var input = CapturePromptInput(_input);
-        RestorePromptAttachments(_tabs.Selected, input with { Files = (input.Files ?? []).Concat(files).ToArray() });
+        RestorePromptAttachments(EditorKey, input with { Files = (input.Files ?? []).Concat(files).ToArray() });
         _dismissedReferenceText = _input;
         _dismissedCommandInput = _input;
         _dirty = true;

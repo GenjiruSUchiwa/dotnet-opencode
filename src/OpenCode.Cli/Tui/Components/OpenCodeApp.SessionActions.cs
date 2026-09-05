@@ -27,9 +27,10 @@ public partial class OpenCodeApp
         foreach (var tab in _tabs.Tabs.Where(tab => tab.SessionId == id).ToArray())
         {
             _tabs = _tabs.Close(tab.Key);
-            _tabViews.Remove(tab.Key);
         }
         _tabs = _tabs with { Closed = _tabs.Closed.Where(tab => tab.SessionId != id).ToImmutableArray() };
+        _deletedTabs.Add(id);
+        TrimEditorRoutes();
         if (_sessionId == id) RestoreTab(_tabs.Current, await LoadTab(_tabs.Current, token));
         QueueTabWrite(before, _tabs.Persisted);
         _dirty = true;

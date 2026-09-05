@@ -93,6 +93,7 @@ public partial class OpenCodeApp
     private Task CreateTabSessionFromPicker(CancellationToken ct) => RunTabNavigation(async token =>
     {
         if (CreateSession is null) throw new InvalidOperationException("Session creation HTTP callback is not connected.");
+        ConfigureNewSession?.Invoke(_agentSelection, CurrentModelSelection);
         var configuration = await CreateSession(token);
         token.ThrowIfCancellationRequested();
         if (configuration.SessionId is not { } id) throw new InvalidOperationException("Session creation returned no Session ID.");
@@ -165,16 +166,14 @@ public partial class OpenCodeApp
 
     private void TrimTabViews()
     {
-        var retained = _tabs.Tabs.Concat(_tabs.Closed).Select(tab => tab.Key).ToHashSet();
-        foreach (var key in _tabViews.Keys.Where(key => !retained.Contains(key)).ToArray()) _tabViews.Remove(key);
-        TrimPromptDocuments(retained);
+        TrimEditorRoutes();
     }
 
     private IReadOnlyDictionary<SessionId, SessionInfo> TabMetadata()
     {
-        var cache = ReadSessionCache?.Invoke() ?? [];
+        var cache = (ReadSessionCache?.Invoke() ?? []).Concat(_navigationSessions.Values);
         var selected = ReadPresentation?.Invoke()?.Session;
-        var live = _tabs.Tabs.Select(tab => tab.SessionId).Append(_sessionId).OfType<SessionId>().Distinct()
+        var live = _tabs.Tabs.Select(tab => tab.SessionId).Concat(_sessionEditors.Keys.Select(id => (SessionId?)id)).Append(_sessionId).OfType<SessionId>().Distinct()
             .Select(id => ReadSessionObservation?.Invoke(id)?.Session).OfType<SessionInfo>();
         // Session observations own current watermarks. A picker page or captured readiness
         // presentation must not overwrite a newer viewed/idle state with its older snapshot.

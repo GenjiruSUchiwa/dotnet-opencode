@@ -15,7 +15,7 @@ public partial class OpenCodeApp
     private void ReadTranscriptImageSource()
     {
         if (!_sessionImagePreview || !_hasConversation || CreateImageLoader is null) return;
-        var source = (ReadSessionClient?.Invoke(), _presentation?.Location ?? new LocationRef(CurrentDirectory));
+        var source = (ReadSessionClient?.Invoke(), SelectionLocation);
         if (_transcriptImageLoader is not null && _transcriptImageSource == source) return;
         // Host retains each loader until all mounted views are disposed; no per-row loader or file probe.
         _transcriptImageLoader = CreateImageLoader(source.Item2, _configurationLifetime.Token);
@@ -29,7 +29,7 @@ public partial class OpenCodeApp
     private Task OpenImagePreview(ImagePreviewRequest request)
     {
         if (request.Images.Count == 0 || CreateImageLoader is null) return Task.CompletedTask;
-        var location = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+        var location = SelectionLocation;
         CloseDialog();
         _imagePreview = new(CreateImageLoader(location, _configurationLifetime.Token), request.Images, request.Initial);
         _dirty = true;

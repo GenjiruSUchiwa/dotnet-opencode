@@ -60,13 +60,13 @@ public partial class OpenCodeApp
             Command("session.tab.previous", _ => CycleTab(-1)),
             Command("session.tab.close", _ => TabKey(() => CloseTab(_tabs.Selected))),
             Command("session.tab.reopen", _ => !_tabs.Closed.IsEmpty && TabKey(ReopenTab)),
-            Command("model.list", _ => LoadCatalog is not null && ChangeModel is not null && IdleKey(() => OpenCatalog("model"))),
-            Command("agent.list", _ => LoadCatalog is not null && ChangeAgent is not null && IdleKey(() => OpenCatalog("agent"))),
-            Command("variant.list", _ => CurrentModelSelection is not null && ChangeModel is not null && IdleKey(() => OpenCatalog("variant"))),
-            Command("agent.cycle", _ => LoadCatalog is not null && ChangeAgent is not null && IdleKey(() => CycleSelection("agent"))),
-            Command("agent.cycle.reverse", _ => LoadCatalog is not null && ChangeAgent is not null && IdleKey(() => CycleSelection("agent", -1))),
+            Command("model.list", _ => LoadCatalog is not null && IdleKey(() => OpenCatalog("model"))),
+            Command("agent.list", _ => LoadCatalog is not null && IdleKey(() => OpenCatalog("agent"))),
+            Command("variant.list", _ => CurrentModelSelection is not null && IdleKey(() => OpenCatalog("variant"))),
+            Command("agent.cycle", _ => LoadCatalog is not null && IdleKey(() => CycleSelection("agent"))),
+            Command("agent.cycle.reverse", _ => LoadCatalog is not null && IdleKey(() => CycleSelection("agent", -1))),
             Command("variant.cycle", _ => IdleKey(() => CyclePreferredModel(ModelPreferenceAction.VariantCycle)), available: () =>
-                NavigationReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null && ChangeModel is not null),
+                SelectionReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null),
             Command("session.page.up", _ => ScrollKey(-1, false)),
             Command("session.page.down", _ => ScrollKey(1, false)),
             Command("session.half.page.up", _ => ScrollKey(-1, true)),
@@ -82,13 +82,13 @@ public partial class OpenCodeApp
             Command("prompt.stash.pop", _ => PopStash(), "Stash pop", () => StashReady && _promptStash.Snapshot.Entries.Count > 0 && StashAccess().Allowed),
             Command("prompt.stash.list", _ => OpenStash(), "Stash list", () => StashReady && _promptStash.Snapshot.Entries.Count > 0),
             Command("model.cycle_recent", _ => IdleKey(() => CyclePreferredModel(ModelPreferenceAction.RecentCycle)), available: () =>
-                NavigationReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null && ChangeModel is not null),
+                SelectionReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null),
             Command("model.cycle_recent_reverse", _ => IdleKey(() => CyclePreferredModel(ModelPreferenceAction.RecentCycle, -1)), available: () =>
-                NavigationReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null && ChangeModel is not null),
+                SelectionReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null),
             Command("model.cycle_favorite", _ => IdleKey(() => CyclePreferredModel(ModelPreferenceAction.FavoriteCycle)), available: () =>
-                NavigationReady && _modelController is not null && LoadCatalog is not null && ChangeModel is not null),
+                SelectionReady && _modelController is not null && LoadCatalog is not null),
             Command("model.cycle_favorite_reverse", _ => IdleKey(() => CyclePreferredModel(ModelPreferenceAction.FavoriteCycle, -1)), available: () =>
-                NavigationReady && _modelController is not null && LoadCatalog is not null && ChangeModel is not null),
+                SelectionReady && _modelController is not null && LoadCatalog is not null),
             Command("opencode.status", _ => { _keyTasks.Add(OpenStatus()); return true; }, "View status"),
             Command("theme.switch", _ => { _keyTasks.Add(OpenThemes()); return true; }, "Switch theme", () => Themes is not null && ApplicationThemeCatalog is not null),
             Command("prompt.paste", invocation => { if (!PromptFocus(invocation.Context)) return false; _keyTasks.Add(PasteClipboard()); return true; }, "Paste from clipboard",
@@ -168,9 +168,9 @@ public partial class OpenCodeApp
         "session.new" => TabNavigationReady && NewConversation is not null,
         "session.list" => TabNavigationReady && LoadSessions is not null && OpenSession is not null,
         "session.tab.reopen" => TabNavigationReady && !_tabs.Closed.IsEmpty,
-        "model.list" => NavigationReady && LoadCatalog is not null && ChangeModel is not null,
-        "variant.list" => NavigationReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null && ChangeModel is not null,
-        "agent.list" or "agent.cycle" or "agent.cycle.reverse" => NavigationReady && LoadCatalog is not null && ChangeAgent is not null,
+        "model.list" => SelectionReady && LoadCatalog is not null,
+        "variant.list" => SelectionReady && CurrentModelSelection is not null && _modelController is not null && LoadCatalog is not null,
+        "agent.list" or "agent.cycle" or "agent.cycle.reverse" => SelectionReady && LoadCatalog is not null,
         "session.interrupt" => SelectedSessionRunning,
         "session.toggle.thinking" => _hasConversation,
         "session.first" or "session.last" or "session.page.up" or "session.page.down" or "session.half.page.up" or "session.half.page.down" => _hasConversation,
@@ -179,6 +179,7 @@ public partial class OpenCodeApp
     private static bool PromptFocus(KeymapContext context) => context.Data.GetValueOrDefault("terminal.editor") is true
         && Equals(context.Data.GetValueOrDefault("terminal.focusKey"), "prompt");
     private bool NavigationReady => _request is null && !_configurationBusy;
+    private bool SelectionReady => !_configurationBusy;
 
     public KeymapDispatchResult? DispatchKeymap(ConsoleKeyInfo key, KeymapContext context, TimeSpan now)
     {
@@ -265,7 +266,7 @@ public partial class OpenCodeApp
 
     private bool IdleKey(Func<Task> action)
     {
-        if (!NavigationReady) return false;
+        if (!SelectionReady) return false;
         var task = action();
         if (task.IsCompleted) task.GetAwaiter().GetResult();
         else _keyTasks.Add(task);
@@ -316,8 +317,8 @@ public partial class OpenCodeApp
         {
             _editHistory.Record(CurrentEdit);
             _input = _draft = "";
-            ClearPromptAttachments(_tabs.Selected);
-            RememberPromptMetadata(_tabs.Selected, null);
+            ClearPromptAttachments(EditorKey);
+            RememberPromptMetadata(EditorKey, null);
             _cursor = 0;
             _selectionAnchor = null;
             _preferredColumn = null;
@@ -348,14 +349,14 @@ public partial class OpenCodeApp
         {
             _draft = _input;
             var input = CapturePromptAdmission(_input);
-            _historyDrafts[_tabs.Selected] = new(new(input.Text, input.Files, input.Agents, input.Skills), input.Metadata, GetPromptMarks().Snapshot(), ShellMode);
+            _historyDrafts[EditorKey] = new(new(input.Text, input.Files, input.Agents, input.Skills), input.Metadata, GetPromptMarks().Snapshot(), ShellMode);
         }
         _historyIndex = Math.Clamp(_historyIndex + direction, 0, _history.Count);
         _input = _historyIndex == _history.Count ? _draft : _history[_historyIndex];
-        var document = _historyIndex == _history.Count ? _historyDrafts.GetValueOrDefault(_tabs.Selected)
-            : _historyDocuments.GetValueOrDefault((_tabs.Selected, _historyIndex));
+        var document = _historyIndex == _history.Count ? _historyDrafts.GetValueOrDefault(EditorKey)
+            : _historyDocuments.GetValueOrDefault((EditorKey, _historyIndex));
         RestoreEditDocument(document);
-        _shellModes[_tabs.Selected] = document?.ShellMode == true;
+        _shellModes[EditorKey] = document?.ShellMode == true;
         _cursor = direction < 0 ? 0 : _input.Length;
         _draftRevision++;
         _dirty = true;
@@ -453,7 +454,7 @@ public partial class OpenCodeApp
             _dirty = true;
             return true;
         }
-        if (_shellPreparing.Contains(_tabs.Selected))
+        if (_shellPreparing.Contains(EditorKey))
         { _inputError = "The shell Session is still being prepared; the draft was kept."; _dirty = true; return true; }
         if (ShellMode) return SubmitShell(delivery);
         if (_input.StartsWith('/') && !HasAttachedSkillSlash && SubmitSlashCommand(delivery ?? InboxDeliveryMode.Steer)) return true;
@@ -464,7 +465,7 @@ public partial class OpenCodeApp
             return true;
         }
         if (string.IsNullOrWhiteSpace(_input)) { PromoteFirstQueued(); return true; }
-        if (HasPromptAttachments && NetworkPromptInput is null)
+        if (HasPromptAttachments && NetworkPromptInput is null && NetworkSelectedPrompt is null)
         {
             _inputError = "The restored attachments were kept. Typed prompt admission must be connected before this draft can be sent.";
             _dirty = true;
@@ -474,10 +475,21 @@ public partial class OpenCodeApp
         // preparation so subsequent typing belongs to the next draft.
         var prompt = CapturePromptAdmission(_input);
         if (delivery is { } mode) prompt = prompt with { Delivery = mode };
+        if (_retryPromptInputs.TryGetValue(EditorKey, out var previous) && !RetryIsUncertain(previous) && !SessionClientAdapter.SamePrompt(prompt, previous))
+            prompt = prompt with { Id = null };
         if (!CanSubmitPrompt(prompt)) return true;
+        var selection = CaptureSelection(prompt);
+        if (NetworkSelectedPrompt is not null && (selection.Agent is null || selection.Model is null))
+        { _inputError = "Select an agent and model before submitting. The draft was kept."; _dirty = true; return true; }
+        if (prompt.Id is null && selection.Model is { } selectedModel)
+        {
+            try { ModelPreferenceCatalog.RequireSelection(selectedModel, _catalog?.Models ?? _presentation?.Models ?? [], _catalog?.Providers ?? _presentation?.Providers ?? []); }
+            catch (InvalidOperationException exception) { _inputError = exception.Message; _dirty = true; return true; }
+        }
         RememberPromptHistory(prompt);
+        var document = _historyDocuments[(EditorKey, _history.Count)];
         _input = _draft = "";
-        ClearPromptAttachments(_tabs.Selected);
+        ClearPromptAttachments(EditorKey);
         _cursor = 0;
         _selectionAnchor = null;
         _highSurrogate = null;
@@ -486,7 +498,7 @@ public partial class OpenCodeApp
         _draftRevision++;
         _request = new CancellationTokenSource();
         _status = "Checking configuration...";
-        _stream = StreamAsync(prompt, _request.Token);
+        _stream = StreamAsync(prompt, _request.Token, selection, document);
         _dirty = true;
         return true;
     }

@@ -13,8 +13,6 @@ public partial class OpenCodeApp
     private ModelSelectionController? _modelController;
     private string? _modelPreferenceInfo;
     private string? _modelPreferenceError;
-    private ModelRef? CurrentModelSelection => _modelSelection ?? (_agentSelection is { } agent ? _agentModelChoices.GetValueOrDefault(agent) : _unassignedModelChoice)
-        ?? _configuredAgentModel ?? _creationFallback;
     private string? ModelDialogError => _catalogError ?? _catalog?.IntegrationError ?? _modelPreferenceError
         ?? (ModelPreferenceState?.Loaded == true ? null : ModelPreferenceLoadError);
 
@@ -40,8 +38,7 @@ public partial class OpenCodeApp
     }
 
     // The picker alone records acceptance. This callback neither closes it nor writes preferences.
-    private Task AcceptExactModel(ModelRef model, CancellationToken token) =>
-        RunConfigurationAction(ct => ApplyModelSelection(model, ct), throwErrors: true, cancellationToken: token);
+    private Task AcceptExactModel(ModelRef model, CancellationToken token) => ApplyModelSelection(model, token);
 
     private async Task ChooseVariant(ModelRef model)
     {

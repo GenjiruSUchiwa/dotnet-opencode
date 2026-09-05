@@ -6,15 +6,18 @@ using Microsoft.AspNetCore.Components;
 using OpenCode.Protocol.Groups;
 using OpenCode.Schema;
 using OpenTui.Blazor;
+using OpenCode.Cli.Tui.Attachments;
 
 public partial class OpenCodeApp
 {
     [Parameter] public Func<SessionId, SessionObservationSnapshot?>? ReadSessionObservation { get; set; }
     [Parameter] public Func<SessionId, CancellationToken, Task>? InterruptObservedSession { get; set; }
     [Parameter] public Func<SessionId?, SessionPromptInput, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>? NetworkPromptInput { get; set; }
+    [Parameter] public Func<SessionId?, SessionPromptInput, PromptSelection, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>? NetworkSelectedPrompt { get; set; }
     [Parameter] public Func<SessionId?, SessionPromptInput?, SessionAdmissionAvailability>? ReadAdmissionAvailability { get; set; }
-    private sealed class OriginRequest(Guid key, SessionId? session, CancellationTokenSource cancellation)
+    private sealed class OriginRequest(Guid tab, Guid key, SessionId? session, CancellationTokenSource cancellation)
     {
+        internal readonly Guid Tab = tab;
         internal readonly Guid Key = key;
         internal readonly Guid RequestId = Guid.NewGuid();
         internal readonly CancellationTokenSource Cancellation = cancellation;
@@ -38,13 +41,13 @@ public partial class OpenCodeApp
     private CancellationTokenSource? _request
     {
         get => _originRequests.Values.LastOrDefault(origin => !origin.Admitted
-            && (origin.Key == _tabs.Selected || _sessionId is { } id && origin.Session == id))?.Cancellation;
+            && (origin.Key == EditorKey || _sessionId is { } id && origin.Session == id))?.Cancellation;
         set
         {
-            if (value is null) { _armedOrigins.Remove(_tabs.Selected); return; }
-            var origin = new OriginRequest(_tabs.Selected, _sessionId, value);
+            if (value is null) { _armedOrigins.Remove(EditorKey); return; }
+            var origin = new OriginRequest(_tabs.Selected, EditorKey, _sessionId, value);
             _originRequests.Add(origin.RequestId, origin);
-            _armedOrigins[_tabs.Selected] = origin.RequestId;
+            _armedOrigins[EditorKey] = origin.RequestId;
         }
     }
     private Task _stream
@@ -54,12 +57,15 @@ public partial class OpenCodeApp
     }
     private bool SelectedSessionRunning => _sessionId is { } id && ReadSessionObservation?.Invoke(id)?.Running == true || _request is not null;
 
-    private bool OriginVisible(OriginRequest origin) => _tabs.Selected == origin.Key
+    private bool OriginVisible(OriginRequest origin) => EditorKey == origin.Key
         && (_sessionId == origin.Session || _sessionId is null && _tabs.Current.SessionId is null);
 
     private bool CanSubmitPrompt(SessionPromptInput input)
     {
         if (_configurationBusy || PromptBlocked) return false;
+        if (_retryPromptInputs.TryGetValue(EditorKey, out var retry) && !SessionClientAdapter.SamePrompt(retry, input)
+            && RetryIsUncertain(retry))
+        { _inputError = "The original admission is unconfirmed. Reconcile it or retry its complete captured input; edits were kept."; _dirty = true; return false; }
         var availability = ReadAdmissionAvailability?.Invoke(_sessionId, input);
         if (availability?.Allowed == true) return true;
         _inputError = availability?.Reason ?? "Session admission state is not connected.";
@@ -70,14 +76,21 @@ public partial class OpenCodeApp
     private SessionPromptInput CapturePromptAdmission(string text)
     {
         var prompt = CapturePromptInput(text);
-        var previous = _retryPromptInputs.GetValueOrDefault(_tabs.Selected);
+        var previous = _retryPromptInputs.GetValueOrDefault(EditorKey);
         var captured = SessionClientAdapter.SnapshotPrompt((previous ?? new SessionPromptInput(text)) with
         {
             Text = prompt.Text, Files = prompt.Files, Agents = prompt.Agents, Skills = prompt.Skills,
-            Metadata = _promptMetadata.GetValueOrDefault(_tabs.Selected) ?? previous?.Metadata
+            Metadata = _promptMetadata.GetValueOrDefault(EditorKey) ?? previous?.Metadata
         });
-        return previous is not null && !SessionClientAdapter.SamePrompt(captured, previous) ? captured with { Id = null } : captured;
+        var changedSelection = _retryPromptSelections.TryGetValue(EditorKey, out var selection)
+            && selection != new PromptSelection(SelectionLocation, _agentSelection, CurrentModelSelection);
+        return previous is not null && !RetryIsUncertain(previous) && (!SessionClientAdapter.SamePrompt(captured, previous) || changedSelection)
+            ? captured with { Id = null } : captured;
     }
+
+    private bool RetryIsUncertain(SessionPromptInput input) => _sessionId is not { } id || input.Id is not { } item
+        || ReadSessionObservation?.Invoke(id)?.Admissions.FirstOrDefault(admission => admission.Id == item) is not
+            { Unconfirmed: false, Phase: SessionAdmissionPhase.Rejected or SessionAdmissionPhase.Cancelled };
 
     private void RememberPromptMetadata(Guid tab, IReadOnlyDictionary<string, JsonElement>? metadata)
     {
@@ -89,39 +102,37 @@ public partial class OpenCodeApp
     private Task StreamAsync(PromptInput input, CancellationToken ct) => StreamAsync(new SessionPromptInput(input.Text,
         Files: input.Files, Agents: input.Agents, Skills: input.Skills), ct);
 
-    private async Task StreamAsync(SessionPromptInput supplied, CancellationToken cancellationToken)
+    private async Task StreamAsync(SessionPromptInput supplied, CancellationToken cancellationToken, PromptSelection? selection = null, PromptEditDocument? document = null)
     {
         var input = SessionClientAdapter.SnapshotPrompt(supplied);
         var prompt = input.Text;
-        var origin = _armedOrigins.Remove(_tabs.Selected, out var requestId) ? _originRequests.GetValueOrDefault(requestId) : null;
+        var origin = _armedOrigins.Remove(EditorKey, out var requestId) ? _originRequests.GetValueOrDefault(requestId) : null;
         origin = origin
             ?? throw new InvalidOperationException("Prompt submission has no originating tab.");
         _retryPromptInputs.Remove(origin.Key);
+        _retryPromptSelections.Remove(origin.Key);
         _promptMetadata.Remove(origin.Key);
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _configurationLifetime.Token);
         var ct = lifetime.Token;
         try
         {
-            if (NetworkPromptInput is null && (NetworkPrompt is null || input.Id is not null || input.Files is not null
+            if (NetworkSelectedPrompt is null && NetworkPromptInput is null && (NetworkPrompt is null || input.Id is not null || input.Files is not null
                 || input.Agents is not null || input.Skills is not null || input.Metadata is not null || input.Delivery is not null || input.Resume is not null))
                 throw new InvalidOperationException("Typed prompt admission is not connected. The complete input was retained; no text-only fallback was sent.");
-            if (origin.Session is null)
-            {
-                var agent = _agentSelection;
-                var configured = agent is { } selected ? _catalog?.Agents.FirstOrDefault(item => item.Id == selected)?.Model ?? _configuredAgentModel : null;
-                var model = agent is { } id ? _agentModelChoices.GetValueOrDefault(id) ?? configured ?? _creationFallback : _unassignedModelChoice ?? _creationFallback;
-                ConfigureNewSession?.Invoke(agent, model);
-            }
+            if (origin.Session is null && selection is not null && NetworkSelectedPrompt is null)
+                ConfigureNewSession?.Invoke(selection.Agent, selection.Model);
             // Do not await a selected-view reload before capturing the adapter's origin. PromptAsync
             // owns origin-scoped readiness; the composer has already captured and cleared its text.
             ct.ThrowIfCancellationRequested();
             _responseState = null;
             _status = "Submitting to server...";
             _dirty = true;
-            var updates = NetworkPromptInput is not null ? NetworkPromptInput(origin.Session, input, ct) : NetworkPrompt!(prompt, ct);
+            var updates = NetworkSelectedPrompt is not null && selection is not null ? NetworkSelectedPrompt(origin.Session, input, selection, ct)
+                : NetworkPromptInput is not null ? NetworkPromptInput(origin.Session, input, ct) : NetworkPrompt!(prompt, ct);
             await foreach (var update in updates.WithCancellation(ct))
             {
                 var visible = OriginVisible(origin);
+                if (origin.Session is null) AdoptEditorSession(origin.Tab, origin.Key, update.SessionId, selection);
                 origin.Session ??= update.SessionId;
                 if (origin.Session != update.SessionId) throw new InvalidOperationException("Prompt observation changed its originating Session.");
                 origin.Input = update.PromptId;
@@ -136,7 +147,7 @@ public partial class OpenCodeApp
                         _history.Add(prompt);
                         if (!browsing) _historyIndex = _history.Count;
                     }
-                    else if (_tabViews.TryGetValue(origin.Key, out var view))
+                    else if (RetainsEditor(origin.Key) && _tabViews.TryGetValue(origin.Key, out var view))
                         _tabViews[origin.Key] = view with { History = view.History.Add(prompt),
                             HistoryIndex = view.HistoryIndex < view.History.Length ? view.HistoryIndex : view.History.Length + 1 };
                     origin.Recorded = true;
@@ -154,7 +165,6 @@ public partial class OpenCodeApp
                 }
                 if (update.SessionTitle is not null) _conversationTitle = update.SessionTitle;
                 if (update.Error is not null && update.Steps.All(step => step.Failed is null && step.ReadModel?.Error is null)) ExecutionError = update.Error.Message;
-                if (update.Steps.LastOrDefault()?.Started is { } step) ApplyObservedSelection(step.Agent, step.Model);
                 _status = update.Status;
                 ReadObservedSession();
                 _dirty = true;
@@ -188,13 +198,13 @@ public partial class OpenCodeApp
                     _editHistory.Record(CurrentEdit);
                     _input = prompt; _cursor = prompt.Length; _selectionAnchor = null;
                     _highSurrogate = null; _preferredColumn = null; _draftRevision++;
-                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id });
+                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document?.Marks, document?.ShellMode == true);
                 }
-                else if (_tabViews.TryGetValue(origin.Key, out var view) && view.Input.Length == 0)
+                else if (!OriginVisible(origin) && RetainsEditor(origin.Key) && _tabViews.TryGetValue(origin.Key, out var view) && view.Input.Length == 0)
                 {
                     view.EditHistory.Record(new(view.Input, view.Cursor, view.SelectionAnchor));
-                    _tabViews[origin.Key] = view with { Input = prompt, Cursor = prompt.Length, SelectionAnchor = null };
-                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id });
+                    _tabViews[origin.Key] = view with { Input = prompt, Cursor = prompt.Length, SelectionAnchor = null, InputError = origin.Error };
+                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document?.Marks, document?.ShellMode == true);
                 }
             }
             _originRequests.Remove(origin.RequestId);
@@ -203,27 +213,36 @@ public partial class OpenCodeApp
         }
     }
 
-    private void RestoreCompletePrompt(Guid origin, SessionPromptInput input)
+    private void RestoreCompletePrompt(Guid origin, SessionPromptInput input, PromptSelection? selection, AttachmentMarksSnapshot? marks, bool shellMode)
     {
         _retryPromptInputs[origin] = input;
+        _shellModes[origin] = shellMode;
         RestorePromptAttachments(origin, new PromptInput(input.Text, input.Files, input.Agents, input.Skills));
         RememberPromptMetadata(origin, input.Metadata);
+        if (selection is not null) _retryPromptSelections[origin] = selection;
+        if (marks is not null) _promptMarkStates[origin] = AttachmentTextMarks.Restore(new(input.Text, input.Files, input.Agents, input.Skills), marks);
     }
 
     private void TrimPromptDocuments(IReadOnlySet<Guid> retained)
     {
-        foreach (var key in _retryPromptInputs.Keys.Concat(_promptMetadata.Keys).Distinct().Where(key => !retained.Contains(key)).ToArray())
+        foreach (var key in _retryPromptInputs.Keys.Concat(_promptMetadata.Keys).Concat(_promptParts.Keys).Concat(_promptMarkStates.Keys).Concat(_shellModes.Keys)
+            .Concat(_commandErrors.Keys).Concat(_shellErrors.Keys).Concat(_historyDrafts.Keys).Concat(_retryPromptSelections.Keys).Distinct().Where(key => !retained.Contains(key)).ToArray())
         {
             _retryPromptInputs.Remove(key);
             _promptMetadata.Remove(key);
             ClearPromptAttachments(key);
+            _promptMarkStates.Remove(key);
+            _retryPromptSelections.Remove(key);
+            _shellModes.Remove(key); _shellErrors.Remove(key); _commandErrors.Remove(key); _historyDrafts.Remove(key);
         }
+        foreach (var key in _historyDocuments.Keys.Where(key => !retained.Contains(key.Tab)).ToArray()) _historyDocuments.Remove(key);
     }
 
     private void BindOriginSession(OriginRequest origin, SessionResponseSnapshot update)
     {
-        var tab = _tabs.Tabs.FirstOrDefault(tab => tab.Key == origin.Key);
+        var tab = _tabs.Tabs.FirstOrDefault(tab => tab.Key == origin.Tab);
         if (tab is null) return; // Closing a pending new tab never resurrects it on admission.
+        if (tab.SessionId is not null && tab.SessionId != origin.Session) return;
         var before = _tabs.Persisted;
         _tabs = _tabs with { Tabs = _tabs.Tabs.Replace(tab, tab with { SessionId = tab.SessionId ?? update.SessionId,
             Title = update.SessionTitle ?? tab.Title }) };
@@ -251,7 +270,7 @@ public partial class OpenCodeApp
             _conversationTitle = session.Title ?? _conversationTitle;
             CurrentDirectory = session.Location.Directory;
             _childSession = session.ParentId is not null;
-            if (session.Agent is { } agent && session.Model is { } model) ApplyObservedSelection(agent, model);
+            RefreshDraftSelection();
         }
         var error = snapshot.Error ?? snapshot.ExecutionError;
         if (error is not null) { ExecutionError = error; _observedError = (id, error); }
@@ -260,17 +279,6 @@ public partial class OpenCodeApp
             : snapshot.Inbox.Count > 0 ? "Queued" : "Ready";
         TranscriptRevision++;
         _dirty = true;
-    }
-
-    private void ApplyObservedSelection(string agent, ModelRef model)
-    {
-        ActiveAgent = _presentation?.Agents?.FirstOrDefault(item => item.Id.Value == agent)?.Name ?? agent;
-        _agentSelection = AgentId.FromExisting(agent);
-        if (_unassignedModelChoice is { } choice && choice == model) { _agentModelChoices[_agentSelection.Value] = choice; _unassignedModelChoice = null; }
-        ActiveModel = _presentation?.Models.FirstOrDefault(item => item.ProviderId.Value == model.ProviderId && item.Id.Value == model.Id)?.Name ?? model.Id;
-        _modelSelection = model;
-        ActiveProvider = _presentation?.Providers?.FirstOrDefault(item => item.Id.Value == model.ProviderId)?.Name ?? model.ProviderId;
-        ActiveVariant = model.Variant;
     }
 
     private Task InterruptActiveSession() => _sessionId is { } id && InterruptObservedSession is not null

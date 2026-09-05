@@ -29,8 +29,6 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     [Parameter] public string CurrentDirectory { get; set; } = "";
     [Parameter] public Func<CancellationToken, Task>? NewConversation { get; set; }
     [Parameter] public Func<CancellationToken, Task<AppCatalog>>? LoadCatalog { get; set; }
-    [Parameter] public Func<ModelRef, CancellationToken, Task<PromptConfiguration>>? ChangeModel { get; set; }
-    [Parameter] public Func<AgentId, CancellationToken, Task<PromptConfiguration>>? ChangeAgent { get; set; }
     [Parameter] public Action<AgentId?, ModelRef?>? ConfigureNewSession { get; set; }
     [Parameter] public Func<SessionPickerQuery, CancellationToken, Task<SessionPickerPage>>? LoadSessions { get; set; }
     [Parameter] public Func<SessionInfo, CancellationToken, Task<PromptConfiguration>>? OpenSession { get; set; }
@@ -67,9 +65,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private AppCatalog? _catalog;
     private ModelRef? _modelSelection;
     private AgentId? _agentSelection;
-    private readonly Dictionary<AgentId, ModelRef> _agentModelChoices = [];
     private readonly Dictionary<(string Provider, string Model), string?> _modelVariants = [];
-    private ModelRef? _unassignedModelChoice;
     private ModelRef? _configuredAgentModel;
     private ModelRef? _creationFallback;
     private SessionId? _sessionId;
@@ -163,7 +159,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private async Task OpenCatalog(string kind)
     {
         _modelProvider = null;
-        if (LoadCatalog is null || _request is not null || _configurationBusy) return;
+        if (LoadCatalog is null || _configurationBusy) return;
         _models = kind == "model";
         _agents = kind == "agent";
         _variants = kind == "variant";
@@ -176,7 +172,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
             try
             {
                 _catalog = await LoadCatalog(token);
-                var location = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+                var location = SelectionLocation;
                 _modelCatalogContext = (ReadSessionClient?.Invoke(), location, ReadManagementRevision?.Invoke(location) ?? default);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
@@ -187,42 +183,36 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
 
     private Task ChooseModel(ModelRef model) => AcceptExactModel(model, _configurationLifetime.Token);
 
-    private async Task ApplyModelSelection(ModelRef model, CancellationToken token)
+    private Task ApplyModelSelection(ModelRef model, CancellationToken token)
     {
-        if (ChangeModel is null) throw new InvalidOperationException("Model selection is not connected to the server.");
+        token.ThrowIfCancellationRequested();
+        ReconcileSelectionDrafts();
         if (_catalog is null) throw new InvalidOperationException("The model catalog is unavailable.");
         ModelPreferenceCatalog.RequireSelection(model, _catalog.Models, _catalog.Providers);
-        var configuration = await ChangeModel(model, token);
-        token.ThrowIfCancellationRequested();
-        if (configuration.ModelSelection != model || configuration.SelectionError is not null)
-            throw new InvalidOperationException(configuration.SelectionError ?? configuration.ExecutionError ?? "The server did not accept the exact selected model and variant.");
-        ConfigureNewSession?.Invoke(_agentSelection, model);
-        if (_agentSelection is { } agent) _agentModelChoices[agent] = model;
-        else _unassignedModelChoice = model;
+        model = model with { Variant = ModelPreferences.NormalizeVariant(model.Variant) };
+        if (_sessionId is { } id) _sessionModelDrafts[id] = model;
+        else if (_agentSelection is { } agent) _homeModelChoices[(SelectionLocation, agent)] = model with { Variant = null };
+        else throw new InvalidOperationException("Select an agent before choosing a Home model.");
         _modelPreferenceInfo = _modelPreferenceError = null;
-        ApplyConfiguration(configuration);
+        RefreshDraftSelection();
+        _dirty = true;
+        return Task.CompletedTask;
     }
 
     private Task ChooseAgent(AgentId agent) => RunConfigurationAction(token => ApplyAgentSelection(agent, token), throwErrors: true, cancellationToken: CancellationToken.None);
 
-    private async Task ApplyAgentSelection(AgentId agent, CancellationToken token)
+    private Task ApplyAgentSelection(AgentId agent, CancellationToken token)
     {
-        if (ChangeAgent is null) throw new InvalidOperationException("Agent selection is not connected to the server.");
-        var configured = _catalog?.Agents.FirstOrDefault(item => item.Id == agent)
+        token.ThrowIfCancellationRequested();
+        ReconcileSelectionDrafts();
+        var configured = _catalog?.Agents.FirstOrDefault(item => item.Id == agent && !item.Hidden && item.Mode != AgentMode.Subagent)
             ?? throw new InvalidOperationException("The selected agent is no longer in the catalog.");
-        var previousAgent = _agentSelection;
-        var previousModel = CurrentModelSelection;
-        var selection = _agentModelChoices.GetValueOrDefault(agent) ?? configured.Model ?? _creationFallback;
-        ConfigureNewSession?.Invoke(agent, selection);
-        try
-        {
-            var configuration = await ChangeAgent(agent, token);
-            token.ThrowIfCancellationRequested();
-            if (configuration.AgentSelection != agent || configuration.SelectionError is not null)
-                throw new InvalidOperationException(configuration.SelectionError ?? "The requested agent selection was not accepted.");
-            ApplyConfiguration(configuration);
-        }
-        catch { ConfigureNewSession?.Invoke(previousAgent, previousModel); throw; }
+        if (_sessionId is { } id) _sessionAgentDrafts[id] = configured.Id;
+        else _homeAgentChoices[SelectionLocation] = configured.Id;
+        _agentSelection = configured.Id;
+        RefreshDraftSelection();
+        _dirty = true;
+        return Task.CompletedTask;
     }
 
     private Task CycleSelection(string kind, int direction = 1) => RunConfigurationAction(async token =>
@@ -270,7 +260,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
 
     private Task RunConfigurationAction(Func<CancellationToken, Task> action, bool throwErrors = false, CancellationToken cancellationToken = default)
     {
-        if (_configurationBusy || _request is not null)
+        if (_configurationBusy)
         {
             if (throwErrors) throw new InvalidOperationException("Another session operation is still in progress.");
             return Task.CompletedTask;
@@ -321,6 +311,10 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
 
     private void ApplyConfiguration(PromptConfiguration configuration)
     {
+            if (configuration.Location is { } location && _selectionLocation != location) _catalog = null;
+            _selectionLocation = configuration.Location ?? (configuration.Directory is { } path ? new LocationRef(path) : _selectionLocation);
+            if (ReadPresentation?.Invoke() is { } presentation && presentation.Session?.Id == configuration.SessionId && presentation.Location == _selectionLocation)
+                _presentation = presentation;
             if (configuration.Directory is { } directory) CurrentDirectory = directory;
             if (configuration.ModelSelection is { } selection)
                 _modelVariants[(selection.ProviderId, selection.Id)] = selection.Variant;
@@ -348,6 +342,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
                 TranscriptRevision++;
                 _responseState = null;
             }
+        RefreshDraftSelection();
         _dirty = true;
     }
 
@@ -381,6 +376,7 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
         ReadObservedSession();
         if (!ReferenceEquals(_previousTheme, ThemeView)) { _previousTheme = ThemeView; ApplyHostTheme(); _dirty = true; }
         ReadSessionPresentation();
+        RefreshDraftSelection();
         ReadTranscriptImageSource();
         ReadShellMode();
         ReadActivities();

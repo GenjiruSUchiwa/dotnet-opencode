@@ -43,7 +43,7 @@ public sealed partial class SessionClientAdapter
         SessionFormTransport? transport;
         lock (_gate)
         {
-            _homeFormLocation ??= _create().Location ?? location;
+            _homeFormLocation = session is null ? location : _homeFormLocation ?? _create().Location ?? location;
             if (session is not null) _formSessions[session.Id] = (session.ParentId, session.Location);
             transport = _formTransport;
             _formsLoading = true;

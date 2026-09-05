@@ -25,9 +25,10 @@ public partial class OpenCodeApp
     private Task OpenStatus()
     {
         CloseDialog();
-        _statusLocation = _presentation?.Location ?? new LocationRef(CurrentDirectory);
-        _statusMcp = _presentation?.Mcp;
-        _statusMcpError = _presentation?.McpError;
+        _statusLocation = SelectionLocation;
+        var presentation = _presentation is { } current && current.Location == _statusLocation ? current : null;
+        _statusMcp = presentation?.Mcp;
+        _statusMcpError = presentation?.McpError;
         _statusCatalogContext = null;
         _statusDialog = true;
         _dirty = true;
@@ -51,7 +52,7 @@ public partial class OpenCodeApp
 
     private void ReadSystemCatalogs()
     {
-        var location = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+        var location = SelectionLocation;
         var context = (ReadSessionClient?.Invoke(), location, ReadManagementRevision?.Invoke(location) ?? default);
         if (_statusDialog && _statusLocation != location) { CloseDialog(); return; }
         if (_statusDialog && !_statusLoading && _statusCatalogContext != context)
@@ -91,7 +92,7 @@ public partial class OpenCodeApp
         try
         {
             var catalog = await LoadCatalog(_configurationLifetime.Token);
-            if (!_models || location != (_presentation?.Location ?? new LocationRef(CurrentDirectory))) return;
+            if (!_models || location != SelectionLocation) return;
             _catalog = catalog;
             _catalogError = null;
         }

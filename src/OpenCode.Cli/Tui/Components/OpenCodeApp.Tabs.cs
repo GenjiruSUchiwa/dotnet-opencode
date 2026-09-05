@@ -34,26 +34,29 @@ public partial class OpenCodeApp
 
     private sealed record TabView(string Input, int Cursor, int? SelectionAnchor, string Draft, ImmutableArray<string> History, int HistoryIndex,
         TerminalScrollState Scroll, bool Reasoning, bool ToolDetails, bool Usage, bool Timestamps, TerminalEditHistory EditHistory,
-        ImmutableHashSet<string> ExpandedRows, ImmutableHashSet<string> CollapsedRows);
+        ImmutableHashSet<string> ExpandedRows, ImmutableHashSet<string> CollapsedRows, string? InputError = null);
 
     private void CaptureTab()
     {
         TranscriptScroll.Detach();
-        _tabViews[_tabs.Selected] = new(_input, _cursor, _selectionAnchor, _draft, _history.ToImmutableArray(), _historyIndex,
-            TranscriptScroll, ShowReasoning, ShowToolDetails, ShowUsage, ShowTimestamps, _editHistory, _expandedRows, _collapsedRows);
+        _tabViews[EditorKey] = new(_input, _cursor, _selectionAnchor, _draft, _history.ToImmutableArray(), _historyIndex,
+            TranscriptScroll, ShowReasoning, ShowToolDetails, ShowUsage, ShowTimestamps, _editHistory, _expandedRows, _collapsedRows, _inputError);
+        if (_sessionId is { } route) _familyRoutes[_tabs.Selected] = route;
+        else _homeLocations[_tabs.Selected] = SelectionLocation;
     }
 
     private void RestoreTab(SessionTab tab, PromptConfiguration configuration)
     {
-        if (_presentation?.Session?.Id != tab.SessionId) _presentation = null;
+        if (_presentation?.Session?.Id != configuration.SessionId) _presentation = null;
         if (configuration.Directory is { } directory && directory != CurrentDirectory) _catalog = null;
-        _tabViews.TryGetValue(tab.Key, out var view);
+        _tabViews.TryGetValue(EditorFor(tab.Key, configuration.SessionId), out var view);
         _input = view?.Input ?? "";
         _editHistory = view?.EditHistory ?? new TerminalEditHistory();
         _draftRevision++;
-        _inputError = null;
+        _inputError = view?.InputError;
         _cursor = view?.Cursor ?? 0;
         _selectionAnchor = view?.SelectionAnchor;
+        _pointerAnchor = null;
         _draft = view?.Draft ?? "";
         _history.Clear();
         if (view is not null) _history.AddRange(view.History);
@@ -72,8 +75,9 @@ public partial class OpenCodeApp
         _responseState = null;
         _projectedHistory = null;
         _transcriptMessages = [];
-        _hasConversation = tab.SessionId is not null;
-        _sessionId = tab.SessionId;
+        _hasConversation = configuration.SessionId is not null;
+        _sessionId = configuration.SessionId;
+        if (_sessionId is { } route) _familyRoutes[tab.Key] = route;
         _conversationTitle = tab.Title;
         _permissions = [];
         _status = "Ready";
@@ -87,8 +91,10 @@ public partial class OpenCodeApp
         if (tab.SessionId is { } session)
         {
             if (OpenTabSession is null) throw new InvalidOperationException("Session navigation is not connected to the server.");
-            return await OpenTabSession(session, cancellationToken);
+            return await OpenTabSession(_familyRoutes.GetValueOrDefault(tab.Key, session), cancellationToken);
         }
+        var location = _homeLocations.GetValueOrDefault(tab.Key) ?? SelectionLocation;
+        if (OpenHomeLocation is not null) return await OpenHomeLocation(location, cancellationToken);
         if (NewConversation is not null) await NewConversation(cancellationToken);
         return ReloadConfiguration is not null ? await ReloadConfiguration(cancellationToken) : new(null, null, null, null);
     }
@@ -130,9 +136,7 @@ public partial class OpenCodeApp
         token.ThrowIfCancellationRequested();
         CaptureTab();
         _tabs = next;
-        var retained = _tabs.Tabs.Concat(_tabs.Closed).Select(tab => tab.Key).ToHashSet();
-        foreach (var removed in _tabViews.Keys.Where(key => !retained.Contains(key)).ToArray()) _tabViews.Remove(removed);
-        TrimPromptDocuments(retained);
+        TrimEditorRoutes();
         if (configuration is not null) RestoreTab(next.Current, configuration);
         QueueTabWrite(before, next.Persisted);
         UpdateViewedTab();
@@ -221,6 +225,7 @@ public partial class OpenCodeApp
         if (activityChanged) { _tabActivity = activity; _dirty = true; }
         var before = _tabs.Persisted;
         _tabs = _tabs.Normalize(metadata);
+        TrimEditorRoutes();
         _tabs = _tabs with { Tabs = _tabs.Tabs.Select(tab => tab.SessionId is { } id && activity.TryGetValue(id, out var item) && item.Title is { } title
             ? tab with { Title = title } : tab).ToImmutableArray() };
         if (_tabs.Current.SessionId == _sessionId && _conversationTitle != _tabs.Current.Title) { _conversationTitle = _tabs.Current.Title; _dirty = true; }

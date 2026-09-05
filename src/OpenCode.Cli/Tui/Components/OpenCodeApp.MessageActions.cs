@@ -84,11 +84,11 @@ public partial class OpenCodeApp
     private void RestoreProjectedUserPrompt(UserMessage message)
     {
         _editHistory.Record(CurrentEdit);
-        _promptParts[_tabs.Selected] = new(message.Text,
+        _promptParts[EditorKey] = new(message.Text,
             message.Files?.Select(file => new PromptInputFileAttachment(file.Source is PromptUriFileSource uri
                 ? uri.Uri : $"data:{file.Mime};base64,{file.Data}", file.Name, file.Description, file.Mention)).ToArray(),
             message.Agents?.ToArray(), message.Skills?.Select(skill => new PromptInputSkillAttachment(skill.Id, skill.Mention)).ToArray());
-        RememberPromptMetadata(_tabs.Selected, message.Metadata);
+        RememberPromptMetadata(EditorKey, message.Metadata);
         foreach (var file in message.Files ?? [])
             _attachmentKinds[file.Source is PromptUriFileSource uri ? uri.Uri : $"data:{file.Mime};base64,{file.Data}"] =
                 file.Mime == "application/x-directory" ? Attachments.AttachmentKind.Directory : Attachments.AttachmentKind.File;
@@ -102,7 +102,7 @@ public partial class OpenCodeApp
 
     // Shared with the admission owner: the canonical unprepared prompt is captured
     // before clearing the origin draft, without minting a second message/inbox ID.
-    private PromptInput CapturePromptInput(string text) => _promptParts.TryGetValue(_tabs.Selected, out var parts)
+    private PromptInput CapturePromptInput(string text) => _promptParts.TryGetValue(EditorKey, out var parts)
         ? parts.Text == text ? parts : parts with { Text = text } : new(text);
     private void ClearPromptAttachments(Guid tab)
     {
@@ -114,7 +114,7 @@ public partial class OpenCodeApp
         _promptParts[tab] = prompt;
         if (_promptMarkStates.TryGetValue(tab, out var state)) state.Reconcile(prompt);
     }
-    private bool HasPromptAttachments => _promptParts.TryGetValue(_tabs.Selected, out var parts)
+    private bool HasPromptAttachments => _promptParts.TryGetValue(EditorKey, out var parts)
         && ((parts.Files?.Count ?? 0) + (parts.Agents?.Count ?? 0) + (parts.Skills?.Count ?? 0) > 0);
 
     private async Task CopyPromptSelection()
@@ -125,11 +125,11 @@ public partial class OpenCodeApp
         var text = _input;
         var cursor = _cursor;
         var anchor = _selectionAnchor!.Value;
-        var tab = _tabs.Selected;
+        var editor = EditorKey;
         try
         {
             await Clipboard.WriteTextAsync(text[Math.Min(cursor, anchor)..Math.Max(cursor, anchor)], _configurationLifetime.Token);
-            if (_tabs.Selected == tab && _input == text && _cursor == cursor && _selectionAnchor == anchor) _selectionAnchor = null;
+            if (EditorKey == editor && _input == text && _cursor == cursor && _selectionAnchor == anchor) _selectionAnchor = null;
         }
         catch (OperationCanceledException) when (_configurationLifetime.IsCancellationRequested) { }
         catch (Exception exception) { _inputError = SessionClientAdapter.Describe(exception); }

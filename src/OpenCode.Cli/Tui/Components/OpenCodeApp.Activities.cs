@@ -106,6 +106,7 @@ public partial class OpenCodeApp
                     var active = await client.ActiveAsync(_configurationLifetime.Token);
                     if (_activitySession != id || _activityClient != client) return;
                     _activityFamily = family;
+                    foreach (var member in family) _navigationSessions[member.Id] = member;
                     _activityFamilyComplete = true;
                     _activityActive = active.Data;
                     _activitySessionError = null;
@@ -210,7 +211,10 @@ public partial class OpenCodeApp
     private Task OpenActivitySession(SessionId id) => RunTabNavigation(async token =>
     {
         if (OpenTabSession is null) throw new InvalidOperationException("Session navigation is not connected.");
+        if (LoadActivityFamily is not null)
+            foreach (var member in await LoadActivityFamily(id, token)) _navigationSessions[member.Id] = member;
         var configuration = await OpenTabSession(id, token);
+        if (configuration.SessionId != id) throw new InvalidOperationException("Session navigation returned a different Session.");
         CaptureTab();
         RestoreTab(_tabs.Current, configuration);
         CloseActivities();

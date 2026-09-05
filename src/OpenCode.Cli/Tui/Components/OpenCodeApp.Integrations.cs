@@ -25,7 +25,7 @@ public partial class OpenCodeApp
     private void ReadManagementContext()
     {
         if (!_integrations && !_mcps) return;
-        if (ReadSessionClient?.Invoke() != _managementClient || (_presentation?.Location ?? new LocationRef(CurrentDirectory)) != _managementLocation)
+        if (ReadSessionClient?.Invoke() != _managementClient || SelectionLocation != _managementLocation)
         {
             CloseDialog();
             _inputError = "The server or location changed. Reopen management for the current connection.";
@@ -74,7 +74,7 @@ public partial class OpenCodeApp
     private async Task OpenManagement(bool mcp)
     {
         if (RequireSessionClient is null) return;
-        var location = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+        var location = SelectionLocation;
         CloseDialog();
         try
         {

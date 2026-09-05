@@ -16,7 +16,8 @@ public partial class OpenCodeApp
     private SessionPresentation? _skillPresentation;
     private SkillCatalogSnapshot? ActiveSkills => _skillCatalog is { } catalog && _skillClient == ReadSessionClient?.Invoke()
         && ReferenceEquals(_skillPresentation, _presentation)
-        && catalog.Location == (_presentation?.Location ?? new LocationRef(CurrentDirectory)) ? catalog : _presentation?.Skills;
+        && catalog.Location == SelectionLocation ? catalog
+        : _presentation is { } presentation && presentation.Location == SelectionLocation ? presentation.Skills : null;
 
     private async Task OpenSkills()
     {
@@ -25,7 +26,7 @@ public partial class OpenCodeApp
         try
         {
             _skillClient = await RequireSessionClient(_configurationLifetime.Token);
-            _skillLocation = _presentation?.Location ?? new LocationRef(CurrentDirectory);
+            _skillLocation = SelectionLocation;
             _skillsOpen = true;
             _dirty = true;
             await InvokeAsync(StateHasChanged);
@@ -44,14 +45,14 @@ public partial class OpenCodeApp
 
     private void AttachSkill(SkillSelection selection, string label, int start, int length)
     {
-        if (selection.Location != (_presentation?.Location ?? new LocationRef(CurrentDirectory)))
+        if (selection.Location != SelectionLocation)
             throw new InvalidOperationException("The skill belongs to a different location.");
         if ((CapturePromptInput(_input).Skills ?? []).Any(skill => skill.Id == selection.Skill.Id)) return;
         var offset = AttachmentEdits.Offset(_input, start, MeasureMentionElement);
         var end = offset + AttachmentEdits.Offset(label, label.Length, MeasureMentionElement);
         if (!ReplacePromptRange(start, length, label + " ")) throw new InvalidOperationException(_inputError ?? "Could not insert the skill mention.");
         var input = CapturePromptInput(_input);
-        RestorePromptAttachments(_tabs.Selected, input with
+        RestorePromptAttachments(EditorKey, input with
         { Skills = (input.Skills ?? []).Append(selection.ToAttachment(new(offset, end, label))).ToArray() });
         _dismissedReferenceText = _input;
         _dismissedCommandInput = _input;

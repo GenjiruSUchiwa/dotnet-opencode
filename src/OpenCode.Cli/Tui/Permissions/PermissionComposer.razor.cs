@@ -5,6 +5,8 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using OpenCode.Schema;
 using OpenTui.Blazor;
+using OpenCode.Cli.Tui.ToolViews;
+using OpenCode.Cli.Tui.Transcript;
 
 public partial class PermissionComposer : ComponentBase, IDisposable
 {
@@ -18,6 +20,8 @@ public partial class PermissionComposer : ComponentBase, IDisposable
     [Parameter] public IReadOnlyDictionary<string, JsonElement>? SourceInput { get; set; }
     [Parameter] public IReadOnlyDictionary<string, JsonElement>? SourceMetadata { get; set; }
     [Parameter] public string? SourceError { get; set; }
+    [Parameter] public TranscriptTheme? DiffTheme { get; set; }
+    [Parameter] public ToolViewBindings? DiffBindings { get; set; }
     [Parameter] public int Width { get; set; } = 75;
     [Parameter] public int TerminalWidth { get; set; } = 80;
     [Parameter] public int TerminalHeight { get; set; } = 24;
@@ -36,6 +40,22 @@ public partial class PermissionComposer : ComponentBase, IDisposable
     private int _cursor;
     private char? _surrogate;
     private string? _error;
+    private readonly TerminalScrollState _editScroll = new() { AutoFollow = false };
+    private bool RichEdit => _stage == Stage.Permission && Action == "edit" && DiffTheme is not null;
+    private int EditHeight => Math.Max(1, Math.Min(15, TerminalHeight) - (TerminalWidth < 80 ? 9 : 7)
+        - (Width < 44 ? 4 : 0) - 1 - (_error is null ? 0 : 2) - (SourceError is null ? 0 : 1));
+    private string? EditDiff
+    {
+        get
+        {
+            var files = Metadata("files");
+            var first = files is { ValueKind: JsonValueKind.Array } array && array.GetArrayLength() > 0 ? array[0] : default;
+            var patch = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("patch", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            if (!string.IsNullOrEmpty(patch)) return patch;
+            var diff = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("diff", out value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            return !string.IsNullOrEmpty(diff) ? diff : MetadataText("diff");
+        }
+    }
     private bool AlwaysEnabled => CanPersistAlways && Request.Save is { Count: > 0 };
     private string[] Labels => _stage == Stage.Always ? ["Confirm", "Cancel"] : ["Allow once", "Always allow", "Reject"];
     private string Title => _stage switch { Stage.Always => "Always allow", Stage.Reject => "Reject permission", _ => "Permission required" };
@@ -93,13 +113,7 @@ public partial class PermissionComposer : ComponentBase, IDisposable
             if (Action == "doom_loop") lines.Add("This keeps the session running despite repeated failures.");
             if (Action == "edit")
             {
-                var files = Metadata("files");
-                var first = files is { ValueKind: JsonValueKind.Array } array && array.GetArrayLength() > 0 ? array[0] : default;
-                var diff = first.ValueKind == JsonValueKind.Object && first.TryGetProperty("patch", out var patch) && patch.ValueKind == JsonValueKind.String
-                    ? patch.GetString()
-                    : first.ValueKind == JsonValueKind.Object && first.TryGetProperty("diff", out var delta) && delta.ValueKind == JsonValueKind.String
-                        ? delta.GetString() : MetadataText("diff");
-                lines.Add(diff ?? InputText("patchText") ?? "No diff provided");
+                lines.Add(EditDiff ?? InputText("patchText") ?? "No diff provided");
             }
             if (!string.IsNullOrEmpty(Request.Message)) lines.Add(Request.Message);
             lines.AddRange(Request.Resources.Select(value => $"- {value}"));
@@ -158,6 +172,7 @@ public partial class PermissionComposer : ComponentBase, IDisposable
         _pending?.Cancel();
         _pending = null;
         _requestId = Request.Id;
+        _editScroll.ScrollToStart();
         _sessionId = Request.SessionId;
         _stage = Stage.Permission;
         _selected = _scroll = _cursor = 0;
@@ -205,8 +220,11 @@ public partial class PermissionComposer : ComponentBase, IDisposable
         if (_stage != Stage.Reject)
         {
             if (key.Key is ConsoleKey.PageUp or ConsoleKey.PageDown)
-                _scroll = Math.Clamp(_scroll + (key.Key == ConsoleKey.PageUp ? -BodyHeight : BodyHeight), 0,
+            {
+                if (RichEdit) _editScroll.ScrollBy(key.Key == ConsoleKey.PageUp ? -EditHeight : EditHeight);
+                else _scroll = Math.Clamp(_scroll + (key.Key == ConsoleKey.PageUp ? -BodyHeight : BodyHeight), 0,
                     Math.Max(0, args.Measure(Body, Math.Max(1, Width - 6)).Lines.Count - BodyHeight));
+            }
             if (key.Key is ConsoleKey.LeftArrow or ConsoleKey.RightArrow || !control && key.KeyChar is 'h' or 'l')
             {
                 var direction = key.Key == ConsoleKey.LeftArrow || key.KeyChar == 'h' ? -1 : 1;
@@ -290,6 +308,7 @@ public partial class PermissionComposer : ComponentBase, IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _editScroll.Detach();
         _pending?.Cancel();
     }
 }

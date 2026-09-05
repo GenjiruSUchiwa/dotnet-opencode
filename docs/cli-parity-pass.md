@@ -132,3 +132,138 @@ The final handoff build succeeded with **0 errors and 10 warnings** in concurren
 owned Schema/Core files. There were **no CLI warnings**. Source/build edits were
 frozen at handoff. Compilation alone establishes no runtime, visual, native,
 durability, or performance parity.
+
+---
+
+## Pass 2 — selection admission and independent route drafts
+
+This section is separate from the committed pass-1 evidence above. It supersedes
+the pass-1 gaps for live-Session draft selections, Location+agent Home model choices,
+nested-child editor ownership, and native permission edit previews.
+
+### Source trace and implemented selection policy
+
+- `packages/tui/src/context/local.tsx:142–278, 394–447`: Home models are selected
+  from a Location+agent map; Session model/variant choices are local drafts over
+  durable Session.model. Local selection does not itself switch the server model.
+- `component/prompt/index.tsx:1194–1213, 1282–1385`: capture before clearing; existing
+  shell/command branches do not commit the ordinary-prompt selection. Ordinary
+  prompts switch the captured agent, commit staged revert, then prepare the captured
+  model after earlier admissions. Queue/steer is the captured delivery, not a new
+  model-selection policy.
+- `component/prompt/draft-stash.ts`: in-progress text belongs to the routed Session,
+  not the family tab's display identity. Drafts are client-memory state.
+- Existing typed `SessionHttpClient.SwitchAgentAsync`, `SwitchModelAsync`, and
+  `CommitRevertAsync` are sufficient. Core `SessionMutations.SelectAgentAsync` does
+  not choose the new agent's preferred model; an existing Session's stored model
+  remains the base selection. No public wire changes were needed or made.
+
+The root now validates and records model/variant and agent choices locally. The old
+TUI host callbacks that immediately mutated an existing Session were removed. The
+same preference service/controller still records accepted picker/cycle choices;
+hydration and Session navigation do not write recents or favorites.
+
+Home choices use actual `LocationRef` (directory and workspace identity) plus agent
+identity. Agent-configured models retain Home precedence, followed by available
+recent/default/catalog candidates. A Session instead uses its own local draft or
+the actual stored Session.model, never a Home choice or the newly chosen agent's
+preferred model. A missing Session model is not replaced with an invented default.
+Variant `default` remains no override. Home model entries store the base model so
+removing a stored variant preference cannot resurrect an old variant.
+
+### Admission and retry lifecycle
+
+| Action | Implemented ownership and behavior |
+| --- | --- |
+| Local model/agent choice | No Session mutation. Remains local across refresh/navigation until its matching submission is committed. |
+| New ordinary prompt | Captures immutable `PromptSelection` plus the full typed prompt before clearing. New Session creation uses that captured Location/agent/model, not the currently visible route or mutable host defaults. |
+| Steer/queue submission | Selection preparation runs under the existing per-Session admission semaphore, after preceding admissions. Uses the real agent switch, staged-revert commit, model switch, then the existing prompt POST. |
+| Preparation confirmation | A client-only commit revision is published after real switch acknowledgments and observed through the existing Session read model. Matching submitted drafts clear; a different newer local choice remains. Reconciliation includes hidden routes, not only the visible tab. |
+| Unconfirmed retry | Original item ID, payload, selection, and delivery capture remain authoritative. A committed selection is not reapplied merely because the prompt response was lost. Edited unconfirmed payloads are rejected instead of minted as a fresh request. |
+| Definitively rejected/cancelled input | An explicit changed payload, delivery, or selection can start a new capture. This exception never applies to unknown outcomes. |
+| Existing inbox queue/steer/cancel | Existing typed mutation only. Does not reapply a captured model or manufacture a new prompt/admission. |
+| Command/shell in an existing Session | Leaves local ordinary-prompt selections uncommitted, matching the source branches. New-session commands/shells use captured creation choices; no fake command inbox ID or automatic POST retry was introduced. |
+| External selection/history updates | Runner step models no longer overwrite the prompt's local choices. Confirmed stored metadata remains authoritative once the matching local submission has been committed. |
+
+`PromptSelection` and selection commit revisions are CLI-only captures/read-model
+fields, not new JSON request fields or durable events. Commit watermarks are scoped
+to the actual client and Session, and reset when the client changes. The server's
+stored-model policy still determines execution: this is not a claim that every
+queued item carries an immutable execution-model envelope.
+
+### Route, tab, and cleanup lifecycle
+
+- Canonical Session editor identities are separate from family-tab identities.
+  Parent, child, and nested child retain independent text, cursor/selection, undo
+  history, prompt-history cursor, attachments, metadata, marks/next IDs, shell mode,
+  error state, and retry captures.
+- Navigation hydrates the real destination before switching views. Family metadata
+  comes from the existing typed family loader/shared observer. The tab remains
+  rooted at the real family root; its last routed child is remembered in memory.
+- Closing/reopening or opening the same retained Session through the picker reuses
+  its canonical editor. Replacing a preview tab does not erase that Session's draft.
+  There is no disk format change or invented Session ID for an editor slot.
+- Background prompt, command, and shell completions use the captured editor identity.
+  Failure restoration cannot target a sibling/parent draft or overwrite newer text.
+  Home-to-Session adoption preserves the editor and newer local selections without
+  reopening a closed tab. In-flight captures survive tab-alias cleanup.
+- Stash, clipboard application, attachment lookup, history, undo/redo, fork restoration,
+  and command/shell captures now use the routed editor identity. Retry IDs are never
+  stripped to make a stash or command conversion eligible.
+- Ordinary prompt failure restores the captured mode as well as text/marks, so an
+  intervening empty shell-mode toggle cannot reinterpret the restored prompt as a
+  shell command. A retained prompt retry is also rejected by shell submission.
+- Session deletion removes its editor mapping, child/family mappings, metadata,
+  retry selections, mark controllers, and selection-commit watermarks. Tab aliases
+  and Home view state are pruned when no longer retained; Session drafts remain
+  in client memory for later reopening, as in the source draft-stash model.
+- Stored tab layout remains root Session IDs/titles. Existing title, fork, viewed,
+  sidebar, permission/form, and terminal callbacks still use the same client and
+  observer; no second SSE or selection-specific configuration writer was added.
+- Home form placement now follows the actual Home Location rather than the first
+  launch directory. Completion, skills, clipboard validation, media loaders, and
+  management/status context checks use the same actual selection Location, avoiding
+  reuse of another route's stale readiness presentation after a move/navigation.
+
+### Native permission edit body
+
+The production `PermissionComposer.razor` now mounts the existing `PatchDiff` in a
+bounded native `ScrollBox` for actual edit-permission diff metadata. Source precedence
+is `metadata.files[0].patch`, then `.diff`, then `metadata.diff`. Pending raw
+`input.patchText` uses the existing shared `TuiCode` provider instead of constructing
+a synthetic tool result. With neither, it shows the source “No diff provided”.
+
+The view uses resolved elevated diff roles, the existing shared syntax provider,
+configured auto/split/unified layout, and the permission source's word-wrap policy.
+Page keys operate the native scroll state. Invalid unified patches retain the existing
+parser error and exact input display. No intraline algorithm, patch application,
+file read, replacement lexer, or parser instance per permission/hunk was added.
+
+### Verification, ownership, and remaining limits
+
+All four pass-2 full CLI dependency-graph builds succeeded. The final build includes
+the mode-restoration correction and has **0 warnings and 0 errors**; it also staged
+the complete Server runtime. Source/build edits are frozen for handoff. Isolated artifacts:
+
+`C:\tmp\opencode\cli-pass2-2d7ced31-75b1-471d-a367-4492a61e1e14`
+
+Only pinned `.dotnet\dotnet.exe` SDK 11.0.100-preview.7.26381.103 builds and offline
+restore were used, with `OpenApiGenerateDocuments=false`. No tests were added,
+edited, or run. No CLI/help/UI/app, SDK/DI, live config/credential, API, DB/SQL/
+migration, clipboard, codec/native/WASM, provider/MCP/PTY, or process probe was run.
+No Git, publication, global install, or subdelegation occurred.
+
+Excluded Auth/project/generated/assets and other packages remain untouched. The
+parent's image stream collector, user agent, and production grammar-cache clock
+wiring are preserved.
+
+Remaining limits are explicit: these in-memory drafts do not survive a client
+restart; command/shell creation still waits for confirmed Session metadata rather
+than inventing optimistic Session records; the selection-switch and prompt APIs
+are separate server operations, not one atomic cross-client transaction. Their
+source ordering is serialized locally, not fenced against another client. No
+public counterpart change is proposed for that source behavior. External-editor/
+full slash-argument work and collapsed pasted descriptors remain outside this pass.
+Focus, layout, streaming interleavings, native diff/image protocols, and end-to-end
+execution still require authorized runtime verification. A build proves none of
+those parity claims.

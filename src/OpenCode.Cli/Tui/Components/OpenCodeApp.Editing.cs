@@ -35,7 +35,7 @@ public partial class OpenCodeApp
         _cursor = value.Cursor;
         _selectionAnchor = value.SelectionAnchor;
         RestoreEditDocument(_editDocuments.TryGetValue(value, out var document) ? document : null);
-        _shellModes[_tabs.Selected] = document?.ShellMode == true;
+        _shellModes[EditorKey] = document?.ShellMode == true;
         _preferredColumn = null;
         _highSurrogate = null;
         _inputError = null;
@@ -81,8 +81,8 @@ public partial class OpenCodeApp
         { _inputError = exception.Message; _dirty = true; return false; }
         if (record) _editHistory.Record(CurrentEdit);
         _input = next.Input.Text;
-        _promptParts[_tabs.Selected] = next.Input;
-        _promptMarkStates[_tabs.Selected] = next;
+        _promptParts[EditorKey] = next.Input;
+        _promptMarkStates[EditorKey] = next;
         _cursor = start + text.Length;
         _selectionAnchor = null;
         _preferredColumn = null;
@@ -99,13 +99,13 @@ public partial class OpenCodeApp
 
     private void RestoreEditDocument(PromptEditDocument? document)
     {
-        if (document is null) ClearPromptAttachments(_tabs.Selected);
-        else RestorePromptAttachments(_tabs.Selected, document.Input);
-        if (document?.Marks is { } marks) _promptMarkStates[_tabs.Selected] = AttachmentTextMarks.Restore(document.Input, marks);
-        RememberPromptMetadata(_tabs.Selected, document?.Metadata);
+        if (document is null) ClearPromptAttachments(EditorKey);
+        else RestorePromptAttachments(EditorKey, document.Input);
+        if (document?.Marks is { } marks) _promptMarkStates[EditorKey] = AttachmentTextMarks.Restore(document.Input, marks);
+        RememberPromptMetadata(EditorKey, document?.Metadata);
     }
 
-    private void RememberPromptHistory(SessionPromptInput input) => _historyDocuments[(_tabs.Selected, _history.Count)] =
+    private void RememberPromptHistory(SessionPromptInput input) => _historyDocuments[(EditorKey, _history.Count)] =
         new(new(input.Text, input.Files, input.Agents, input.Skills), input.Metadata, GetPromptMarks().Snapshot());
 
     private void InputText(TerminalTextInputEventArgs args)

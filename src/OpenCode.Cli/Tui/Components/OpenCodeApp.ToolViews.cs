@@ -12,6 +12,13 @@ public partial class OpenCodeApp
     [Parameter] public ICodeHighlighter? TranscriptCodeHighlighter { get; set; }
     private ToolDiffView _toolDiffView = ToolDiffView.Auto;
     private NativeTextWrapMode _toolDiffWrap = NativeTextWrapMode.Word;
+    private ToolViewBindings PermissionDiffBindings => TranscriptToolBindings with { DiffWrap = NativeTextWrapMode.Word };
+    private TranscriptTheme PermissionDiffTheme => TranscriptColors with
+    {
+        Text = ElevatedColors.Text.Hex, Subdued = ElevatedColors.Subdued.Hex, Background = ElevatedColors.Background.Hex,
+        DiffAdded = ElevatedColors.Color("diff.text.added").Hex, DiffRemoved = ElevatedColors.Color("diff.text.removed").Hex,
+        DiffHunk = ElevatedColors.Color("diff.text.hunkHeader").Hex, Error = ElevatedColors.Color("text.feedback.error.default").Hex
+    };
 
     private ToolViewBindings TranscriptToolBindings => new()
     {

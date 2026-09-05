@@ -329,6 +329,15 @@ public sealed partial class SessionClientAdapter : IAsyncDisposable
             _sessionId == sessionId ? _viewVersion : -1, cancellationToken);
     }
 
+    public IAsyncEnumerable<SessionResponseSnapshot> PromptAsync(SessionId? sessionId, SessionPromptInput input,
+        PromptSelection selection, CancellationToken cancellationToken)
+    {
+        var captured = SnapshotPrompt(input);
+        lock (_gate) return PromptForOrigin(sessionId, captured, sessionId is null ? _create() with
+            { Location = selection.Location, Agent = selection.Agent?.Value, Model = selection.Model } : null,
+            _sessionId == sessionId ? _viewVersion : -1, cancellationToken, selection);
+    }
+
     public void NewConversation()
     {
         lock (_gate)

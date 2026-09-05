@@ -172,7 +172,7 @@ internal sealed record ProducerConfiguration(
             _ => throw new JsonException("Unknown permission effect.")
         } : throw new JsonException("Permission effect must be a string.");
 
-    private static bool IsDirectory(string path) => Exists(path) && (File.GetAttributes(path) & FileAttributes.Directory) != 0;
+    private static bool IsDirectory(string path) => Exists(path) && (File.GetAttributes(path) & FileAttributes.Directory) != FileAttributes.None;
     private static bool Exists(string path)
     {
         try { File.GetAttributes(path); return true; }

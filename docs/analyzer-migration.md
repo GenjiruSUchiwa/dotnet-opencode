@@ -1,9 +1,30 @@
 # Analyzer migration — in progress
 
-This wave is **not complete**. Do not interpret a build with warnings, or a smaller
-diagnostic count after policy changes, as analyzer sign-off. Full completion waits
-for the EF Core owner handoff, review of the new persistence implementation, and
-a fresh full CLI dependency build with no unexplained enabled diagnostics.
+This wave is **not complete**. There are now **eight parallel, disjoint owners**.
+Each owner fixes diagnostics in its assigned paths; the EF owner also owns its
+persistence analyzer cleanup. Independent owners do not wait for EF and must not
+edit one another's files. The parent alone owns integration, commits, pushes,
+releases, and the final full CLI dependency build/sign-off.
+
+The latest parent-supplied full-graph baseline reported **1,979 warnings and
+0 errors** in `provider-identity-build.log`, beneath the directory recorded by
+`C:\tmp\opencode\modernization-integration-location.txt`. This is a historical
+baseline, not a count of work currently remaining across concurrent owners.
+
+### Core foundations handoff
+
+The foundation owner has finished enabled-diagnostic cleanup in
+`Core/{Agent,CodeMode,Commands,Config,Filesystem,Instructions,Llm,Plugins,Snapshot,Vcs}`
+and `Core/Locations` **except CatalogLocation.cs**. Its isolated Core build reports
+**0 diagnostics in that subset**, from **320 unique baseline warnings**, without
+changing global analyzer policy, project/package configuration, or generated assets.
+The same build succeeded with **10 warnings and 0 errors overall**; its remaining
+warnings belong to other owners. This is not full-graph sign-off.
+
+Details, exact exceptions, the two source-parity fixes, modified-file inventory,
+and build evidence are in [Core foundations pass](core-foundations-pass.md).
+ProviderUserAgent.Apply and the parent-approved leading `dotnet-opencode` identity
+with configured metadata suffix remain intact.
 
 ## Package and build policy
 
@@ -26,7 +47,7 @@ The package loaded and analyzed the full CLI graph with local SDK
 `11.0.100-preview.7.26381.103`; no analyzer-load/compiler-version errors occurred.
 This establishes tooling compatibility with that compiler, not runtime correctness.
 
-## Inventory so far
+## Earlier-wave inventory (historical)
 
 The full default-package baseline reported **6,263 warnings and 0 errors** across
 the graph. The subsequent policy build reported **1,477 warnings and 0 errors**;
@@ -52,7 +73,7 @@ reports **0 warnings and 0 errors** for OpenTui.Blazor, OpenTui.Native,
 Transport.Pipelines and Runtime.Time. Log: `C:\tmp\opencode\analyzer-blazor.log`.
 This does not compile the EF-owned persistence graph and is not full-wave sign-off.
 
-The latest isolated CLI compile reports **16 warnings and 0 errors**, all in
+The earlier isolated CLI compile reported **16 warnings and 0 errors**, all in
 `src/OpenCode.Cli/Auth/AuthCommands.cs`. It used `BuildProjectReferences=false`
 and the existing dependency outputs, so it does **not** verify the current EF
 source. Log: `C:\tmp\opencode\analyzer-cli-isolated.log`.
@@ -63,10 +84,9 @@ source. Log: `C:\tmp\opencode\analyzer-cli-isolated.log`.
 | MA0015 | 6 | RunAsync argument validation; ChooseAsync noninteractive validation; OpenBrowser URI validation |
 | MA0042 | 1 | RunAsync's synchronous CreateConnection disposal/bootstrap boundary |
 
-AuthCommands directly constructs SqliteDatabase and CredentialStore. Leave that
-file unchanged until the EF composition handoff rather than modernizing an outgoing
-bootstrap path or suppressing its diagnostics. The warning locations in the log
-refer to the pre-handoff source and can move during the rewrite.
+That version of AuthCommands directly constructed SqliteDatabase and
+CredentialStore and was left unchanged for its composition owner. These warning
+locations refer to the earlier source, not the current parallel-owner residuals.
 
 ## Current explicit policy decisions
 
@@ -103,20 +123,20 @@ access rooted in a parameter is allowed by the analyzer's documented option.
 - No ConfigureAwait(false), cancellation forwarding, culture, regex engine,
   schema, SQL migration or persistence-engine change has been applied mechanically.
 
-## Active ownership boundary
+## Earlier EF transfer boundary (historical)
 
 EF owner session: **`ses_f914cea73ffeW5hdh5Lz1c5TIA`**.
 
-The EF owner now owns **all Core persistence/query/projector/database files**,
+The EF owner took **all Core persistence/query/projector/database files**,
 **Server/SDK persistence DI**, and the needed EF package configuration. The analyzer
 worker must not edit or race those implementations during the rewrite. Existing
 TimeProvider and Vogen changes remain requirements, not optional cleanup.
 
-Analyzer work may continue in repository analyzer policy/package setup and
-non-overlapping **CLI, generic OpenTui, Runtime.Time and Transport.Pipelines**
-source. Do not add suppressions to hide new EF diagnostics. Once the EF owner hands
-back its completed build, re-inventory the whole graph, inspect new diagnostics,
-and finish the remaining owned-source cleanup before declaring this wave complete.
+This earlier allocation is superseded by the parent's eight-owner disjoint work
+plan. The foundation owner now edits only its Core subset and these analyzer/
+foundation records. Global `.editorconfig`, Directory.Build.props and package
+configuration require parent approval for an exact change. Persistence remains
+outside this owner's scope; its diagnostics must not be silently suppressed.
 
 ## Independent library cleanup completed
 

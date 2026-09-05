@@ -299,14 +299,14 @@ internal static class AnthropicRequestLowering
 
     private static bool NativeSystemUpdates(string modelId)
     {
-        var match = Regex.Match(modelId.ToLowerInvariant(), @"(?:^|[./])claude-(fable|haiku|mythos|opus|sonnet)-(\d+)(?:[.-](\d+))?");
+        var match = Regex.Match(modelId.ToLowerInvariant(), @"(?:^|[./])claude-(?<family>fable|haiku|mythos|opus|sonnet)-(?<major>\d+)(?:[.-](?<minor>\d+))?", RegexOptions.NonBacktracking);
         if (!match.Success) return false;
         var major = double.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
         if (match.Groups[1].Value != "opus" || major != 4) return major >= 5;
         return match.Groups[3].Success && match.Groups[3].Length <= 2 && double.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture) >= 8;
     }
 
-    private static string ToolId(string id) => Regex.Replace(id, "[^a-zA-Z0-9_-]", "_");
+    private static string ToolId(string id) => Regex.Replace(id, "[^a-zA-Z0-9_-]", "_", RegexOptions.NonBacktracking);
     private static JsonElement? Metadata(LlmContent part, string name) => part.ProviderMetadata.TryGetValue("anthropic", out var value)
         && value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var field) && field.ValueKind != JsonValueKind.Null ? field : null;
     private static LlmException Invalid(string message) => new(new LlmFailure.InvalidRequest(message));

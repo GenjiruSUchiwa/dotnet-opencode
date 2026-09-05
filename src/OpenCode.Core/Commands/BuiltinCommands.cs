@@ -22,10 +22,10 @@ public static class BuiltinCommands
             ?? throw new MissingManifestResourceException($"Missing built-in command prompt: {name}");
         // String.replace replaces only the first path token and interprets JS replacement tokens.
         var path = source.IndexOf("${path}", StringComparison.Ordinal);
-        var template = path < 0 ? source : source[..path] + Regex.Replace(projectDirectory, @"\$([$&`'])", token => token.Groups[1].Value switch
+        var template = path < 0 ? source : source[..path] + Regex.Replace(projectDirectory, @"\$(?<token>[$&`'])", token => token.Groups[1].Value switch
         {
             "$" => "$", "&" => "${path}", "`" => source[..path], "'" => source[(path + 7)..], _ => token.Value
-        }) + source[(path + 7)..];
+        }, RegexOptions.NonBacktracking) + source[(path + 7)..];
         return new RuntimeCommand(new CommandInfo(name, description), (input, ct) =>
         {
             ct.ThrowIfCancellationRequested();

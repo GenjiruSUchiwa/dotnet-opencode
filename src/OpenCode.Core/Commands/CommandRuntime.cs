@@ -24,7 +24,7 @@ public sealed class CommandRuntime(IEnumerable<RuntimeCommand> definitions)
     public async Task<PreparedCommand> PrepareAsync(string name, CommandInvocation invocation, CancellationToken ct = default)
     {
         var definition = _commands.GetValueOrDefault(name) ?? throw new CommandNotFoundException(name);
-        try { return await definition.PrepareAsync(invocation, ct); }
+        try { return await definition.PrepareAsync(invocation, ct).ConfigureAwait(true); }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (CommandExecutionException) { throw; }
         catch (Exception error) { throw new CommandExecutionException(name, error); }
@@ -37,14 +37,14 @@ public sealed class CommandRuntime(IEnumerable<RuntimeCommand> definitions)
     public static IEnumerable<RuntimeCommand> Mcp(IEnumerable<McpDiscoveredPrompt> prompts, McpRuntime runtime) =>
         prompts.Select(prompt =>
         {
-            var name = Regex.Replace(prompt.Server, "[^a-zA-Z0-9_-]", "_") + ":" + Regex.Replace(prompt.Prompt.Name, "[^a-zA-Z0-9_-]", "_");
+            var name = Regex.Replace(prompt.Server, "[^a-zA-Z0-9_-]", "_", RegexOptions.NonBacktracking) + ":" + Regex.Replace(prompt.Prompt.Name, "[^a-zA-Z0-9_-]", "_", RegexOptions.NonBacktracking);
             return new RuntimeCommand(new CommandInfo(name, prompt.Prompt.Description), async (input, ct) =>
             {
                 var args = CommandTemplate.ParseArguments(input.Prompt.Text);
                 var arguments = new Dictionary<string, object?>(StringComparer.Ordinal);
                 foreach (var argument in (prompt.Prompt.ProtocolPrompt.Arguments ?? []).Select((value, index) => (value, index)))
                     arguments[argument.value.Name] = argument.index < args.Length ? args[argument.index] : "";
-                var result = await runtime.PromptAsync(prompt.Server, prompt.Prompt.Name, arguments, ct);
+                var result = await runtime.PromptAsync(prompt.Server, prompt.Prompt.Name, arguments, ct).ConfigureAwait(true);
                 var text = CommandTemplate.Trim(string.Join("\n", result.Messages.Select(message => message.Content is TextContentBlock content ? content.Text : "")));
                 return new PreparedCommand(name, input with { Prompt = input.Prompt with { Text = text } });
             });

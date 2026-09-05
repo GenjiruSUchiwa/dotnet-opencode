@@ -86,8 +86,8 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         try
         {
-            var token = await ExchangeAsync(code, authorization.RedirectUri.AbsoluteUri, authorization.Verifier, lifetime.Token);
-            return await SaveAsync(BrowserMethodId, token, label, authorization.ExpiresAt, lifetime.Token);
+            var token = await ExchangeAsync(code, authorization.RedirectUri.AbsoluteUri, authorization.Verifier, lifetime.Token).ConfigureAwait(false);
+            return await SaveAsync(BrowserMethodId, token, label, authorization.ExpiresAt, lifetime.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && deadline.IsCancellationRequested)
         { throw new LlmException(new LlmFailure.Authentication("OpenAI authorization expired.")); }
@@ -96,10 +96,10 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
     public async Task<OpenAiDeviceAuthorization> BeginHeadlessAuthorizationAsync(CancellationToken ct = default)
     {
         using var request = JsonPost("/api/accounts/deviceauth/usercode", new OpenAiDeviceRequest(ClientId), OpenAiOAuthJsonContext.Default.OpenAiDeviceRequest);
-        var device = await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiDeviceCode, ct);
+        var device = await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiDeviceCode, ct).ConfigureAwait(false);
         if (string.IsNullOrEmpty(device.DeviceAuthId) || string.IsNullOrEmpty(device.UserCode) || device.Interval is null)
             throw new LlmException(new LlmFailure.InvalidProviderOutput("OpenAI returned an invalid device authorization."));
-        var match = Regex.Match(device.Interval, @"^\s*([+-]?\d+)", RegexOptions.CultureInvariant);
+        var match = Regex.Match(device.Interval, @"^\s*(?<seconds>[+-]?\d+)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
         var parsed = match.Success && double.TryParse(match.Groups[1].Value, CultureInfo.InvariantCulture, out var value) && value != 0 ? value : 5;
         var seconds = Math.Max(parsed, 1);
         if (!double.IsFinite(seconds) || seconds >= TimeSpan.MaxValue.TotalSeconds - 3)
@@ -120,20 +120,20 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
             {
                 using var request = JsonPost("/api/accounts/deviceauth/token", new OpenAiDevicePoll(authorization.DeviceId, authorization.UserCode), OpenAiOAuthJsonContext.Default.OpenAiDevicePoll);
                 AddUserAgent(request);
-                using var response = await SendAsync(request, lifetime.Token);
+                using var response = await SendAsync(request, lifetime.Token).ConfigureAwait(false);
                 if (response.IsSuccessStatusCode)
                 {
-                    var granted = await DecodeAsync(response, OpenAiOAuthJsonContext.Default.OpenAiDeviceGrant, lifetime.Token);
+                    var granted = await DecodeAsync(response, OpenAiOAuthJsonContext.Default.OpenAiDeviceGrant, lifetime.Token).ConfigureAwait(false);
                     if (string.IsNullOrEmpty(granted.AuthorizationCode) || string.IsNullOrEmpty(granted.CodeVerifier))
                         throw new LlmException(new LlmFailure.InvalidProviderOutput("OpenAI returned an invalid authorization grant.") { Http = LlmHttpContext.From(response) });
-                    var token = await ExchangeAsync(granted.AuthorizationCode, Issuer + "/deviceauth/callback", granted.CodeVerifier, lifetime.Token);
-                    return await SaveAsync(HeadlessMethodId, token, label, authorization.ExpiresAt, lifetime.Token);
+                    var token = await ExchangeAsync(granted.AuthorizationCode, Issuer + "/deviceauth/callback", granted.CodeVerifier, lifetime.Token).ConfigureAwait(false);
+                    return await SaveAsync(HeadlessMethodId, token, label, authorization.ExpiresAt, lifetime.Token).ConfigureAwait(false);
                 }
                 if (response.StatusCode is not (HttpStatusCode.Forbidden or HttpStatusCode.NotFound))
-                    await FailAsync(response, lifetime.Token);
+                    await FailAsync(response, lifetime.Token).ConfigureAwait(false);
                 // Unlike the console flow, headless OpenAI polls immediately and
                 // sleeps only after a 403/404, including the source's 3-second margin.
-                await Task.Delay(authorization.PollInterval, _clock, lifetime.Token);
+                await Task.Delay(authorization.PollInterval, _clock, lifetime.Token).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && deadline.IsCancellationRequested)
@@ -142,14 +142,14 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
 
     public async Task<StoredCredential?> ResolveCredentialAsync(CancellationToken ct = default)
     {
-        await _refresh.WaitAsync(ct);
+        await _refresh.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var credential = await credentials.GetActiveCredentialAsync(IntegrationId, ct);
+            var credential = await credentials.GetActiveCredentialAsync(IntegrationId, ct).ConfigureAwait(false);
             if (credential is null || credential.Value.GetProperty("type").GetString() == "key") return credential;
             if (!IsChatGptCredential(credential)) throw new LlmException(new LlmFailure.Unsupported("The selected OpenAI OAuth method is not implemented."));
             if (credential.Value.GetProperty("expires").GetDecimal() > _clock.GetUtcNow().AddMinutes(5).ToUnixTimeMilliseconds()) return credential;
-            return (await RefreshCoreAsync(credential, ct)).Credential;
+            return (await RefreshCoreAsync(credential, ct).ConfigureAwait(false)).Credential;
         }
         finally { _refresh.Release(); }
     }
@@ -158,7 +158,7 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
         IReadOnlyDictionary<string, string>? headers = null, JsonObject? body = null, JsonObject? providerOptions = null,
         CancellationToken ct = default)
     {
-        var credential = await ResolveCredentialAsync(ct);
+        var credential = await ResolveCredentialAsync(ct).ConfigureAwait(false);
         if (credential is null || !IsChatGptCredential(credential))
             throw new LlmException(new LlmFailure.Authentication("Select a supported ChatGPT OAuth credential in this channel first."));
         return new OpenAiResponsesLlmClient(credential, headers, body, providerOptions, sessionId);
@@ -166,13 +166,13 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
 
     public async Task<CredentialMutation> RefreshCredentialAsync(string credentialId, CancellationToken ct = default)
     {
-        await _refresh.WaitAsync(ct);
+        await _refresh.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var credential = await credentials.GetCredentialAsync(credentialId, ct)
+            var credential = await credentials.GetCredentialAsync(credentialId, ct).ConfigureAwait(false)
                 ?? throw new LlmException(new LlmFailure.Authentication("The OpenAI credential no longer exists."));
             if (!IsChatGptCredential(credential)) throw new LlmException(new LlmFailure.Unsupported("Only the supported OpenAI OAuth methods can be refreshed."));
-            return await RefreshCoreAsync(credential, ct);
+            return await RefreshCoreAsync(credential, ct).ConfigureAwait(false);
         }
         finally { _refresh.Release(); }
     }
@@ -181,10 +181,10 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
     {
         using var request = FormPost(new Dictionary<string, string>
         { ["grant_type"] = "refresh_token", ["refresh_token"] = credential.Value.GetProperty("refresh").GetString()!, ["client_id"] = ClientId });
-        var token = await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiOAuthTokens, ct);
+        var token = await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiOAuthTokens, ct).ConfigureAwait(false);
         var value = Credential(credential.Value.GetProperty("methodID").GetString()!, token);
         if (!value.ContainsKey("metadata") && credential.Value.TryGetProperty("metadata", out var metadata)) value["metadata"] = JsonNode.Parse(metadata.GetRawText());
-        var result = await credentials.UpdateAsync(credential.Id, value: JsonSerializer.SerializeToElement(value), ct: ct);
+        var result = await credentials.UpdateAsync(credential.Id, value: JsonSerializer.SerializeToElement(value), ct: ct).ConfigureAwait(false);
         if (result.Credential is null) throw new LlmException(new LlmFailure.Authentication("The OpenAI credential was removed during refresh."));
         return result;
     }
@@ -196,7 +196,7 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
             ["grant_type"] = "authorization_code", ["code"] = code, ["redirect_uri"] = redirect,
             ["client_id"] = ClientId, ["code_verifier"] = verifier
         });
-        return await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiOAuthTokens, ct);
+        return await SendJsonAsync(request, OpenAiOAuthJsonContext.Default.OpenAiOAuthTokens, ct).ConfigureAwait(false);
     }
 
     private async Task<CredentialMutation> SaveAsync(string method, OpenAiOAuthTokens tokens, string? label, DateTimeOffset expiresAt, CancellationToken ct)
@@ -204,13 +204,13 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
         var value = Credential(method, tokens);
         if (label is null)
         {
-            var labels = (await credentials.ListCredentialsForIntegrationAsync(IntegrationId, ct)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
+            var labels = (await credentials.ListCredentialsForIntegrationAsync(IntegrationId, ct).ConfigureAwait(false)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
             label = Enumerable.Range(0, labels.Count + 1).Select(index => index == 0 ? "OpenAI" : "OpenAI " + (index + 1).ToString(CultureInfo.InvariantCulture))
                 .First(candidate => !labels.Contains(candidate));
         }
         ct.ThrowIfCancellationRequested();
         if (_clock.GetUtcNow() >= expiresAt) throw new LlmException(new LlmFailure.Authentication("OpenAI authorization expired."));
-        return await credentials.CreateAsync(IntegrationId, JsonSerializer.SerializeToElement(value), label, ct);
+        return await credentials.CreateAsync(IntegrationId, JsonSerializer.SerializeToElement(value), label, ct).ConfigureAwait(false);
     }
 
     private JsonObject Credential(string method, OpenAiOAuthTokens tokens)
@@ -273,7 +273,7 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
         var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(modelId))).ToLowerInvariant();
         if (OpenAiOAuthPolicyData.Allowed(digest)) return true;
         if (OpenAiOAuthPolicyData.Denied(digest)) return false;
-        var match = Regex.Match(modelId, @"^gpt-(\d+\.\d+)", RegexOptions.CultureInvariant);
+        var match = Regex.Match(modelId, @"^gpt-(?<version>\d+\.\d+)", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
         return match.Success && double.TryParse(match.Groups[1].Value, CultureInfo.InvariantCulture, out var version) && version > OpenAiOAuthPolicyData.LegacyVersionCeiling;
     }
 
@@ -321,27 +321,27 @@ public sealed class OpenAiOAuthService(CredentialStore credentials, TimeProvider
     private async Task<T> SendJsonAsync<T>(HttpRequestMessage request, JsonTypeInfo<T> type, CancellationToken ct)
     {
         AddUserAgent(request);
-        using var response = await SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode) await FailAsync(response, ct);
-        return await DecodeAsync(response, type, ct);
+        using var response = await SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) await FailAsync(response, ct).ConfigureAwait(false);
+        return await DecodeAsync(response, type, ct).ConfigureAwait(false);
     }
     private static async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (request.RequestUri?.GetLeftPart(UriPartial.Authority) != Issuer) throw Invalid("OAuth requests must use the configured public issuer.");
-        try { return await PinnedHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct); }
+        try { return await PinnedHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false); }
         catch (HttpRequestException error) { throw new LlmException(new LlmFailure.Transport("OpenAI authorization transport failed."), error); }
     }
     private static async Task<T> DecodeAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> type, CancellationToken ct)
     {
-        var body = await response.Content.ReadAsStringAsync(ct);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         try { return JsonSerializer.Deserialize(body, type) ?? throw new JsonException(); }
         catch (JsonException error)
         { throw new LlmException(new LlmFailure.InvalidProviderOutput("OpenAI returned an invalid authorization response.") { Body = body, Http = LlmHttpContext.From(response) }, error); }
     }
     private static async Task FailAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        var body = await response.Content.ReadAsStringAsync(ct);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         throw new LlmException(ResponsesStreamParser.HttpFailure(LlmHttpContext.From(response), body) with { Body = body, Http = LlmHttpContext.From(response) });
     }
     private static LlmException Invalid(string message) => new(new LlmFailure.InvalidRequest(message));

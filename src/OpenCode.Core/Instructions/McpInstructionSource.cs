@@ -70,7 +70,7 @@ internal static class McpInstructionSource
         var lines = new List<string> { $"  <server name=\"{name}\">" };
         if (!server.TryGetProperty("codemode", out var mode) || mode.ValueKind != JsonValueKind.False)
             lines.Add("    Use tools from this server through `execute` under `tools[" +
-                InstructionJson.Stringify(JsonSerializer.SerializeToElement(Regex.Replace(name, "[^a-zA-Z0-9_-]", "_"))) + "]`.");
+                InstructionJson.Stringify(JsonSerializer.SerializeToElement(Regex.Replace(name, "[^a-zA-Z0-9_-]", "_", RegexOptions.NonBacktracking))) + "]`.");
         lines.AddRange(server.GetProperty("instructions").GetString()!.Split('\n').Select(line => "    " + line));
         lines.Add("  </server>");
         return lines;

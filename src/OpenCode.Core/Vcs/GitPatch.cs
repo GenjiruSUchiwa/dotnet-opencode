@@ -9,7 +9,7 @@ internal static class GitPatch
 
     internal static Dictionary<string, string> Chunks(string text, bool truncated, Func<int, string?> fallback)
     {
-        var starts = Regex.Matches(text, @"(?:^|\n)diff --git ").Select(match => match.Index + (match.Value[0] == '\n' ? 1 : 0)).ToArray();
+        var starts = Regex.Matches(text, @"(?:^|\n)diff --git ", RegexOptions.NonBacktracking).Select(match => match.Index + (match.Value[0] == '\n' ? 1 : 0)).ToArray();
         var output = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var index = 0; index < starts.Length - (truncated ? 1 : 0); index++)
         {
@@ -22,12 +22,12 @@ internal static class GitPatch
 
     private static string? FileFromChunk(string chunk)
     {
-        foreach (var pattern in new[] { @"^\+\+\+ (.+)$", @"^--- (.+)$" })
+        foreach (var pattern in new[] { @"^\+\+\+ (?<path>.+)$", @"^--- (?<path>.+)$" })
         {
-            var match = Regex.Match(chunk, pattern, RegexOptions.Multiline);
+            var match = Regex.Match(chunk, pattern, RegexOptions.Multiline | RegexOptions.NonBacktracking);
             if (match.Success && PathToken(match.Groups[1].Value) is { } file) return file;
         }
-        var header = Regex.Match(chunk, @"^diff --git (.+)$", RegexOptions.Multiline).Groups[1].Value;
+        var header = Regex.Match(chunk, @"^diff --git (?<header>.+)$", RegexOptions.Multiline | RegexOptions.NonBacktracking).Groups[1].Value;
         if (header.StartsWith('"'))
         {
             var first = Quoted(header);

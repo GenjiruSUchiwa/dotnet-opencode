@@ -61,12 +61,12 @@ public sealed class PermissionLocationMap : IAsyncDisposable
     public async ValueTask<PermissionLocationLease> AcquireAsync(LocationRef location, CancellationToken ct = default)
     {
         var key = Canonical(location);
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_shutdown is not null, this);
             if (_entries.TryGetValue(key, out var existing)) return Lease(existing);
-            var scope = await _factory.CreateAsync(key, ct);
+            var scope = await _factory.CreateAsync(key, ct).ConfigureAwait(true);
             Task? pump = null;
             try
             {
@@ -90,7 +90,7 @@ public sealed class PermissionLocationMap : IAsyncDisposable
                 {
                     await Task.WhenAll(scope.Permissions.DisposeAsync().AsTask(), pump ?? Task.CompletedTask)
                         .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                    if (scope.OwnedResources is not null) await scope.OwnedResources.DisposeAsync();
+                    if (scope.OwnedResources is not null) await scope.OwnedResources.DisposeAsync().ConfigureAwait(true);
                 }
                 throw;
             }
@@ -102,7 +102,7 @@ public sealed class PermissionLocationMap : IAsyncDisposable
     public async ValueTask<PermissionLocationLease?> TryAcquireLoadedAsync(LocationRef location, CancellationToken ct = default)
     {
         var key = Canonical(location);
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_shutdown is not null, this);
@@ -116,33 +116,35 @@ public sealed class PermissionLocationMap : IAsyncDisposable
     {
         var key = Canonical(location);
         Task? closing = null;
-        await _gate.WaitAsync(ct);
+        await _gate.WaitAsync(ct).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_shutdown is not null, this);
             if (_entries.TryGetValue(key, out var entry)) closing = BeginClose(key, entry);
         }
         finally { _gate.Release(); }
-        if (closing is not null) await closing;
+        if (closing is not null) await closing.ConfigureAwait(true);
     }
 
     public async ValueTask DisposeAsync()
     {
         Task shutdown;
-        await _gate.WaitAsync(CancellationToken.None);
+        await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
         try
         {
             _shutdown ??= Task.WhenAll(_entries.Select(pair => BeginClose(pair.Key, pair.Value)).ToArray());
             shutdown = _shutdown;
         }
         finally { _gate.Release(); }
-        await shutdown;
+        await shutdown.ConfigureAwait(true);
     }
 
     public static LocationRef Canonical(LocationRef location)
     {
         ArgumentNullException.ThrowIfNull(location);
+#pragma warning disable MA0015 // Preserve the public Location validation text.
         if (!Path.IsPathFullyQualified(location.Directory)) throw new ArgumentException("An authoritative absolute Location directory is required.");
+#pragma warning restore MA0015
         // Match the source's lexical Windows separator normalization; do not introduce a realpath alias here.
         return new(OperatingSystem.IsWindows() ? Path.GetFullPath(location.Directory) : location.Directory, location.WorkspaceId);
     }
@@ -155,7 +157,7 @@ public sealed class PermissionLocationMap : IAsyncDisposable
         return new(entry.Scope, async () =>
         {
             Task? closing = null;
-            await _gate.WaitAsync(CancellationToken.None);
+            await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 if (--entry.Leases == 0)
@@ -168,7 +170,7 @@ public sealed class PermissionLocationMap : IAsyncDisposable
             finally { _gate.Release(); }
             // Match LocationServiceMap's zero idle TTL for a missing local path.
             // Never dispose a still-borrowed Location or stat an explicit workspace.
-            if (closing is not null) await closing;
+            if (closing is not null) await closing.ConfigureAwait(true);
         });
     }
 
@@ -183,18 +185,18 @@ public sealed class PermissionLocationMap : IAsyncDisposable
     {
         try
         {
-            await Task.WhenAll(entry.Scope.Permissions.DisposeAsync().AsTask(), entry.Pump);
+            await Task.WhenAll(entry.Scope.Permissions.DisposeAsync().AsTask(), entry.Pump).ConfigureAwait(true);
         }
         finally
         {
-            await entry.Drained.Task;
+            await entry.Drained.Task.ConfigureAwait(true);
             try
             {
-                if (entry.Scope.OwnedResources is not null) await entry.Scope.OwnedResources.DisposeAsync();
+                if (entry.Scope.OwnedResources is not null) await entry.Scope.OwnedResources.DisposeAsync().ConfigureAwait(true);
             }
             finally
             {
-                await _gate.WaitAsync(CancellationToken.None);
+                await _gate.WaitAsync(CancellationToken.None).ConfigureAwait(true);
                 try { _entries.Remove(key); }
                 finally { _gate.Release(); }
             }
@@ -205,13 +207,13 @@ public sealed class PermissionLocationMap : IAsyncDisposable
     {
         try
         {
-            await _dispatch(scope.Location, scope.Permissions);
+            await _dispatch(scope.Location, scope.Permissions).ConfigureAwait(true);
             if (!scope.Permissions.IsDisposed) throw new InvalidOperationException("Permission dispatcher stopped before Location shutdown.");
         }
         finally
         {
             // A broken event bridge must not strand model calls awaiting a request that no user can see.
-            await scope.Permissions.DisposeAsync();
+            await scope.Permissions.DisposeAsync().ConfigureAwait(true);
         }
     }
 }

@@ -46,7 +46,7 @@ internal static class LocalInstructions
         var global = Path.GetFullPath(ConfigLoader.GetDefaultConfigDirectory());
         var producers = ProducerConfiguration.Read(directory, home, global, config, observations);
         // AgentCatalog owns document normalization and Markdown agent/mode discovery.
-        selection ??= await AgentCatalog.ResolveAsync(directory, AgentId.FromExisting(agent), ct)
+        selection ??= await AgentCatalog.ResolveAsync(directory, AgentId.FromExisting(agent), ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The selected agent is unavailable.");
         var system = selection.System is { Length: > 0 } selectedSystem ? selectedSystem : MakeSystem(toolNames ?? []);
         var stop = Contains(home, directory) ? home : root;
@@ -69,14 +69,17 @@ internal static class LocalInstructions
         var available = true;
         try
         {
-            var paths = new[] { Path.Combine(global, "AGENTS.md") }.Concat(
-                Ancestors(directory).TakeWhile(path => !Same(path, stop)).Append(stop).Select(path => Path.Combine(path, "AGENTS.md")));
+            // ConfigInstructionPlugin contributes project files only when the
+            // Location is inside that project; global instructions remain independent.
+            var paths = new[] { Path.Combine(global, "AGENTS.md") }.Concat(Contains(root, directory)
+                ? Ancestors(directory).TakeWhile(path => !Same(path, stop)).Append(stop).Select(path => Path.Combine(path, "AGENTS.md"))
+                : []);
             foreach (var path in paths)
             {
                 ct.ThrowIfCancellationRequested();
                 if (!Exists(path)) continue;
                 var resolved = ResolveFile(path);
-                var content = await File.ReadAllTextAsync(resolved, ct);
+                var content = await File.ReadAllTextAsync(resolved, ct).ConfigureAwait(false);
                 // Discovery's Map replaces duplicate values without moving their insertion position.
                 var index = files.FindIndex(file => Same(file.Path, resolved));
                 if (index < 0) files.Add((resolved, content));
@@ -97,7 +100,7 @@ internal static class LocalInstructions
         var configuredSkills = producers.Skills();
         SkillSources.RequireLocal(configuredSkills);
         var skills = producers.SkillsAvailable
-            ? await SkillSources.ReadAsync(producers.SkillRoots, configuredSkills, directory, home, ct)
+            ? await SkillSources.ReadAsync(producers.SkillRoots, configuredSkills, directory, home, ct).ConfigureAwait(false)
             : new SkillObservation([], false);
         sources.Add(SkillGuidance.Make(skills.Skills, selection.Permissions, skills.Available,
             canLoadSkills: toolNames?.Contains("skill") == true));
@@ -105,7 +108,7 @@ internal static class LocalInstructions
         sources.Add(mcp ?? McpInstructionSource.WithoutRuntime(producers));
         foreach (var entry in entries)
         {
-            if (!System.Text.RegularExpressions.Regex.IsMatch(entry.Key, "^[a-z0-9][a-z0-9._-]*$")) throw new JsonException("Invalid instruction entry key.");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(entry.Key, "^[a-z0-9][a-z0-9._-]*$", System.Text.RegularExpressions.RegexOptions.NonBacktracking)) throw new JsonException("Invalid instruction entry key.");
             string Block(JsonElement value) => "<context key=\"" + entry.Key + "\">\n" +
                 (value.ValueKind == JsonValueKind.String ? value.GetString() : InstructionJson.Stringify(value, pretty: true)) + "\n</context>";
             sources.Add(new InstructionSource("api/" + entry.Key,
@@ -173,7 +176,7 @@ internal static class LocalInstructions
         var directory = new DirectoryInfo(Path.GetFullPath(path));
         if (!directory.Exists) throw new DirectoryNotFoundException("Instruction location is unavailable.");
         foreach (var ancestor in Ancestors(directory.FullName))
-            if ((File.GetAttributes(ancestor) & FileAttributes.ReparsePoint) != 0)
+            if ((File.GetAttributes(ancestor) & FileAttributes.ReparsePoint) != FileAttributes.None)
                 throw new NotSupportedException("Instruction discovery through directory links requires canonical Location resolution.");
         return directory.FullName;
     }

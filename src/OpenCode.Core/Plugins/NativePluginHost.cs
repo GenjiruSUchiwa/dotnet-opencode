@@ -17,7 +17,9 @@ public sealed class NativePluginRegistration(Action remove) : IDisposable, IAsyn
 {
     private int _disposed;
     public void Dispose() { if (Interlocked.Exchange(ref _disposed, 1) == 0) remove(); }
+#pragma warning disable MA0042 // The async facade shares the idempotent synchronous registration removal; calling itself would recurse.
     public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
+#pragma warning restore MA0042
 }
 
 /// <summary>Setup-scoped registrations; rollback and close unwind resources in reverse order.</summary>
@@ -73,9 +75,9 @@ public sealed class NativePluginScope(LocationInfo location, Action? changed = n
         if (_closed) return;
         _closed = true;
         var errors = new List<Exception>();
-        try { await _lifetime.CancelAsync(); } catch (Exception error) { errors.Add(error); }
+        try { await _lifetime.CancelAsync().ConfigureAwait(true); } catch (Exception error) { errors.Add(error); }
         foreach (var resource in _resources.AsEnumerable().Reverse())
-            try { await resource.DisposeAsync(); } catch (Exception error) { errors.Add(error); }
+            try { await resource.DisposeAsync().ConfigureAwait(true); } catch (Exception error) { errors.Add(error); }
         _resources.Clear();
         lock (_transforms) _transforms.Clear();
         lock (_hooks) _hooks.Clear();
@@ -113,7 +115,8 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
     {
         if (definitions.Select(item => item.Id).Distinct().Count() != definitions.Count)
             throw new ArgumentException("Duplicate plugin ID.", nameof(definitions));
-        await _activation.WaitAsync(ct);
+        // Initializers, hooks and change callbacks inherit the embedding caller's context.
+        await _activation.WaitAsync(ct).ConfigureAwait(true);
         var next = new List<Active>();
         try
         {
@@ -128,8 +131,8 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
             {
                 ct.ThrowIfCancellationRequested();
                 previous.Remove(definition.Id, out var old);
-                if (old is not null) await CloseAsync(old.Scope);
-                var loaded = await LoadAsync(definition, ct);
+                if (old is not null) await CloseAsync(old.Scope).ConfigureAwait(true);
+                var loaded = await LoadAsync(definition, ct).ConfigureAwait(true);
                 if (loaded is not null)
                 {
                     next.Add(loaded);
@@ -137,9 +140,9 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
                     continue;
                 }
                 inventory.Add(new(definition.Source ?? new PluginSourceBuiltin(), "failed", false, definition.Id, "Native plugin initialization failed."));
-                if (old is not null && await LoadAsync(old.Definition, ct) is { } restored) next.Add(restored);
+                if (old is not null && await LoadAsync(old.Definition, ct).ConfigureAwait(true) is { } restored) next.Add(restored);
             }
-            foreach (var removed in previous.Values.Reverse()) await CloseAsync(removed.Scope);
+            foreach (var removed in previous.Values.Reverse()) await CloseAsync(removed.Scope).ConfigureAwait(true);
             Volatile.Write(ref _active, next.ToArray());
             // Replay the stable host transform without moving it behind later MCP producers.
             tools.Batch(() => tools.Transform(_ => { }).Dispose());
@@ -149,7 +152,7 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
         }
         catch
         {
-            foreach (var entry in next.Concat(_active).DistinctBy(item => item.Scope).Reverse()) await CloseAsync(entry.Scope);
+            foreach (var entry in next.Concat(_active).DistinctBy(item => item.Scope).Reverse()) await CloseAsync(entry.Scope).ConfigureAwait(true);
             _active = [];
             _inventory = definitions.Select(definition => new PluginInfo(definition.Source ?? new PluginSourceBuiltin(),
                 "failed", false, definition.Id, "Native plugin generation did not commit.")).ToArray();
@@ -167,14 +170,14 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
         });
         try
         {
-            await definition.Initialize(scope, ct);
+            await definition.Initialize(scope, ct).ConfigureAwait(true);
             scope.Seal();
             changed?.Invoke(definition.Id);
             return new(definition, scope);
         }
         catch (Exception error)
         {
-            await CloseAsync(scope);
+            await CloseAsync(scope).ConfigureAwait(true);
             if (error is OperationCanceledException && ct.IsCancellationRequested) throw;
             System.Diagnostics.Trace.TraceWarning("Native plugin initialization failed ({0}).", error.GetType().Name);
             return null;
@@ -183,7 +186,7 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
 
     private static async Task CloseAsync(NativePluginScope scope)
     {
-        try { await scope.DisposeAsync(); }
+        try { await scope.DisposeAsync().ConfigureAwait(true); }
         catch (Exception error) { System.Diagnostics.Trace.TraceWarning("Native plugin cleanup failed ({0}).", error.GetType().Name); }
     }
 
@@ -192,22 +195,24 @@ public sealed class NativePluginHost(LocationInfo location, Action<PluginId?>? c
         .Concat(Volatile.Read(ref _active).SelectMany(item => item.Scope.Hooks)).ToArray();
 
     public async ValueTask<ToolInvocation> BeforeAsync(ToolInvocation invocation, ToolContext context, CancellationToken ct)
-    { foreach (var hook in Hooks()) invocation = await hook.BeforeAsync(invocation, context, ct); return invocation; }
+    { foreach (var hook in Hooks()) invocation = await hook.BeforeAsync(invocation, context, ct).ConfigureAwait(true); return invocation; }
     public async ValueTask<ToolExecutionResult> AfterSuccessAsync(string name, JsonElement input, ToolContext context, ToolExecutionResult result, CancellationToken ct)
-    { foreach (var hook in Hooks()) result = await hook.AfterSuccessAsync(name, input, context, result, ct); return result; }
+    { foreach (var hook in Hooks()) result = await hook.AfterSuccessAsync(name, input, context, result, ct).ConfigureAwait(true); return result; }
     public async ValueTask<ToolExecutionException> AfterErrorAsync(string name, JsonElement input, ToolContext context, ToolExecutionException error, CancellationToken ct)
-    { foreach (var hook in Hooks()) error = await hook.AfterErrorAsync(name, input, context, error, ct); return error; }
+    { foreach (var hook in Hooks()) error = await hook.AfterErrorAsync(name, input, context, error, ct).ConfigureAwait(true); return error; }
 
     public async ValueTask DisposeAsync()
     {
-        await _activation.WaitAsync();
+        await _activation.WaitAsync().ConfigureAwait(true);
         try
         {
             if (_closed) return;
             _closed = true;
-            foreach (var entry in _active.Reverse()) await CloseAsync(entry.Scope);
+            foreach (var entry in _active.Reverse()) await CloseAsync(entry.Scope).ConfigureAwait(true);
             _active = []; _inventory = [];
+#pragma warning disable MA0042 // Tool registration removal is synchronous; retain registry change callback ordering during close.
             _registration?.Dispose();
+#pragma warning restore MA0042
         }
         finally { _activation.Release(); }
     }

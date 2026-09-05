@@ -23,7 +23,7 @@ public static class AgentDocuments
         foreach (var name in names)
             if (cursor < documents.Count && Same(documents[cursor].Path, System.IO.Path.Combine(configurationDirectories[0], name)))
                 Add(documents[cursor++]);
-        await AddDirectory(configurationDirectories[0]);
+        await AddDirectory(configurationDirectories[0]).ConfigureAwait(false);
 
         // ProducerConfiguration retains documents in Config.entries order but
         // omits directory markers. Project JSON entries form its final file suffix;
@@ -43,7 +43,7 @@ public static class AgentDocuments
         {
             foreach (var name in names)
                 if (cursor < documents.Count && Same(documents[cursor].Path, System.IO.Path.Combine(root, name))) Add(documents[cursor++]);
-            await AddDirectory(root);
+            await AddDirectory(root).ConfigureAwait(false);
         }
         while (cursor < documents.Count) Add(documents[cursor++]);
         return result;
@@ -51,48 +51,58 @@ public static class AgentDocuments
         void Add((string? Path, JsonObject Info) document) => result.Add((document.Path, Normalize(document.Info)));
         async Task AddDirectory(string root)
         {
-            foreach (var primary in new[] { false, true })
+            var discovered = new List<(string File, bool Primary)>();
+            try
             {
-                var files = new List<string>();
-                var visiting = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-                foreach (var name in primary ? new[] { "mode", "modes" } : ["agent", "agents"])
-                    Walk(new DirectoryInfo(System.IO.Path.Combine(root, name)), System.IO.Path.Combine(root, name), !primary);
-                foreach (var file in files.Order(StringComparer.Ordinal))
+                foreach (var primary in new[] { false, true })
                 {
-                    ct.ThrowIfCancellationRequested();
-                    var content = await File.ReadAllTextAsync(file, ct);
-                    if (content.Length == 0) continue;
-                    var item = Parse(content, primary);
-                    if (item is null) continue;
-                    var relative = System.IO.Path.GetRelativePath(root, file).Replace('\\', '/');
-                    var id = relative[(relative.IndexOf('/') + 1)..^3];
-                    result.Add((file, new JsonObject { ["agents"] = new JsonObject { [id] = item } }));
-                }
+                    var files = new List<string>();
+                    var visiting = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+                    foreach (var name in primary ? new[] { "mode", "modes" } : ["agent", "agents"])
+                        Walk(new DirectoryInfo(System.IO.Path.Combine(root, name)), System.IO.Path.Combine(root, name), !primary);
+                    discovered.AddRange(files.Order(StringComparer.Ordinal).Select(file => (file, primary)));
 
-                void Walk(DirectoryInfo directory, string logical, bool recurse)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    FileAttributes attributes;
-                    try { attributes = File.GetAttributes(directory.FullName); }
-                    catch (FileNotFoundException) { return; }
-                    catch (DirectoryNotFoundException) { return; }
-                    if ((attributes & FileAttributes.Directory) == 0) return;
-                    var physical = directory.ResolveLinkTarget(true) as DirectoryInfo ?? directory;
-                    if (!visiting.Add(physical.FullName)) return;
-                    try
+                    void Walk(DirectoryInfo directory, string logical, bool recurse)
                     {
-                        foreach (var child in physical.EnumerateFileSystemInfos())
+                        ct.ThrowIfCancellationRequested();
+                        FileAttributes attributes;
+                        try { attributes = File.GetAttributes(directory.FullName); }
+                        catch (FileNotFoundException) { return; }
+                        catch (DirectoryNotFoundException) { return; }
+                        if ((attributes & FileAttributes.Directory) == FileAttributes.None) return;
+                        var physical = directory.ResolveLinkTarget(true) as DirectoryInfo ?? directory;
+                        if (!visiting.Add(physical.FullName)) return;
+                        try
                         {
-                            var path = System.IO.Path.Combine(logical, child.Name);
-                            if ((child.Attributes & FileAttributes.Directory) != 0)
+                            foreach (var child in physical.EnumerateFileSystemInfos())
                             {
-                                if (recurse) Walk(new DirectoryInfo(child.FullName), path, true);
+                                var path = System.IO.Path.Combine(logical, child.Name);
+                                if ((child.Attributes & FileAttributes.Directory) != FileAttributes.None)
+                                {
+                                    if (recurse) Walk(new DirectoryInfo(child.FullName), path, true);
+                                }
+                                else if (child.Name.EndsWith(".md", StringComparison.Ordinal)) files.Add(path);
                             }
-                            else if (child.Name.EndsWith(".md", StringComparison.Ordinal)) files.Add(path);
                         }
+                        finally { visiting.Remove(physical.FullName); }
                     }
-                    finally { visiting.Remove(physical.FullName); }
                 }
+            }
+            // ConfigAgentPlugin.discover discards the whole directory discovery
+            // on I/O failure; readFileStringSafe then omits individual unreadable files.
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return; }
+            foreach (var file in discovered)
+            {
+                ct.ThrowIfCancellationRequested();
+                string content;
+                try { content = await File.ReadAllTextAsync(file.File, ct).ConfigureAwait(false); }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { continue; }
+                if (content.Length == 0) continue;
+                var item = Parse(content, file.Primary);
+                if (item is null) continue;
+                var relative = System.IO.Path.GetRelativePath(root, file.File).Replace('\\', '/');
+                var id = relative[(relative.IndexOf('/') + 1)..^3];
+                result.Add((file.File, new JsonObject { ["agents"] = new JsonObject { [id] = item } }));
             }
         }
     }
@@ -107,15 +117,15 @@ public static class AgentDocuments
             if (body.StartsWith("---\n", StringComparison.Ordinal) || body.StartsWith("---\r\n", StringComparison.Ordinal))
             {
                 var start = body.IndexOf('\n') + 1;
-                var end = Regex.Match(body[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant);
+                var end = Regex.Match(body[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
                 if (!end.Success) return null;
                 var header = body.Substring(start, end.Index);
                 try { data = Yaml(header); }
                 catch (YamlException)
                 {
-                    header = string.Join("\n", Regex.Split(header, "\r?\n").SelectMany(line =>
+                    header = string.Join("\n", Regex.Split(header, "\r?\n", RegexOptions.NonBacktracking).SelectMany(line =>
                     {
-                        var match = Regex.Match(line, @"^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$");
+                        var match = Regex.Match(line, @"^(?<key>[a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(?<value>.*)$", RegexOptions.NonBacktracking);
                         if (!match.Success) return new[] { line };
                         var value = match.Groups[2].Value.Trim();
                         return value.Length > 0 && value is not (">" or "|") && value[0] is not ('\'' or '"') && value.Contains(':')
@@ -205,7 +215,7 @@ public static class AgentDocuments
         if (input.ContainsKey("color"))
         {
             var color = Text(input["color"]);
-            if (!Regex.IsMatch(color, "\\A#[0-9a-fA-F]{6}\\z") && color is not ("primary" or "secondary" or "accent" or "success" or "warning" or "error" or "info")) throw new JsonException("Invalid legacy agent color.");
+            if (!Regex.IsMatch(color, "\\A#[0-9a-fA-F]{6}\\z", RegexOptions.NonBacktracking) && color is not ("primary" or "secondary" or "accent" or "success" or "warning" or "error" or "info")) throw new JsonException("Invalid legacy agent color.");
             output["color"] = color.StartsWith('#') ? color : "#aaaaaa";
         }
         var converted = new JsonArray();
@@ -227,7 +237,7 @@ public static class AgentDocuments
         foreach (var key in new[] { "system", "description" }) if (output.ContainsKey(key)) _ = Text(output[key]);
         foreach (var key in new[] { "hidden", "disabled" }) if (output.ContainsKey(key)) _ = Boolean(output[key]);
         if (output.ContainsKey("mode") && Text(output["mode"]) is not ("primary" or "subagent" or "all")) throw new JsonException("Invalid agent mode.");
-        if (output.ContainsKey("color") && !Regex.IsMatch(Text(output["color"]), "\\A#[0-9a-fA-F]{6}\\z")) throw new JsonException("Invalid agent color.");
+        if (output.ContainsKey("color") && !Regex.IsMatch(Text(output["color"]), "\\A#[0-9a-fA-F]{6}\\z", RegexOptions.NonBacktracking)) throw new JsonException("Invalid agent color.");
         if (output.ContainsKey("steps")) Positive(output["steps"]);
         if (output.ContainsKey("model"))
         {
@@ -254,7 +264,7 @@ public static class AgentDocuments
 
     private static JsonObject? LegacyModel(string input, string? variant)
     {
-        if (!Regex.IsMatch(input, "\\A[^/#]+/[^#]+\\z")) return null;
+        if (!Regex.IsMatch(input, "\\A[^/#]+/[^#]+\\z", RegexOptions.NonBacktracking)) return null;
         var split = input.IndexOf('/');
         var provider = input[..split] switch { "azure-cognitive-services" => "azure", "google-vertex-anthropic" => "google-vertex", var id => id };
         var model = new JsonObject { ["providerID"] = provider, ["model"] = input[(split + 1)..] };

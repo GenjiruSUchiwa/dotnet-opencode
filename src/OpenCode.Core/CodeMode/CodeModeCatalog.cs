@@ -57,7 +57,7 @@ public sealed class CodeModeCatalog
         var pathQuery = trimmed.StartsWith("tools.", StringComparison.Ordinal) ? trimmed[6..] : trimmed;
         var exact = pathQuery.Length == 0 ? null : scoped.FirstOrDefault(item =>
             item.Entry.Path == pathQuery || ToolExpression(item.Entry.Path) == trimmed);
-        var terms = Regex.Split(Regex.Replace(query, "([a-z0-9])([A-Z])", "$1 $2").ToLowerInvariant(), "[^a-z0-9]+")
+        var terms = Regex.Split(Regex.Replace(query, "(?<lower>[a-z0-9])(?<upper>[A-Z])", "$1 $2", RegexOptions.NonBacktracking).ToLowerInvariant(), "[^a-z0-9]+", RegexOptions.NonBacktracking)
             .Where(term => term.Length > 0).Select(term => new[] { term }
                 .Concat(term.EndsWith("es", StringComparison.Ordinal) && term.Length > 3 ? [term[..^2]] : [])
                 .Concat(term.EndsWith('s') && term.Length > 2 ? [term[..^1]] : []).ToArray()).ToArray();

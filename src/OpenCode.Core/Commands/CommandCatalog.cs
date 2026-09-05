@@ -25,7 +25,7 @@ public sealed class CommandCatalog
     public static async Task<CommandCatalog> LoadAsync(string directory, CancellationToken ct = default)
     {
         var location = Path.GetFullPath(directory);
-        var snapshot = await ConfigLoader.LoadSnapshotAsync(location, ct);
+        var snapshot = await ConfigLoader.LoadSnapshotAsync(location, ct).ConfigureAwait(false);
         var commands = new List<LocalCommand>();
         foreach (var source in snapshot.Sources)
         {
@@ -35,7 +35,7 @@ public sealed class CommandCatalog
                 foreach (var key in new[] { "plugin", "plugins" })
                     if (document.Info[key] is { } value && value is not JsonArray { Count: 0 } && value is not JsonObject { Count: 0 })
                         throw new NotSupportedException("Configured plugins require the native plugin runtime before command catalogs can be complete.");
-                commands.AddRange(await CommandDocuments.LoadAsync([(document.Path, document.Info)], [], ct));
+                commands.AddRange(await CommandDocuments.LoadAsync([(document.Path, document.Info)], [], ct).ConfigureAwait(false));
                 continue;
             }
             if (source is not ConfigSource.Discovery { Entry: ConfigDirectory root }) continue;
@@ -44,13 +44,13 @@ public sealed class CommandCatalog
                 var path = Path.Combine(root.Path, name);
                 try
                 {
-                    if ((File.GetAttributes(path) & FileAttributes.Directory) != 0 && Directory.EnumerateFileSystemEntries(path).Any())
+                    if ((File.GetAttributes(path) & FileAttributes.Directory) != FileAttributes.None && Directory.EnumerateFileSystemEntries(path).Any())
                         throw new NotSupportedException("Auto-discovered plugins require the native plugin runtime before command catalogs can be complete.");
                 }
                 catch (FileNotFoundException) { }
                 catch (DirectoryNotFoundException) { }
             }
-            commands.AddRange(await CommandDocuments.LoadAsync([], [root.Path], ct));
+            commands.AddRange(await CommandDocuments.LoadAsync([], [root.Path], ct).ConfigureAwait(false));
         }
         return new CommandCatalog(commands);
     }
@@ -64,11 +64,11 @@ public sealed class CommandCatalog
         {
             ct.ThrowIfCancellationRequested();
             // The owner switches only when needed, then returns the selected agent's current model.
-            var agentModel = command.Agent is null ? null : await owner.SelectAgentAsync(invocation.SessionId, command.Agent, ct);
+            var agentModel = command.Agent is null ? null : await owner.SelectAgentAsync(invocation.SessionId, command.Agent, ct).ConfigureAwait(true);
             var model = command.Model is { } selection ? new ModelRef(selection.ProviderId, selection.Model, selection.Variant) : agentModel;
-            if (model is not null) await owner.SelectModelAsync(invocation.SessionId, model, ct);
+            if (model is not null) await owner.SelectModelAsync(invocation.SessionId, model, ct).ConfigureAwait(true);
             var text = await CommandTemplate.EvaluateAsync(command.Template, invocation.Prompt.Text,
-                source => owner.InterpolateShellAsync(new ShellInterpolation(invocation.SessionId, owner.Directory, source), ct), ct);
+                source => owner.InterpolateShellAsync(new ShellInterpolation(invocation.SessionId, owner.Directory, source), ct), ct).ConfigureAwait(true);
             return new PreparedCommand(name, invocation with { Prompt = invocation.Prompt with { Text = text } });
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

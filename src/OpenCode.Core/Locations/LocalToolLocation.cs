@@ -11,6 +11,7 @@ public sealed class LocalToolLocation : IToolLocation
     private readonly string[] _markers;
     public string Directory { get; }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "Preserve the existing compound Location/path and marker error text exposed by tools.")]
     public LocalToolLocation(string directory, string projectWorktree, string home, IEnumerable<string>? markers = null)
     {
         if (!Path.IsPathFullyQualified(directory) || !Path.IsPathFullyQualified(projectWorktree) || !Path.IsPathFullyQualified(home))
@@ -64,9 +65,9 @@ public sealed class LocalToolLocation : IToolLocation
         try
         {
             var attributes = File.GetAttributes(path);
-            if ((attributes & FileAttributes.ReparsePoint) == 0) return (attributes & FileAttributes.Directory) != 0;
-            var target = ((attributes & FileAttributes.Directory) != 0 ? (FileSystemInfo)new DirectoryInfo(path) : new FileInfo(path)).ResolveLinkTarget(true);
-            return target is not null && (target.Attributes & FileAttributes.Directory) != 0;
+            if ((attributes & FileAttributes.ReparsePoint) == FileAttributes.None) return (attributes & FileAttributes.Directory) != FileAttributes.None;
+            var target = ((attributes & FileAttributes.Directory) != FileAttributes.None ? (FileSystemInfo)new DirectoryInfo(path) : new FileInfo(path)).ResolveLinkTarget(true);
+            return target is not null && (target.Attributes & FileAttributes.Directory) != FileAttributes.None;
         }
         catch (FileNotFoundException) { return false; }
         catch (DirectoryNotFoundException) { return false; }

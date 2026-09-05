@@ -31,7 +31,7 @@ public sealed class LocalVcs
     public static async Task<LocalVcs> OpenAsync(LocationInfo location, string executable = "git", CancellationToken ct = default)
     {
         if (location.WorkspaceId is not null) throw new NotSupportedException("Explicit workspace VCS placement is not implemented.");
-        var sources = await ConfigLoader.LoadSnapshotAsync(location.Directory, ct);
+        var sources = await ConfigLoader.LoadSnapshotAsync(location.Directory, ct).ConfigureAwait(false);
         foreach (var source in sources.Sources)
         {
             if (source is ConfigSource.Document document)
@@ -57,55 +57,55 @@ public sealed class LocalVcs
         if (!_git) return new(new VcsBranch());
         var current = BranchAsync(ct);
         var root = DefaultBranchAsync(ct);
-        await Task.WhenAll(current, root);
-        return new(new VcsBranch(await current, (await root)?.Name));
+        await Task.WhenAll(current, root).ConfigureAwait(false);
+        return new(new VcsBranch(await current.ConfigureAwait(false), (await root.ConfigureAwait(false))?.Name));
     }
 
     public async Task<VcsBase?> BaseAsync(CancellationToken ct = default)
     {
-        if (!_git || !await HasHeadAsync(ct)) return null;
-        var current = await BranchAsync(ct);
+        if (!_git || !await HasHeadAsync(ct).ConfigureAwait(false)) return null;
+        var current = await BranchAsync(ct).ConfigureAwait(false);
         if (current is null) throw new VcsUnavailableException("Choose a review base");
-        var result = await RunAsync(_location.Directory, ["reflog", "show", "--max-count=256", "--format=%H%x00%gs", "refs/heads/" + current], ct);
-        var history = Lines(result.Text).Select(line => Regex.Match(line, "^([a-f0-9]+)\\0(.+)$"))
+        var result = await RunAsync(_location.Directory, ["reflog", "show", "--max-count=256", "--format=%H%x00%gs", "refs/heads/" + current], ct).ConfigureAwait(false);
+        var history = Lines(result.Text).Select(line => Regex.Match(line, "^(?<commit>[a-f0-9]+)\\0(?<message>.+)$", RegexOptions.NonBacktracking))
             .Where(match => match.Success).Select(match => (Commit: match.Groups[1].Value, Message: match.Groups[2].Value)).ToArray();
         var creation = history.Any(entry => entry.Message.StartsWith("Branch: renamed ", StringComparison.Ordinal)) ? default
             : history.FirstOrDefault(entry => entry.Message.StartsWith("branch: Created from ", StringComparison.Ordinal));
         if (creation.Message is { } message)
         {
-            var candidate = await NamedRefAsync(message["branch: Created from ".Length..], ct);
-            if (candidate is not null && candidate.Name != current && await AncestorAsync(creation.Commit, "HEAD", ct)
-                && await AncestorAsync(creation.Commit, candidate.Ref, ct)) return new(candidate.Name, candidate.Ref, "reflog");
+            var candidate = await NamedRefAsync(message["branch: Created from ".Length..], ct).ConfigureAwait(false);
+            if (candidate is not null && candidate.Name != current && await AncestorAsync(creation.Commit, "HEAD", ct).ConfigureAwait(false)
+                && await AncestorAsync(creation.Commit, candidate.Ref, ct).ConfigureAwait(false)) return new(candidate.Name, candidate.Ref, "reflog");
         }
-        var root = await DefaultBranchAsync(ct);
+        var root = await DefaultBranchAsync(ct).ConfigureAwait(false);
         if (root is null || current != root.Name) throw new VcsUnavailableException("Choose a review base");
-        var named = await NamedRefAsync(root.Ref, ct);
+        var named = await NamedRefAsync(root.Ref, ct).ConfigureAwait(false);
         if (named is null) throw new VcsUnavailableException("The default review base is unavailable");
         return new(root.Name, named.Ref, "default");
     }
 
     private async Task<BranchRef?> NamedRefAsync(string input, CancellationToken ct)
     {
-        if (input == "HEAD" || input.EndsWith("/HEAD", StringComparison.Ordinal) || Regex.IsMatch(input, @"[~^:@{}\s]")) return null;
-        var result = await RunAsync(_location.Directory, ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", input], ct);
+        if (input == "HEAD" || input.EndsWith("/HEAD", StringComparison.Ordinal) || Regex.IsMatch(input, @"[~^:@{}\s]", RegexOptions.NonBacktracking)) return null;
+        var result = await RunAsync(_location.Directory, ["rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", input], ct).ConfigureAwait(false);
         var reference = result.Text.Trim();
-        if (result.ExitCode != 0 || !Regex.IsMatch(reference, "^refs/(heads|remotes)/.+") || reference.EndsWith("/HEAD", StringComparison.Ordinal)) return null;
-        var commit = await RunAsync(_location.Directory, ["rev-parse", "--verify", "--end-of-options", reference + "^{commit}"], ct);
+        if (result.ExitCode != 0 || !Regex.IsMatch(reference, "^refs/(?:heads|remotes)/.+", RegexOptions.NonBacktracking) || reference.EndsWith("/HEAD", StringComparison.Ordinal)) return null;
+        var commit = await RunAsync(_location.Directory, ["rev-parse", "--verify", "--end-of-options", reference + "^{commit}"], ct).ConfigureAwait(false);
         return commit.ExitCode != 0 || commit.Text.Trim().Length == 0 ? null
-            : new(Regex.Replace(Regex.Replace(reference, "^refs/heads/", ""), "^refs/remotes/[^/]+/", ""), reference);
+            : new(Regex.Replace(Regex.Replace(reference, "^refs/heads/", "", RegexOptions.NonBacktracking), "^refs/remotes/[^/]+/", "", RegexOptions.NonBacktracking), reference);
     }
 
     private async Task<bool> AncestorAsync(string commit, string reference, CancellationToken ct) =>
-        Regex.IsMatch(commit, "^[a-f0-9]{40,64}$") && (await RunAsync(_location.Directory, ["merge-base", "--is-ancestor", commit, reference], ct)).ExitCode == 0;
+        Regex.IsMatch(commit, "^[a-f0-9]{40,64}$", RegexOptions.NonBacktracking) && (await RunAsync(_location.Directory, ["merge-base", "--is-ancestor", commit, reference], ct).ConfigureAwait(false)).ExitCode == 0;
 
     public async Task<IReadOnlyList<string>> BranchesAsync(string? search = null, int limit = 50, CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         if (!_git) return [];
-        var escaped = Regex.Replace(search?.Trim() ?? "", @"[*?\[\]\\]", match => "\\" + match.Value);
+        var escaped = Regex.Replace(search?.Trim() ?? "", @"[*?\[\]\\]", match => "\\" + match.Value, RegexOptions.NonBacktracking);
         var result = await RunAsync(_location.Directory, ["for-each-ref", "--ignore-case", "--sort=refname", "--sort=-committerdate",
             "--format=%(refname:short)", "--count=" + Math.Min(limit, 100).ToString(CultureInfo.InvariantCulture),
-            .. escaped.Length == 0 ? new[] { "refs/heads", "refs/remotes" } : ["refs/heads/*" + escaped + "*", "refs/remotes/*" + escaped + "*"]], ct);
+            .. escaped.Length == 0 ? new[] { "refs/heads", "refs/remotes" } : ["refs/heads/*" + escaped + "*", "refs/remotes/*" + escaped + "*"]], ct).ConfigureAwait(false);
         Success(result, "Unable to list Git branches");
         return Lines(result.Text).Where(branch => !branch.EndsWith("/HEAD", StringComparison.Ordinal)).ToArray();
     }
@@ -113,13 +113,13 @@ public sealed class LocalVcs
     public async Task<IReadOnlyList<VcsFileStatus>> StatusAsync(CancellationToken ct = default)
     {
         if (!_git) return [];
-        var head = await HasHeadAsync(ct);
-        var names = await StatusNamesAsync(ct);
-        var stats = head ? await StatsAsync("HEAD", null, ct) : new Dictionary<string, Stat>(StringComparer.Ordinal);
+        var head = await HasHeadAsync(ct).ConfigureAwait(false);
+        var names = await StatusNamesAsync(ct).ConfigureAwait(false);
+        var stats = head ? await StatsAsync("HEAD", null, ct).ConfigureAwait(false) : new Dictionary<string, Stat>(StringComparer.Ordinal);
         var output = new List<VcsFileStatus>();
         foreach (var item in names.OrderBy(item => item.File, StringComparer.CurrentCulture))
         {
-            var stat = stats.GetValueOrDefault(item.File) ?? (item.Status == FileDiffStatus.Added ? await UntrackedStatAsync(item.File, ct) : null);
+            var stat = stats.GetValueOrDefault(item.File) ?? (item.Status == FileDiffStatus.Added ? await UntrackedStatAsync(item.File, ct).ConfigureAwait(false) : null);
             output.Add(new(item.File, stat?.Additions ?? 0, stat?.Deletions ?? 0, item.Status switch
             { FileDiffStatus.Added => VcsFileChangeStatus.Added, FileDiffStatus.Deleted => VcsFileChangeStatus.Deleted, _ => VcsFileChangeStatus.Modified }));
         }
@@ -134,23 +134,23 @@ public sealed class LocalVcs
         if (mode is not ("working" or "branch" or "committed")) throw new ArgumentException("VCS mode must be working, branch, or committed.", nameof(mode));
         ArgumentOutOfRangeException.ThrowIfNegative(context);
         if (!_git) return [];
-        var head = await HasHeadAsync(ct);
+        var head = await HasHeadAsync(ct).ConfigureAwait(false);
         if (!head && mode == "committed") return [];
         var reference = head ? "HEAD" : null;
         var target = mode == "committed" ? "HEAD" : null;
         if (head && mode != "working")
         {
-            var baseline = baseRef ?? (await DefaultBranchAsync(ct))?.Ref;
-            reference = baseline is null ? null : await MergeBaseAsync(baseline, ct);
+            var baseline = baseRef ?? (await DefaultBranchAsync(ct).ConfigureAwait(false))?.Ref;
+            reference = baseline is null ? null : await MergeBaseAsync(baseline, ct).ConfigureAwait(false);
             if (reference is null) throw new VcsUnavailableException(baseline is null ? "No review base available" : $"No merge base available for {baseline}");
         }
-        var listed = reference is null ? await StatusNamesAsync(ct) : await DiffNamesAsync(reference, target, ct);
-        var stats = reference is null ? new Dictionary<string, Stat>(StringComparer.Ordinal) : await StatsAsync(reference, target, ct);
+        var listed = reference is null ? await StatusNamesAsync(ct).ConfigureAwait(false) : await DiffNamesAsync(reference, target, ct).ConfigureAwait(false);
+        var stats = reference is null ? new Dictionary<string, Stat>(StringComparer.Ordinal) : await StatsAsync(reference, target, ct).ConfigureAwait(false);
         var all = new Dictionary<string, Item>(StringComparer.Ordinal);
         foreach (var item in listed) all.TryAdd(item.File, item);
         if (reference is not null && target is null)
-            foreach (var item in (await StatusNamesAsync(ct)).Where(item => item.Code == "??")) all.TryAdd(item.File, item);
-        var batch = reference is null || listed.Count == 0 ? null : await PatchAsync(_location.Directory, reference, ".", target, context, ct);
+            foreach (var item in (await StatusNamesAsync(ct).ConfigureAwait(false)).Where(item => item.Code == "??")) all.TryAdd(item.File, item);
+        var batch = reference is null || listed.Count == 0 ? null : await PatchAsync(_location.Directory, reference, ".", target, context, ct).ConfigureAwait(false);
         var patches = batch is null ? new Dictionary<string, string>(StringComparer.Ordinal)
             : GitPatch.Chunks(batch.Text, batch.Truncated, index => index < listed.Count ? listed[index].File : null);
         var output = new List<FileDiffInfo>();
@@ -158,15 +158,15 @@ public sealed class LocalVcs
         var capped = false;
         foreach (var item in all.Values.OrderBy(item => item.File, StringComparer.CurrentCulture))
         {
-            var stat = stats.GetValueOrDefault(item.File) ?? (target is null && item.Status == FileDiffStatus.Added ? await UntrackedStatAsync(item.File, ct) : null);
+            var stat = stats.GetValueOrDefault(item.File) ?? (target is null && item.Status == FileDiffStatus.Added ? await UntrackedStatAsync(item.File, ct).ConfigureAwait(false) : null);
             var patch = capped ? GitPatch.Empty(item.File) : patches.GetValueOrDefault(item.File);
             if (patch is null && item.Code != "??" && batch?.Truncated == true) patch = GitPatch.Empty(item.File);
             if (patch is null)
             {
                 var native = item.Code == "??" || reference is null
                     ? await RunAsync(_location.Project.Directory, ["diff", "--no-index", "--patch", "--no-ext-diff", "--no-renames",
-                        "--unified=" + context.ToString(CultureInfo.InvariantCulture), "--", "/dev/null", item.File], ct, PatchBytes)
-                    : await PatchAsync(_location.Project.Directory, reference, item.File, target, context, ct);
+                        "--unified=" + context.ToString(CultureInfo.InvariantCulture), "--", "/dev/null", item.File], ct, PatchBytes).ConfigureAwait(false)
+                    : await PatchAsync(_location.Project.Directory, reference, item.File, target, context, ct).ConfigureAwait(false);
                 if (native.ExitCode is not (0 or 1)) throw new VcsUnavailableException("Unable to produce Git patch");
                 patch = native.Truncated || native.Text.Length == 0 ? GitPatch.Empty(item.File) : native.Text;
             }
@@ -183,46 +183,46 @@ public sealed class LocalVcs
 
     private async Task<string?> BranchAsync(CancellationToken ct)
     {
-        var result = await RunAsync(_location.Directory, ["symbolic-ref", "--quiet", "--short", "HEAD"], ct);
+        var result = await RunAsync(_location.Directory, ["symbolic-ref", "--quiet", "--short", "HEAD"], ct).ConfigureAwait(false);
         return result.ExitCode == 0 ? Nonempty(result.Text.Trim()) : null;
     }
 
     private async Task<BranchRef?> DefaultBranchAsync(CancellationToken ct)
     {
-        var remotes = await RunAsync(_location.Directory, ["remote"], ct);
+        var remotes = await RunAsync(_location.Directory, ["remote"], ct).ConfigureAwait(false);
         Success(remotes, "Unable to list Git remotes");
         var names = Lines(remotes.Text);
         var remote = names.Contains("origin") ? "origin" : names.Length == 1 ? names[0] : names.Contains("upstream") ? "upstream" : names.FirstOrDefault();
         if (remote is not null)
         {
-            var result = await RunAsync(_location.Directory, ["symbolic-ref", "refs/remotes/" + remote + "/HEAD"], ct);
+            var result = await RunAsync(_location.Directory, ["symbolic-ref", "refs/remotes/" + remote + "/HEAD"], ct).ConfigureAwait(false);
             var full = result.Text.Trim();
             if (result.ExitCode == 0 && full.StartsWith("refs/remotes/" + remote + "/", StringComparison.Ordinal))
                 return new(full[("refs/remotes/" + remote + "/").Length..], full["refs/remotes/".Length..]);
         }
-        var branches = await RunAsync(_location.Directory, ["for-each-ref", "--format=%(refname:short)", "refs/heads"], ct);
+        var branches = await RunAsync(_location.Directory, ["for-each-ref", "--format=%(refname:short)", "refs/heads"], ct).ConfigureAwait(false);
         Success(branches, "Unable to list Git branches");
         var local = Lines(branches.Text);
-        var configured = await RunAsync(_location.Directory, ["config", "init.defaultBranch"], ct);
+        var configured = await RunAsync(_location.Directory, ["config", "init.defaultBranch"], ct).ConfigureAwait(false);
         var selected = Nonempty(configured.Text.Trim());
         var name = selected is not null && local.Contains(selected) ? selected : local.Contains("main") ? "main" : local.Contains("master") ? "master" : null;
         return name is null ? null : new(name, name);
     }
 
     private async Task<bool> HasHeadAsync(CancellationToken ct) =>
-        (await RunAsync(_location.Directory, ["rev-parse", "--verify", "HEAD"], ct)).ExitCode == 0;
+        (await RunAsync(_location.Directory, ["rev-parse", "--verify", "HEAD"], ct).ConfigureAwait(false)).ExitCode == 0;
 
     private async Task<string?> MergeBaseAsync(string baseline, CancellationToken ct)
     {
-        var resolved = await RunAsync(_location.Directory, ["rev-parse", "--verify", "--end-of-options", baseline + "^{commit}"], ct);
+        var resolved = await RunAsync(_location.Directory, ["rev-parse", "--verify", "--end-of-options", baseline + "^{commit}"], ct).ConfigureAwait(false);
         if (resolved.ExitCode != 0) return null;
-        var merge = await RunAsync(_location.Directory, ["merge-base", resolved.Text.Trim(), "HEAD"], ct);
+        var merge = await RunAsync(_location.Directory, ["merge-base", resolved.Text.Trim(), "HEAD"], ct).ConfigureAwait(false);
         return merge.ExitCode == 0 ? Nonempty(merge.Text.Trim()) : null;
     }
 
     private async Task<IReadOnlyList<Item>> StatusNamesAsync(CancellationToken ct)
     {
-        var result = await RunAsync(_location.Directory, ["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], ct);
+        var result = await RunAsync(_location.Directory, ["status", "--porcelain=v1", "--untracked-files=all", "--no-renames", "-z", "--", "."], ct).ConfigureAwait(false);
         Success(result, "Unable to list Git working-copy changes");
         return Nuls(result.Text).Where(row => row.Length > 3).Select(row => new Item(row[3..], row[..2], Kind(row[..2]))).ToArray();
     }
@@ -230,7 +230,7 @@ public sealed class LocalVcs
     private async Task<IReadOnlyList<Item>> DiffNamesAsync(string reference, string? target, CancellationToken ct)
     {
         var result = await RunAsync(_location.Directory, ["diff", "--no-ext-diff", "--no-renames", "--name-status", "-z", reference,
-            .. target is null ? Array.Empty<string>() : [target], "--", "."], ct);
+            .. target is null ? Array.Empty<string>() : [target], "--", "."], ct).ConfigureAwait(false);
         Success(result, "Unable to list Git changes");
         var tokens = Nuls(result.Text);
         return tokens.Select((code, index) => index % 2 == 0 && index + 1 < tokens.Length ? new Item(tokens[index + 1], code, Kind(code)) : null)
@@ -240,7 +240,7 @@ public sealed class LocalVcs
     private async Task<Dictionary<string, Stat>> StatsAsync(string reference, string? target, CancellationToken ct)
     {
         var result = await RunAsync(_location.Directory, ["diff", "--no-ext-diff", "--no-renames", "--numstat", "-z", reference,
-            .. target is null ? Array.Empty<string>() : [target], "--", "."], ct);
+            .. target is null ? Array.Empty<string>() : [target], "--", "."], ct).ConfigureAwait(false);
         Success(result, "Unable to read Git change statistics");
         var stats = new Dictionary<string, Stat>(StringComparer.Ordinal);
         foreach (var row in Nuls(result.Text))
@@ -253,7 +253,7 @@ public sealed class LocalVcs
 
     private async Task<Stat?> UntrackedStatAsync(string file, CancellationToken ct)
     {
-        var result = await RunAsync(_location.Project.Directory, ["diff", "--no-index", "--numstat", "--", "/dev/null", file], ct, 4096);
+        var result = await RunAsync(_location.Project.Directory, ["diff", "--no-index", "--numstat", "--", "/dev/null", file], ct, 4096).ConfigureAwait(false);
         if (result.Truncated) return null;
         var values = result.Text.Split('\t');
         return values.Length < 2 ? null : new(Count(values[0]), Count(values[1]));
@@ -279,7 +279,7 @@ public sealed class LocalVcs
         {
             // Inherit the caller's environment, as extendEnv:true does; do not add
             // shell-tool terminal markers or mutate Git's index/config environment.
-            var result = await Process.RunAndCaptureTextAsync(start, ct);
+            var result = await Process.RunAndCaptureTextAsync(start, ct).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
             if (result.ExitStatus.Canceled) throw new OperationCanceledException(ct);
             if (result.ExitStatus.Signal is not null) throw new VcsUnavailableException("Git terminated before completing the requested read.");

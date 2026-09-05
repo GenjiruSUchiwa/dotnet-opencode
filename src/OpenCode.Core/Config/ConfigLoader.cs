@@ -79,7 +79,7 @@ public sealed class ConfigLoader
                 continue;
             }
             string text;
-            try { text = await File.ReadAllTextAsync(source.Path, ct); }
+            try { text = await File.ReadAllTextAsync(source.Path, ct).ConfigureAwait(false); }
             catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException or UnauthorizedAccessException) { continue; }
             Add(text, Path.GetDirectoryName(source.Path)!, source.Path);
         }
@@ -286,14 +286,14 @@ public sealed class ConfigLoader
         if (node is not JsonValue scalar || !scalar.TryGetValue<string>(out var text)) return node;
         // Substitute decoded string values, never JSON source. Quotes, backslashes,
         // and newlines remain data; comments cannot trigger file reads.
-        var expanded = Regex.Replace(text, @"\{env:([^}]+)\}", match => Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? "");
-        return JsonValue.Create(Regex.Replace(expanded, @"\{file:([^}]+)\}", match =>
+        var expanded = Regex.Replace(text, @"\{env:(?<name>[^}]+)\}", match => Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? "", RegexOptions.NonBacktracking);
+        return JsonValue.Create(Regex.Replace(expanded, @"\{file:(?<path>[^}]+)\}", match =>
         {
             var path = match.Groups[1].Value;
             if (path.StartsWith("~/", StringComparison.Ordinal))
                 path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), path[2..]);
             return File.ReadAllText(Path.GetFullPath(path, directory)).Trim();
-        }));
+        }, RegexOptions.NonBacktracking));
     }
 
     private static void MergeDocument(JsonObject target, JsonObject overlay)

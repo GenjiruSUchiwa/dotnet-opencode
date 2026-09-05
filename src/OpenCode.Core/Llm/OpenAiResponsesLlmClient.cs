@@ -105,9 +105,9 @@ public sealed class OpenAiResponsesLlmClient : ILlmClient
         }
         using var request = LlmHttp.Request(endpoint.Uri.ToString(), body, headers);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
-        using var response = await LlmHttp.SendAsync(_http, request, ct);
+        using var response = await LlmHttp.SendAsync(_http, request, ct).ConfigureAwait(false);
         var parser = new ResponsesStreamParser();
-        await foreach (var frame in LlmHttp.Frames(response, ct, parseErrorEvents: true, classifyHttpError: ResponsesStreamParser.HttpFailure))
+        await foreach (var frame in LlmHttp.Frames(response, ct, parseErrorEvents: true, classifyHttpError: ResponsesStreamParser.HttpFailure).ConfigureAwait(false))
         {
             if (frame == "[DONE]") continue;
             foreach (var item in LlmHttp.Decode(frame, response, parser))

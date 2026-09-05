@@ -18,7 +18,7 @@ public static class AgentCatalog
 
     public static async Task<AgentInfo?> ResolveAsync(string directory, AgentId? id = null, CancellationToken ct = default)
     {
-        var agents = await ListAsync(directory, ct);
+        var agents = await ListAsync(directory, ct).ConfigureAwait(false);
         return id is { } selected ? agents.FirstOrDefault(agent => agent.Id == selected)
             : agents.FirstOrDefault(Selectable);
     }
@@ -26,7 +26,9 @@ public static class AgentCatalog
     private static async Task<IReadOnlyList<AgentInfo>> ReadAsync(string directory, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+#pragma warning disable MA0015 // Public catalog error text must not gain a C# parameter suffix.
         if (!Path.IsPathFullyQualified(directory)) throw new ArgumentException("Agent catalogs require an absolute Location directory.");
+#pragma warning restore MA0015
         var home = Path.GetFullPath(Environment.GetEnvironmentVariable("OPENCODE_TEST_HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         var global = Path.GetFullPath(ConfigLoader.GetDefaultConfigDirectory());
         var data = Path.GetFullPath(ConfigLoader.GetDefaultDataDirectory());
@@ -44,7 +46,7 @@ public static class AgentCatalog
         }
         if (!source.ReferencesAvailable) throw new IOException("The complete agent configuration could not be read.");
         source.RequireNoPluginSources();
-        var documents = await AgentDocuments.LoadAsync(source.Documents, source.ConfigurationDirectories, ct);
+        var documents = await AgentDocuments.LoadAsync(source.Documents, source.ConfigurationDirectories, ct).ConfigureAwait(false);
 
         var external = new[] { Path.Combine(data, "shell", "*", "*"), Path.Combine(data, "tool-output", "*"),
             Path.Combine(Path.GetTempPath(), "opencode", "*"), Path.Combine(global, "*") }
@@ -119,7 +121,7 @@ public static class AgentCatalog
                 if (item.ContainsKey("color"))
                 {
                     var color = Text(item["color"]);
-                    if (!Regex.IsMatch(color, "\\A#[0-9a-fA-F]{6}\\z")) throw new JsonException("Agent color must be a six-digit hex color.");
+                    if (!Regex.IsMatch(color, "\\A#[0-9a-fA-F]{6}\\z", RegexOptions.NonBacktracking)) throw new JsonException("Agent color must be a six-digit hex color.");
                     agent = agent with { Color = color };
                 }
                 if (item.TryGetPropertyValue("steps", out var steps))

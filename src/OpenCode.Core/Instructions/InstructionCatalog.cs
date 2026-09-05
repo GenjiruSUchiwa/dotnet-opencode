@@ -19,7 +19,7 @@ public static class InstructionCatalog
         var source = Sources(directory, observations);
         if (!source.Configuration.SkillsAvailable) throw new IOException("Skill source discovery is temporarily unavailable.");
         var observation = await SkillSources.ReadAsync(source.Configuration.SkillRoots, source.Configuration.Skills(),
-            source.Directory, source.Home, ct);
+            source.Directory, source.Home, ct).ConfigureAwait(false);
         if (!observation.Available) throw new IOException("The complete local skill catalog could not be read.");
         // Skill.list is not agent-filtered; SkillGuidance performs visibility filtering separately.
         return observation.Skills;

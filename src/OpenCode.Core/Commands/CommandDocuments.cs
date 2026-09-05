@@ -24,7 +24,7 @@ public static class CommandDocuments
         }
         foreach (var name in names)
             if (cursor < documents.Count && Same(documents[cursor].Path, Path.Combine(directories[0], name))) Add(documents[cursor++]);
-        await AddDirectory(directories[0]);
+        await AddDirectory(directories[0]).ConfigureAwait(false);
         var projectStart = documents.Count;
         for (var index = 0; index < documents.Count; index++)
             if (documents[index].Path is null) { projectStart = index; break; }
@@ -40,7 +40,7 @@ public static class CommandDocuments
         {
             foreach (var name in names)
                 if (cursor < documents.Count && Same(documents[cursor].Path, Path.Combine(root, name))) Add(documents[cursor++]);
-            await AddDirectory(root);
+            await AddDirectory(root).ConfigureAwait(false);
         }
         while (cursor < documents.Count) Add(documents[cursor++]);
         return result;
@@ -69,7 +69,7 @@ public static class CommandDocuments
                 ct.ThrowIfCancellationRequested();
                 try
                 {
-                    var content = await File.ReadAllTextAsync(file, ct);
+                    var content = await File.ReadAllTextAsync(file, ct).ConfigureAwait(false);
                     var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
                     var command = ParseMarkdown(relative[(relative.IndexOf('/') + 1)..^3], content, file);
                     if (command is not null) result.Add(command);
@@ -88,7 +88,7 @@ public static class CommandDocuments
                     foreach (var child in physical.EnumerateFileSystemInfos())
                     {
                         var path = Path.Combine(logical, child.Name);
-                        if ((child.Attributes & FileAttributes.Directory) != 0) Walk(new DirectoryInfo(child.FullName), path);
+                        if ((child.Attributes & FileAttributes.Directory) != FileAttributes.None) Walk(new DirectoryInfo(child.FullName), path);
                         else if (child.Name.EndsWith(".md", StringComparison.Ordinal)) files.Add(path);
                     }
                 }
@@ -106,15 +106,15 @@ public static class CommandDocuments
             if (body.StartsWith("---\n", StringComparison.Ordinal) || body.StartsWith("---\r\n", StringComparison.Ordinal))
             {
                 var start = body.IndexOf('\n') + 1;
-                var end = Regex.Match(body[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant);
+                var end = Regex.Match(body[start..], @"(?m)^---\r?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
                 if (!end.Success) return null;
                 var header = body.Substring(start, end.Index);
                 try { data = Yaml(header); }
                 catch (YamlException)
                 {
-                    data = Yaml(string.Join("\n", Regex.Split(header, "\r?\n").SelectMany(line =>
+                    data = Yaml(string.Join("\n", Regex.Split(header, "\r?\n", RegexOptions.NonBacktracking).SelectMany(line =>
                     {
-                        var match = Regex.Match(line, @"^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$");
+                        var match = Regex.Match(line, @"^(?<key>[a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(?<value>.*)$", RegexOptions.NonBacktracking);
                         if (!match.Success) return new[] { line };
                         var value = match.Groups[2].Value.Trim();
                         return value.Length > 0 && value is not (">" or "|") && value[0] is not ('\'' or '"') && value.Contains(':')
@@ -138,7 +138,7 @@ public static class CommandDocuments
             if (legacy)
             {
                 var text = Text(data["model"]);
-                if (Regex.IsMatch(text, @"\A[^/#]+/[^#]+\z"))
+                if (Regex.IsMatch(text, @"\A[^/#]+/[^#]+\z", RegexOptions.NonBacktracking))
                 {
                     var split = text.IndexOf('/');
                     var provider = text[..split] switch { "azure-cognitive-services" => "azure", "google-vertex-anthropic" => "google-vertex", var id => id };

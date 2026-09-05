@@ -100,7 +100,7 @@ internal static class LlmAnswerText
             Http = new LlmHttpOptions { Body = body.ToImmutableDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value)) }
         };
         var fragments = new Dictionary<string, StringBuilder>(StringComparer.Ordinal);
-        await foreach (var item in client.StreamAsync(request, ct))
+        await foreach (var item in client.StreamAsync(request, ct).ConfigureAwait(true))
         {
             ct.ThrowIfCancellationRequested();
             switch (item)
@@ -192,9 +192,9 @@ internal sealed class LlmTransport
             request.Headers.Add("x-goog-api-key", _key);
         }
         else request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _key);
-        using var response = await LlmHttp.SendAsync(_http, request, ct);
+        using var response = await LlmHttp.SendAsync(_http, request, ct).ConfigureAwait(false);
         LlmStreamParser parser = _google ? new GoogleStreamParser(ProviderMetadataKey) : new ChatStreamParser(input.Compatibility, ProviderMetadataKey);
-        await foreach (var frame in LlmHttp.Frames(response, ct))
+        await foreach (var frame in LlmHttp.Frames(response, ct).ConfigureAwait(false))
         {
             if (frame == "[DONE]") { if (!_google) break; continue; }
             foreach (var item in LlmHttp.Decode(frame, response, parser))
@@ -216,7 +216,7 @@ internal static class LlmHttp
 {
     internal static async Task<HttpResponseMessage> SendAsync(HttpClient http, HttpRequestMessage request, CancellationToken ct)
     {
-        try { return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct); }
+        try { return await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false); }
         catch (Exception error) when (error is HttpRequestException or IOException && error is not LlmException)
         { throw TransportFailure(error, LlmTransportOperation.Request, request.RequestUri?.ToString()); }
         catch (OperationCanceledException error) when (!ct.IsCancellationRequested)
@@ -294,12 +294,13 @@ internal static class LlmHttp
 
     internal static async IAsyncEnumerable<LlmEvent> Guard(IAsyncEnumerable<LlmEvent> source, [EnumeratorCancellation] CancellationToken ct)
     {
-        await using var enumerator = source.GetAsyncEnumerator(ct);
+        var enumerator = source.GetAsyncEnumerator(ct);
+        await using var enumeratorLifetime = enumerator.ConfigureAwait(true);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             bool next;
-            try { next = await enumerator.MoveNextAsync(); }
+            try { next = await enumerator.MoveNextAsync().ConfigureAwait(true); }
             catch (HttpRequestException error) { throw new LlmException(new LlmFailure.Transport("Provider HTTP transport failed."), error); }
             catch (IOException error) when (error is not LlmException) { throw new LlmException(new LlmFailure.Transport("Provider transport failed."), error); }
             catch (Exception error) when (error is JsonException or ArgumentException or InvalidOperationException)
@@ -314,12 +315,13 @@ internal static class LlmHttp
         IReadOnlySet<string>? allowedEvents = null, bool parseErrorEvents = false,
         Func<LlmHttpContext, string, LlmFailure>? classifyHttpError = null)
     {
-        await using var frames = ReadFrames(response, ct, allowedEvents, parseErrorEvents, classifyHttpError).GetAsyncEnumerator(ct);
+        var frames = ReadFrames(response, ct, allowedEvents, parseErrorEvents, classifyHttpError).GetAsyncEnumerator(ct);
+        await using var framesLifetime = frames.ConfigureAwait(true);
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             bool next;
-            try { next = await frames.MoveNextAsync(); }
+            try { next = await frames.MoveNextAsync().ConfigureAwait(true); }
             catch (Exception error) when (error is HttpRequestException or IOException && error is not LlmException)
             { throw TransportFailure(error, LlmTransportOperation.Read, response.RequestMessage?.RequestUri?.ToString(), LlmHttpContext.From(response)); }
             catch (OperationCanceledException error) when (!ct.IsCancellationRequested)
@@ -337,7 +339,7 @@ internal static class LlmHttp
         ct.ThrowIfCancellationRequested();
         if (!response.IsSuccessStatusCode)
         {
-            var body = await response.Content.ReadAsStringAsync(ct);
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(true);
             var context = LlmHttpContext.From(response);
             if (classifyHttpError is not null) throw new LlmException(classifyHttpError(context, body) with { Body = body, Http = context });
             throw new LlmException(ProviderFailure.Classify($"Provider request failed with HTTP {(int)response.StatusCode}.",
@@ -345,17 +347,19 @@ internal static class LlmHttp
         }
         if (response.Content.Headers.ContentType?.MediaType is { } mediaType && !mediaType.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase))
             throw new LlmException(new LlmFailure.InvalidProviderOutput("Expected an SSE response.")
-            { Body = await response.Content.ReadAsStringAsync(ct), Http = LlmHttpContext.From(response) });
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        await using var lines = PipelineText.DecodedLinesAsync(stream, new UTF8Encoding(false, true),
+            { Body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(true), Http = LlmHttpContext.From(response) });
+        var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(true);
+        await using var streamLifetime = stream.ConfigureAwait(true);
+        var lines = PipelineText.DecodedLinesAsync(stream, new UTF8Encoding(false, true),
             cancellationToken: ct).GetAsyncEnumerator(ct);
+        await using var linesLifetime = lines.ConfigureAwait(true);
         var data = new List<string>();
         string? eventName = null;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             string? line;
-            try { line = await lines.MoveNextAsync() ? lines.Current : null; }
+            try { line = await lines.MoveNextAsync().ConfigureAwait(true) ? lines.Current : null; }
             catch (DecoderFallbackException error)
             {
                 throw new LlmException(new LlmFailure.InvalidProviderOutput("Provider response is not valid UTF-8.")

@@ -10,18 +10,18 @@ public sealed class LocalFileSystem(LocationInfo location)
     public IReadOnlyList<FileSystemEntry> List(string? path = null, CancellationToken ct = default)
     {
         var target = Resolve(path);
-        if ((File.GetAttributes(target.Real) & FileAttributes.Directory) == 0)
+        if ((File.GetAttributes(target.Real) & FileAttributes.Directory) == FileAttributes.None)
             throw new IOException("Path is not a directory.");
         var entries = new List<FileSystemEntry>();
         // Source readdir(withFileTypes) includes hidden/ignored children, not symlinks.
         foreach (var item in new DirectoryInfo(target.Real).EnumerateFileSystemInfos("*", new EnumerationOptions
         {
-            AttributesToSkip = 0, IgnoreInaccessible = false, ReturnSpecialDirectories = false
+            AttributesToSkip = FileAttributes.None, IgnoreInaccessible = false, ReturnSpecialDirectories = false
         }))
         {
             ct.ThrowIfCancellationRequested();
-            if ((item.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Device)) != 0) continue;
-            var directory = (item.Attributes & FileAttributes.Directory) != 0;
+            if ((item.Attributes & (FileAttributes.ReparsePoint | FileAttributes.Device)) != FileAttributes.None) continue;
+            var directory = (item.Attributes & FileAttributes.Directory) != FileAttributes.None;
             entries.Add(new(Path.GetRelativePath(location.Directory, Path.Combine(target.Absolute, item.Name))
                 + (directory ? Path.DirectorySeparatorChar.ToString() : ""),
                 directory ? FileSystemEntryType.Directory : FileSystemEntryType.File));
@@ -36,7 +36,7 @@ public sealed class LocalFileSystem(LocationInfo location)
     {
         ArgumentNullException.ThrowIfNull(path);
         var target = Resolve(path);
-        if ((File.GetAttributes(target.Real) & (FileAttributes.Directory | FileAttributes.Device)) != 0)
+        if ((File.GetAttributes(target.Real) & (FileAttributes.Directory | FileAttributes.Device)) != FileAttributes.None)
             throw new IOException("Path is not a file.");
         var mime = FilesystemMime.Lookup(target.Real);
         // Stream a fixed-size buffer rather than allocating the entire file as upstream does.
@@ -69,8 +69,8 @@ public sealed class LocalFileSystem(LocationInfo location)
         {
             current = Path.Combine(current, component);
             var attributes = File.GetAttributes(current); // Missing paths are errors, never empty successes.
-            if ((attributes & FileAttributes.ReparsePoint) == 0) continue;
-            var info = (attributes & FileAttributes.Directory) != 0 ? (FileSystemInfo)new DirectoryInfo(current) : new FileInfo(current);
+            if ((attributes & FileAttributes.ReparsePoint) == FileAttributes.None) continue;
+            var info = (attributes & FileAttributes.Directory) != FileAttributes.None ? (FileSystemInfo)new DirectoryInfo(current) : new FileInfo(current);
             current = RealPath(info.ResolveLinkTarget(true)?.FullName ?? throw new IOException("Unable to resolve symbolic link."), links + 1);
         }
         return current;

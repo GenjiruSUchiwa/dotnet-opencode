@@ -15,7 +15,7 @@ public sealed class StorePermissionLocationFactory(
 {
     public async ValueTask<PermissionLocationScope> CreateAsync(LocationRef location, CancellationToken ct)
     {
-        var info = await resolveLocation(location, ct);
+        var info = await resolveLocation(location, ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
         var rules = new StorePermissionRules(sessions, location, (agent, cancellation) => resolveAgent(info, agent, cancellation));
         return new(info, new PermissionService(info.Project.Id.Value, rules, grants, hooks?.Invoke(info)));

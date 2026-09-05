@@ -17,7 +17,9 @@ public sealed class FileSearchIndex(LocationInfo location, RipgrepFileScanner sc
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+#pragma warning disable MA0015 // Preserve the filesystem query error text exposed by callers.
         if (type is not (null or FileSystemEntryType.File or FileSystemEntryType.Directory)) throw new ArgumentException("Invalid filesystem entry type.");
+#pragma warning restore MA0015
         lifetime.ThrowIfCancellationRequested();
         FuzzyPathSearch.Target[]? index;
         Task? refresh;
@@ -35,7 +37,7 @@ public sealed class FileSearchIndex(LocationInfo location, RipgrepFileScanner sc
         }
         if (index is null)
         {
-            await refresh!.WaitAsync(ct);
+            await refresh!.WaitAsync(ct).ConfigureAwait(false);
             lock (_gate) index = _index!;
         }
         return FuzzyPathSearch.Find(index, query, type, limit, ct);
@@ -51,7 +53,7 @@ public sealed class FileSearchIndex(LocationInfo location, RipgrepFileScanner sc
         await Task.Yield();
         try
         {
-            var entries = await scanner.ScanAsync(location, lifetime);
+            var entries = await scanner.ScanAsync(location, lifetime).ConfigureAwait(false);
             var index = entries.Select(FuzzyPathSearch.Prepare).ToArray();
             lock (_gate) _index = index;
         }

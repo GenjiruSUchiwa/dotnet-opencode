@@ -36,7 +36,8 @@ internal static class CodeModeTool
                 if (string.IsNullOrWhiteSpace(source)) throw new CodeModeDiagnosticException(new("ParseError", "Code cannot be empty."));
                 if (Encoding.UTF8.GetByteCount(source) > limits.MaxSourceBytes)
                     throw new CodeModeDiagnosticException(new("InvalidDataValue", "Source exceeds the host byte limit."));
-                result = await evaluator.EvaluateAsync(source, bindings, limits, work.Token);
+                // Evaluators and leaf/progress callbacks retain the caller context.
+                result = await evaluator.EvaluateAsync(source, bindings, limits, work.Token).ConfigureAwait(true);
                 work.Token.ThrowIfCancellationRequested();
                 if (result.Ok) result = result with { Value = CodeModeData.Copy(result.Value, limits.MaxBoundaryBytes, "Execution result") };
             }
@@ -46,9 +47,9 @@ internal static class CodeModeTool
             finally
             {
                 bindings.Close();
-                await work.CancelAsync();
+                await work.CancelAsync().ConfigureAwait(true);
                 // Never abandon leaf cleanup or let a returned program retain capabilities.
-                await bindings.SettleAsync();
+                await bindings.SettleAsync().ConfigureAwait(true);
             }
             ct.ThrowIfCancellationRequested();
             bindings.ThrowControlFailure();
@@ -111,8 +112,8 @@ internal static class CodeModeTool
             try
             {
                 work.ThrowIfCancellationRequested();
-                await ProgressAsync();
-                var result = await execute(tool.Id, tool, input, context, work);
+                await ProgressAsync().ConfigureAwait(true);
+                var result = await execute(tool.Id, tool, input, context, work).ConfigureAwait(true);
                 work.ThrowIfCancellationRequested();
                 JsonElement value;
                 try
@@ -132,7 +133,7 @@ internal static class CodeModeTool
                         .Select(file => new File(file.Uri[("data:" + file.Mime + ";base64,").Length..], file.Mime, file.Name)).ToArray();
                     _calls[index] = _calls[index] with { Status = "completed" };
                 }
-                await ProgressAsync();
+                await ProgressAsync().ConfigureAwait(true);
                 completion.TrySetResult(value);
             }
             catch (Exception error)
@@ -143,7 +144,7 @@ internal static class CodeModeTool
                     if (error is not (ToolExecutionException or CodeModeDiagnosticException) && !(error is OperationCanceledException && work.IsCancellationRequested))
                         _controlFailure ??= ExceptionDispatchInfo.Capture(error);
                 }
-                try { await ProgressAsync(); }
+                try { await ProgressAsync().ConfigureAwait(true); }
                 catch (Exception progress) { lock (_gate) _controlFailure ??= ExceptionDispatchInfo.Capture(progress); }
                 completion.TrySetException(error is ToolExecutionException ? new CodeModeDiagnosticException(new("ToolFailure", error.Message)) : error);
                 // Observe abandoned host tasks; guest promise observation belongs to the evaluator.
@@ -163,7 +164,9 @@ internal static class CodeModeTool
                     input.TryGetProperty("limit", out var limit) ? limit.GetInt32() : 10,
                     input.TryGetProperty("offset", out var offset) ? offset.GetInt32() : 0);
                 if (query.ValueKind == JsonValueKind.Null || space.ValueKind == JsonValueKind.Null || request.Limit < 1 || request.Offset < 0)
+#pragma warning disable MA0015 // This compound validation message is normalized into the guest InvalidToolInput diagnostic.
                     throw new ArgumentException("Search requires optional strings, a positive integer limit and a nonnegative integer offset.");
+#pragma warning restore MA0015
             }
             catch (Exception error) when (error is InvalidOperationException or FormatException or ArgumentException)
             { throw new CodeModeDiagnosticException(new("InvalidToolInput", error.Message)); }
@@ -229,12 +232,13 @@ internal static class CodeModeTool
 
         private async Task ProgressAsync()
         {
-            await _progress.WaitAsync();
+            // Final/error progress must drain after work cancellation, before SettleAsync disposes the gate.
+            await _progress.WaitAsync(CancellationToken.None).ConfigureAwait(true);
             try
             {
                 Call[] calls;
                 lock (_gate) calls = _calls.ToArray();
-                await context.ReportProgress(new Dictionary<string, object> { ["toolCalls"] = calls });
+                await context.ReportProgress(new Dictionary<string, object> { ["toolCalls"] = calls }).ConfigureAwait(true);
             }
             finally { _progress.Release(); }
         }
@@ -244,7 +248,7 @@ internal static class CodeModeTool
         {
             Task[] running;
             lock (_gate) running = _running.ToArray();
-            await Task.WhenAll(running);
+            await Task.WhenAll(running).ConfigureAwait(true);
             _progress.Dispose();
         }
         internal void ThrowControlFailure() => _controlFailure?.Throw();

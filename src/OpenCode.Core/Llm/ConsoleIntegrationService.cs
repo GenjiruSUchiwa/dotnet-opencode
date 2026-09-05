@@ -69,7 +69,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
     {
         server = NormalizeServer(server ?? DefaultServer);
         using var request = Post(server + "/auth/device/code", new ConsoleDeviceRequest(ClientId), ConsoleJsonContext.Default.ConsoleDeviceRequest);
-        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleDeviceResponse, true, ct);
+        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleDeviceResponse, true, ct).ConfigureAwait(false);
         var device = response.Value;
         if (device.DeviceCode is null || device.UserCode is null || device.VerificationUri is null
             || !double.IsFinite(device.Interval) || device.Interval < 0 || device.Interval >= TimeSpan.MaxValue.TotalSeconds
@@ -88,7 +88,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
         if (remaining <= TimeSpan.Zero) throw new LlmException(new LlmFailure.Authentication("Device authorization expired."));
         using var deadline = new CancellationTokenSource(remaining, _clock);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
-        try { return await CompleteDeviceAuthorizationCoreAsync(authorization, label, linked.Token); }
+        try { return await CompleteDeviceAuthorizationCoreAsync(authorization, label, linked.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested && deadline.IsCancellationRequested)
         { throw new LlmException(new LlmFailure.Authentication("Device authorization expired.")); }
     }
@@ -104,30 +104,30 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
         {
             var remaining = authorization.ExpiresAt - _clock.GetUtcNow();
             if (remaining <= TimeSpan.Zero) throw new LlmException(new LlmFailure.Authentication("Device authorization expired."));
-            await Task.Delay(wait < remaining ? wait : remaining, _clock, ct);
+            await Task.Delay(wait < remaining ? wait : remaining, _clock, ct).ConfigureAwait(false);
             if (_clock.GetUtcNow() >= authorization.ExpiresAt) throw new LlmException(new LlmFailure.Authentication("Device authorization expired."));
             using var request = Post(authorization.Server + "/auth/device/token",
                 new ConsoleDeviceTokenRequest("urn:ietf:params:oauth:grant-type:device_code", authorization.DeviceCode, ClientId),
                 ConsoleJsonContext.Default.ConsoleDeviceTokenRequest);
             // The device endpoint carries pending/slow_down in JSON on non-2xx responses.
-            var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleTokenResponse, false, ct);
+            var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleTokenResponse, false, ct).ConfigureAwait(false);
             if (response.Value.AccessToken is not null)
             {
                 ValidateToken(response.Value, response.Http);
                 var userTask = GetAsync(authorization.Server + "/api/user", response.Value.AccessToken, ConsoleJsonContext.Default.ConsoleUser, ct);
                 var orgsTask = GetAsync(authorization.Server + "/api/orgs", response.Value.AccessToken, ConsoleJsonContext.Default.ConsoleOrgArray, ct);
-                await Task.WhenAll(userTask, orgsTask);
-                var user = (await userTask).Value;
-                var orgs = (await orgsTask).Value;
-                if (user.Id is null || user.Email is null) throw InvalidResponse((await userTask).Http);
-                if (orgs.Any(org => org is null || org.Id is null || org.Name is null)) throw InvalidResponse((await orgsTask).Http);
+                await Task.WhenAll(userTask, orgsTask).ConfigureAwait(false);
+                var user = (await userTask.ConfigureAwait(false)).Value;
+                var orgs = (await orgsTask.ConfigureAwait(false)).Value;
+                if (user.Id is null || user.Email is null) throw InvalidResponse((await userTask.ConfigureAwait(false)).Http);
+                if (orgs.Any(org => org is null || org.Id is null || org.Name is null)) throw InvalidResponse((await orgsTask.ConfigureAwait(false)).Http);
                 var org = orgs.OrderBy(item => item.Name, StringComparer.CurrentCulture).ThenBy(item => item.Id, StringComparer.CurrentCulture).FirstOrDefault();
                 var metadata = new JsonObject { ["server"] = authorization.Server, ["accountID"] = user.Id, ["email"] = user.Email };
                 if (org is not null) { metadata["orgID"] = org.Id; metadata["orgName"] = org.Name; }
                 if (label is null && org is not null) label = org.Name;
                 if (label is null)
                 {
-                    var labels = (await credentials.ListCredentialsForIntegrationAsync(IntegrationId, ct)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
+                    var labels = (await credentials.ListCredentialsForIntegrationAsync(IntegrationId, ct).ConfigureAwait(false)).Select(item => item.Label).ToHashSet(StringComparer.Ordinal);
                     label = Enumerable.Range(0, labels.Count + 1).Select(index => index == 0 ? "OpenCode" : "OpenCode " + (index + 1).ToString(CultureInfo.InvariantCulture))
                         .First(candidate => !labels.Contains(candidate));
                 }
@@ -139,7 +139,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
                 ct.ThrowIfCancellationRequested();
                 if (_clock.GetUtcNow() >= authorization.ExpiresAt)
                     throw new LlmException(new LlmFailure.Authentication("Device authorization expired."));
-                return await credentials.CreateAsync(IntegrationId, JsonSerializer.SerializeToElement(value), label, ct);
+                return await credentials.CreateAsync(IntegrationId, JsonSerializer.SerializeToElement(value), label, ct).ConfigureAwait(false);
             }
             if (response.Value.Error == "authorization_pending") continue;
             if (response.Value.Error == "slow_down") { wait += TimeSpan.FromSeconds(5); continue; }
@@ -152,17 +152,17 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
     /// <summary>Resolve the selected channel credential; refresh only this console's device-method OAuth credentials.</summary>
     public async Task<StoredCredential?> ResolveCredentialAsync(CancellationToken ct = default)
     {
-        var credential = await credentials.GetActiveCredentialAsync(IntegrationId, ct);
+        var credential = await credentials.GetActiveCredentialAsync(IntegrationId, ct).ConfigureAwait(false);
         if (credential is null || credential.Value.GetProperty("type").GetString() == "key") return credential;
         if (credential.Value.GetProperty("methodID").GetString() != MethodId)
             throw new LlmException(new LlmFailure.Unsupported("The selected console OAuth method is not supported."));
         if (credential.Value.GetProperty("expires").GetDecimal() > _clock.GetUtcNow().AddMinutes(5).ToUnixTimeMilliseconds()) return credential;
-        return (await RefreshCredentialAsync(credential.Id, ct)).Credential;
+        return (await RefreshCredentialAsync(credential.Id, ct).ConfigureAwait(false)).Credential;
     }
 
     public async Task<CredentialMutation> RefreshCredentialAsync(string credentialId, CancellationToken ct = default)
     {
-        var credential = await credentials.GetCredentialAsync(credentialId, ct)
+        var credential = await credentials.GetCredentialAsync(credentialId, ct).ConfigureAwait(false)
             ?? throw new LlmException(new LlmFailure.Authentication("The console credential no longer exists."));
         if (credential.IntegrationId != IntegrationId || credential.Value.GetProperty("type").GetString() != "oauth"
             || credential.Value.GetProperty("methodID").GetString() != MethodId)
@@ -170,21 +170,21 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
         using var request = Post(Server(credential.Value) + "/auth/device/token",
             new ConsoleRefreshRequest("refresh_token", credential.Value.GetProperty("refresh").GetString()!, ClientId),
             ConsoleJsonContext.Default.ConsoleRefreshRequest);
-        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleTokenResponse, true, ct);
+        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleTokenResponse, true, ct).ConfigureAwait(false);
         ValidateToken(response.Value, response.Http);
         var value = JsonNode.Parse(credential.Value.GetRawText())!.AsObject();
         value["access"] = response.Value.AccessToken;
         value["refresh"] = response.Value.RefreshToken;
         value["expires"] = Expires(response.Value.ExpiresIn!.Value, response.Http);
         // Value-only updates intentionally have no upstream credential.updated/switched event.
-        var mutation = await credentials.UpdateAsync(credential.Id, value: JsonSerializer.SerializeToElement(value), ct: ct);
+        var mutation = await credentials.UpdateAsync(credential.Id, value: JsonSerializer.SerializeToElement(value), ct: ct).ConfigureAwait(false);
         if (mutation.Credential is null) throw new LlmException(new LlmFailure.Authentication("The console credential was removed during refresh."));
         return mutation;
     }
 
     public async Task<ConsoleProviderCatalog?> DiscoverProvidersAsync(CancellationToken ct = default)
     {
-        var credential = await ResolveCredentialAsync(ct);
+        var credential = await ResolveCredentialAsync(ct).ConfigureAwait(false);
         if (credential is null) return null;
         var value = credential.Value;
         var token = value.GetProperty(value.GetProperty("type").GetString() == "oauth" ? "access" : "key").GetString()!;
@@ -195,7 +195,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
                 throw new LlmException(new LlmFailure.InvalidRequest("Console organization metadata contains an invalid header value."));
             request.Headers.Add("x-org-id", orgId);
         }
-        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleConfigResponse, true, ct, allowNotFound: true);
+        var response = await SendAsync(request, ConsoleJsonContext.Default.ConsoleConfigResponse, true, ct, allowNotFound: true).ConfigureAwait(false);
         if (response.Http.Status == HttpStatusCode.NotFound) return null;
         if (response.Value.Config.ValueKind != JsonValueKind.Object) throw InvalidResponse(response.Http);
         if (!response.Value.Config.TryGetProperty("provider", out var providers)) return null;
@@ -318,7 +318,7 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
     private async Task<(T Value, LlmHttpContext Http, string Body)> GetAsync<T>(string url, string token, JsonTypeInfo<T> typeInfo, CancellationToken ct)
     {
         using var request = Get(url, token);
-        return await SendAsync(request, typeInfo, true, ct);
+        return await SendAsync(request, typeInfo, true, ct).ConfigureAwait(false);
     }
 
     private async Task<(T Value, LlmHttpContext Http, string Body)> SendAsync<T>(HttpRequestMessage request, JsonTypeInfo<T> typeInfo,
@@ -328,10 +328,10 @@ public sealed class ConsoleIntegrationService(HttpClient http, CredentialStore c
         try
         {
             ProviderUserAgent.Apply(request);
-            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             var context = LlmHttpContext.From(response);
             if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return (default!, context, "");
-            var body = await response.Content.ReadAsStringAsync(ct);
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (requireSuccess && !response.IsSuccessStatusCode) throw HttpFailure(context, body);
             try
             {

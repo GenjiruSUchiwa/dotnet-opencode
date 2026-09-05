@@ -267,8 +267,8 @@ internal static class ModelsDevCatalog
 
     private static bool ManualThinking(string id)
     {
-        var family = Regex.Match(id, @"(?:claude-)?(?:opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        var version = family.Success ? family : Regex.Match(id, @"claude-(\d+)(?:[.-](\d+))?-(?:opus|sonnet|haiku)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var family = Regex.Match(id, @"(?:claude-)?(?:opus|sonnet|haiku)-(?<major>\d+)(?:[.-](?<minor>\d+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        var version = family.Success ? family : Regex.Match(id, @"claude-(?<major>\d+)(?:[.-](?<minor>\d+))?-(?:opus|sonnet|haiku)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
         if (!version.Success || !double.TryParse(version.Groups[1].Value, CultureInfo.InvariantCulture, out var major)) return false;
         var minor = double.TryParse(version.Groups[2].Value, CultureInfo.InvariantCulture, out var parsed) && parsed <= 9 ? parsed : 0;
         return major < 4 || major == 4 && minor < 6;

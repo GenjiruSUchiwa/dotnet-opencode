@@ -43,10 +43,10 @@ public sealed partial class ProviderResolver
         ct.ThrowIfCancellationRequested();
         var explicitReference = requestedModel ?? sessionModel?.ToString();
         var selection = explicitReference is not null ? ParseSelection(JsonSerializer.SerializeToElement(explicitReference)) : default;
-        var snapshot = await LoadCatalogSnapshotAsync(directory, ct);
+        var snapshot = await LoadCatalogSnapshotAsync(directory, ct).ConfigureAwait(false);
         if (explicitReference is null)
         {
-            var preferred = (await ProjectCatalogAsync(snapshot, ct)).DefaultSelection
+            var preferred = (await ProjectCatalogAsync(snapshot, ct).ConfigureAwait(false)).DefaultSelection
                 ?? throw new LlmException(new LlmFailure.InvalidRequest("No available model is present in the configured catalog."));
             selection = (preferred.ProviderId, preferred.Id, preferred.Variant);
         }
@@ -94,9 +94,9 @@ public sealed partial class ProviderResolver
         {
             credential = discovered is not null
                 ? console!.Credential ?? throw new LlmException(new LlmFailure.Authentication("Console catalog has no credential snapshot."))
-                : consoleBound ? await _console.ResolveCredentialAsync(ct)
+                : consoleBound ? await _console.ResolveCredentialAsync(ct).ConfigureAwait(false)
                 : selection.Provider == OpenAiOAuthService.IntegrationId ? snapshot.OpenAiCredential
-                : await _credentialStore.GetActiveCredentialAsync(selection.Provider, ct);
+                : await _credentialStore.GetActiveCredentialAsync(selection.Provider, ct).ConfigureAwait(false);
         }
         catch (InvalidDataException)
         {
@@ -170,7 +170,7 @@ public sealed partial class ProviderResolver
         if (string.IsNullOrEmpty(modelId)) throw new InvalidOperationException("Selected API model ID must not be empty.");
         var baseUrl = StringSetting(settings, "baseURL");
         if (baseUrl is not null)
-            baseUrl = Regex.Replace(baseUrl, @"\$\{([^}]+)\}", match => Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value);
+            baseUrl = Regex.Replace(baseUrl, @"\$\{(?<name>[^}]+)\}", match => Environment.GetEnvironmentVariable(match.Groups[1].Value) ?? match.Value, RegexOptions.NonBacktracking);
         if (chat && string.IsNullOrWhiteSpace(baseUrl))
             throw new InvalidOperationException("An OpenAI-compatible provider requires settings.baseURL.");
         if (package == "@opencode-ai/ai/providers/anthropic-compatible" && string.IsNullOrWhiteSpace(baseUrl))
@@ -280,7 +280,9 @@ public sealed partial class ProviderResolver
         var hash = text.IndexOf('#');
         if (slash <= 0 || (hash >= 0 && hash <= slash) || slash == text.Length - 1
             || (hash >= 0 && (hash == slash + 1 || hash == text.Length - 1 || text.IndexOf('#', hash + 1) >= 0)))
+#pragma warning disable MA0015 // Preserve the public model-selection error text and exception type.
             throw new ArgumentException("Model selection must use provider/model#variant; the variant suffix is optional.");
+#pragma warning restore MA0015
         return (text[..slash], text[(slash + 1)..(hash < 0 ? text.Length : hash)], hash < 0 ? null : text[(hash + 1)..]);
     }
 

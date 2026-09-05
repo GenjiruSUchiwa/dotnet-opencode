@@ -140,8 +140,8 @@ internal static class JintCodeModeSyntax
         // never guessed by string splitting. Jint parses only this validated source
         // plus a fixed host wrapper, with guest string compilation disabled.
         var last = program.Body.Count > 0 ? program.Body[^1] as ExpressionStatement : null;
-        var body = Render(program);
-        return "(async () => {\n" + CellPrelude(lexical.Root) + ScopeStatements(rootScope, body) + "\n})().then(" + completed + ", " + failed + ");";
+        var programBody = Render(program);
+        return "(async () => {\n" + CellPrelude(lexical.Root) + ScopeStatements(rootScope, programBody) + "\n})().then(" + completed + ", " + failed + ");";
 
         string Render(Node node)
         {

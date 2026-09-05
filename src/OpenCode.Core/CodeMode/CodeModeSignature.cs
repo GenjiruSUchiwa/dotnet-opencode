@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 /// <summary>JSON-schema signatures, not executable code or a replacement for producer codecs.</summary>
 internal static class CodeModeSignature
 {
-    internal static bool IsIdentifier(string value) => Regex.IsMatch(value, "^[A-Za-z_$][A-Za-z0-9_$]*$");
+    internal static bool IsIdentifier(string value) => Regex.IsMatch(value, "^[A-Za-z_$][A-Za-z0-9_$]*$", RegexOptions.NonBacktracking);
 
     internal static string Render(JsonElement schema) => Render(schema, new(StringComparer.Ordinal), [], 0);
 
@@ -87,7 +87,7 @@ internal static class CodeModeSignature
     private static string? Reference(JsonElement reference)
     {
         if (reference.ValueKind != JsonValueKind.String) return null;
-        var match = Regex.Match(reference.GetString()!, "^#/(?:\\$defs|definitions)/([^/]+)$");
+        var match = Regex.Match(reference.GetString()!, "^#/(?:\\$defs|definitions)/(?<name>[^/]+)$", RegexOptions.NonBacktracking);
         return match.Success ? match.Groups[1].Value.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal) : null;
     }
 

@@ -68,9 +68,9 @@ public sealed class AnthropicLlmClient : ILlmClient
             request.Headers.Remove("x-api-key");
             request.Headers.Add("x-api-key", token);
         }
-        using var response = await LlmHttp.SendAsync(_http, request, ct);
+        using var response = await LlmHttp.SendAsync(_http, request, ct).ConfigureAwait(false);
         var parser = new AnthropicStreamParser();
-        await foreach (var frame in LlmHttp.Frames(response, ct, AnthropicStreamParser.EventNames, parseErrorEvents: true))
+        await foreach (var frame in LlmHttp.Frames(response, ct, AnthropicStreamParser.EventNames, parseErrorEvents: true).ConfigureAwait(false))
             foreach (var item in LlmHttp.Decode(frame, response, parser))
             {
                 ct.ThrowIfCancellationRequested();

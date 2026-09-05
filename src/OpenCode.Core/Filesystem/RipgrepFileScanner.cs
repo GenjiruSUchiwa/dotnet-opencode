@@ -19,7 +19,7 @@ public sealed class RipgrepFileScanner(RipgrepProcess process)
         var pattern = exclusions.Length == 0 ? "!**/.git/**" : "!{" + string.Join(',', exclusions.Select(name => name + "/**")) + "}";
         var vcs = Path.Exists(Path.Combine(location.Project.Directory, ".git")) || Path.Exists(Path.Combine(location.Project.Directory, ".hg"));
         var limit = vcs && !home ? int.MaxValue : 100_000;
-        var files = await process.GlobAsync(location.Directory, pattern, limit, ct);
+        var files = await process.GlobAsync(location.Directory, pattern, limit, ct).ConfigureAwait(false);
         var entries = new Dictionary<string, FileSystemEntry>(StringComparer.Ordinal);
         var directories = new Dictionary<string, FileSystemEntry>(StringComparer.Ordinal);
         foreach (var file in files)

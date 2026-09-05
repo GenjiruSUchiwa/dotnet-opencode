@@ -94,13 +94,13 @@ public sealed partial class ProviderResolver
 
     /// <summary>Reads the same console/local transform used for resolution, without preparing or invoking a model.</summary>
     internal async Task<ResolvedCatalog> ReadCatalogAsync(string? directory = null, CancellationToken ct = default) =>
-        await ProjectCatalogAsync(await LoadCatalogSnapshotAsync(directory, ct), ct);
+        await ProjectCatalogAsync(await LoadCatalogSnapshotAsync(directory, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
 
     public async Task<CanonicalCatalog> ReadCanonicalCatalogAsync(string? directory = null, CancellationToken ct = default,
         CatalogResource resource = CatalogResource.All)
     {
-        var snapshot = await LoadCatalogSnapshotAsync(directory, ct);
-        var catalog = await ProjectCatalogAsync(snapshot, ct);
+        var snapshot = await LoadCatalogSnapshotAsync(directory, ct).ConfigureAwait(false);
+        var catalog = await ProjectCatalogAsync(snapshot, ct).ConfigureAwait(false);
         var models = new List<ModelInfo>();
         ModelInfo? defaultModel = null;
         var selectedModels = resource == CatalogResource.Providers ? ImmutableArray<CatalogModelInfo>.Empty
@@ -224,7 +224,7 @@ public sealed partial class ProviderResolver
         var document = ConfigLoader.LoadDocument(directory: path);
         var errors = new Dictionary<string, LlmException>(StringComparer.Ordinal);
         var console = await ObserveIntegrationAsync(ConsoleIntegrationService.IntegrationId,
-            () => _console.DiscoverProvidersAsync(ct), errors, ct);
+            () => _console.DiscoverProvidersAsync(ct), errors, ct).ConfigureAwait(false);
         var providers = ModelsDevCatalog.Load();
         // The built-in Anthropic plugin runs after models-dev and before console/config.
         foreach (var provider in providers.Select(pair => pair.Value!.AsObject()))
@@ -236,7 +236,7 @@ public sealed partial class ProviderResolver
         var builtIn = providers.Select(pair => pair.Key).ToHashSet(StringComparer.Ordinal);
         if (console?.ProviderDocument is { } remote) ConfigLoader.MergeProviders(providers, remote);
         var openAiCredential = await ObserveIntegrationAsync(OpenAiOAuthService.IntegrationId,
-            () => _openAi.ResolveCredentialAsync(ct), errors, ct);
+            () => _openAi.ResolveCredentialAsync(ct), errors, ct).ConfigureAwait(false);
         if (providers[OpenAiOAuthService.IntegrationId] is JsonObject openAi)
         {
             if (openAi["models"] is JsonObject models)
@@ -286,7 +286,7 @@ public sealed partial class ProviderResolver
     private static async Task<T?> ObserveIntegrationAsync<T>(string integrationId, Func<Task<T?>> load,
         Dictionary<string, LlmException> errors, CancellationToken ct) where T : class
     {
-        try { return await load(); }
+        try { return await load().ConfigureAwait(false); }
         catch (LlmException error)
         {
             ct.ThrowIfCancellationRequested();
@@ -325,7 +325,7 @@ public sealed partial class ProviderResolver
                 stored[integrationId] = snapshot.IntegrationErrors.ContainsKey(integrationId) ? null
                     : consoleBound ? snapshot.Console!.Credential
                     : integrationId == OpenAiOAuthService.IntegrationId ? snapshot.OpenAiCredential
-                    : await ObserveIntegrationAsync(integrationId, () => _credentialStore.GetActiveCredentialAsync(integrationId, ct), snapshot.IntegrationErrors, ct);
+                    : await ObserveIntegrationAsync(integrationId, () => _credentialStore.GetActiveCredentialAsync(integrationId, ct), snapshot.IntegrationErrors, ct).ConfigureAwait(false);
             var hasStored = stored[integrationId] is not null;
             var hasEnvironment = !consoleBound && Strings(provider["env"])?.Any(name => name.Length > 0 && !string.IsNullOrEmpty(Environment.GetEnvironmentVariable(name))) == true;
             var activation = snapshot.LocalProviderIds.Contains(id) ? ProviderActivation.Enabled : ProviderActivation.Auto;
@@ -393,9 +393,10 @@ public sealed partial class ProviderResolver
     private static bool MatchProviderPolicy(string id, string pattern)
     {
         var expression = Regex.Escape(pattern.Replace('\\', '/')).Replace("\\ ", " ").Replace("\\*", ".*").Replace("\\?", ".");
-        if (expression.EndsWith(" .*", StringComparison.Ordinal)) expression = expression[..^3] + "( .*)?";
-        return Regex.IsMatch(id.Replace('\\', '/'), "^" + expression + "$", RegexOptions.Singleline | RegexOptions.CultureInvariant
-            | (OperatingSystem.IsWindows() ? RegexOptions.IgnoreCase : RegexOptions.None));
+        if (expression.EndsWith(" .*", StringComparison.Ordinal)) expression = expression[..^3] + "(?: .*)?";
+        return OperatingSystem.IsWindows()
+            ? Regex.IsMatch(id.Replace('\\', '/'), "^" + expression + "$", RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | RegexOptions.IgnoreCase)
+            : Regex.IsMatch(id.Replace('\\', '/'), "^" + expression + "$", RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
     }
 
     private static string? Text(JsonNode? node) => node?.GetValue<string>();

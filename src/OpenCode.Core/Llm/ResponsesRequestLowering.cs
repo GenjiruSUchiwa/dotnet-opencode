@@ -64,7 +64,7 @@ internal static class ResponsesRequestLowering
         foreach (var (name, wire) in new[] { ("safetyIdentifier", "safety_identifier"), ("serviceTier", "service_tier"), ("truncation", "truncation") })
             if (options[name] is { } value && value.GetValue<string>() is { Length: > 0 } text) body[wire] = text;
         if (body["truncation"] is { } truncation && truncation.GetValue<string>() is not ("auto" or "disabled")) throw Invalid("Unknown Responses truncation mode.");
-        if (!string.IsNullOrEmpty(request.PromptCacheKey)) body["prompt_cache_key"] = request.PromptCacheKey;
+        if (LlmCachePolicy.PromptKey(request.PromptCacheKey) is { Length: > 0 } cacheKey) body["prompt_cache_key"] = cacheKey;
         if (options["metadata"] is { } metadata)
         {
             if (metadata is not JsonObject values || values.Any(pair => pair.Value is not JsonValue value || !value.TryGetValue<string>(out _)))

@@ -25,15 +25,21 @@ public sealed class NativePluginRegistration(Action remove) : IDisposable, IAsyn
 /// <summary>Setup-scoped registrations; rollback and close unwind resources in reverse order.</summary>
 public sealed class NativePluginScope(LocationInfo location, Action? changed = null) : IAsyncDisposable
 {
+    // Registration identity is distinct from delegate/hook equality: registering
+    // the same callback twice still produces two independently disposable entries.
+    private sealed class Contribution<T>(T value)
+    {
+        internal T Value { get; } = value;
+    }
     private readonly List<IAsyncDisposable> _resources = [];
-    private readonly List<Action<IToolDraft>> _transforms = [];
-    private readonly List<IToolExecutionHooks> _hooks = [];
+    private readonly List<Contribution<Action<IToolDraft>>> _transforms = [];
+    private readonly List<Contribution<IToolExecutionHooks>> _hooks = [];
     private readonly CancellationTokenSource _lifetime = new();
     private bool _sealed;
     private bool _closed;
     public LocationInfo Location { get; } = location;
     public CancellationToken Lifetime => _lifetime.Token;
-    internal IReadOnlyList<IToolExecutionHooks> Hooks { get { lock (_hooks) return _hooks.ToArray(); } }
+    internal IReadOnlyList<IToolExecutionHooks> Hooks { get { lock (_hooks) return _hooks.Select(entry => entry.Value).ToArray(); } }
 
     public T Own<T>(T resource) where T : IAsyncDisposable
     {
@@ -45,20 +51,22 @@ public sealed class NativePluginScope(LocationInfo location, Action? changed = n
     public NativePluginRegistration TransformTools(Action<IToolDraft> transform)
     {
         ArgumentNullException.ThrowIfNull(transform);
+        var entry = new Contribution<Action<IToolDraft>>(transform);
         var registration = Own(new NativePluginRegistration(() =>
         {
-            lock (_transforms) _transforms.Remove(transform);
+            lock (_transforms) _transforms.Remove(entry);
             if (_sealed && !_closed) changed?.Invoke();
         }));
-        _transforms.Add(transform);
+        _transforms.Add(entry);
         return registration;
     }
 
     public NativePluginRegistration HookTools(IToolExecutionHooks hook)
     {
         ArgumentNullException.ThrowIfNull(hook);
-        var registration = Own(new NativePluginRegistration(() => { lock (_hooks) _hooks.Remove(hook); }));
-        _hooks.Add(hook);
+        var entry = new Contribution<IToolExecutionHooks>(hook);
+        var registration = Own(new NativePluginRegistration(() => { lock (_hooks) _hooks.Remove(entry); }));
+        _hooks.Add(entry);
         return registration;
     }
 
@@ -66,7 +74,7 @@ public sealed class NativePluginScope(LocationInfo location, Action? changed = n
     internal void Apply(IToolDraft draft)
     {
         Action<IToolDraft>[] transforms;
-        lock (_transforms) transforms = _transforms.ToArray();
+        lock (_transforms) transforms = _transforms.Select(entry => entry.Value).ToArray();
         foreach (var transform in transforms) transform(draft);
     }
 

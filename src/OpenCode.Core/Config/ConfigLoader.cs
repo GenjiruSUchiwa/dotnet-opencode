@@ -47,7 +47,7 @@ public sealed class ConfigLoader
     private static JsonObject ReadDocument(string path) => File.Exists(path)
         ? ParseDocument(File.ReadAllText(path), Path.GetDirectoryName(Path.GetFullPath(path))!) : new JsonObject();
 
-    private static JsonObject ParseDocument(string text, string directory)
+    internal static JsonObject ParseDocument(string text, string directory)
         => NormalizeDocument(ParseSourceDocument(text, directory));
 
     private static JsonObject ParseSourceDocument(string text, string directory)
@@ -217,12 +217,17 @@ public sealed class ConfigLoader
                         if (model.ContainsKey("interleaved"))
                             throw new NotSupportedException("Legacy model compatibility mapping is not implemented.");
                         if (model["status"]?.GetValue<string>() == "deprecated") model["disabled"] = true;
-                        var capabilities = model["capabilities"] as JsonObject ?? new JsonObject();
-                        if (model["tool_call"] is { } tools) capabilities["tools"] = tools.DeepClone();
-                        if (model["modalities"] is JsonObject modalities)
-                            foreach (var field in new[] { "input", "output" })
-                                if (modalities[field] is { } values) capabilities[field] = values.DeepClone();
-                        if (capabilities.Count > 0 && !ReferenceEquals(model["capabilities"], capabilities)) model["capabilities"] = capabilities;
+                        if (model["tool_call"] is not null || model["modalities"]?["input"] is not null || model["modalities"]?["output"] is not null)
+                        {
+                            // V1 migration builds a complete capability record from
+                            // Model.Capabilities.default, not the catalog model being overlaid.
+                            var capabilities = JsonSerializer.SerializeToNode(ModelCapabilities.CreateDefault())!.AsObject();
+                            if (model["tool_call"] is { } tools) capabilities["tools"] = tools.DeepClone();
+                            if (model["modalities"] is JsonObject modalities)
+                                foreach (var field in new[] { "input", "output" })
+                                    if (modalities[field] is { } values) capabilities[field] = values.DeepClone();
+                            model["capabilities"] = capabilities;
+                        }
                         if (model["cost"] is JsonObject cost)
                         {
                             var tiers = new JsonArray();
@@ -305,7 +310,7 @@ public sealed class ConfigLoader
             if (key == "providers" && value is JsonObject providers)
             {
                 target[key] ??= new JsonObject();
-                MergeProviders(target[key]!.AsObject(), providers);
+                MergeProviders(target[key]!.AsObject(), providers, configured: true);
                 continue;
             }
             // Model selections are atomic; an omitted variant must not survive from
@@ -331,17 +336,17 @@ public sealed class ConfigLoader
         return new JsonObject { ["action"] = "provider.use", ["resource"] = resource, ["effect"] = effect };
     }
 
-    internal static void MergeProviders(JsonObject target, JsonObject overlay)
+    internal static void MergeProviders(JsonObject target, JsonObject overlay, bool configured = false)
     {
         foreach (var (id, value) in overlay)
         {
             if (value is not JsonObject provider) throw new JsonException("Provider must be an object.");
             target[id] ??= new JsonObject();
-            MergeProvider(target[id]!.AsObject(), provider);
+            MergeProvider(target[id]!.AsObject(), provider, configured);
         }
     }
 
-    private static void MergeProvider(JsonObject target, JsonObject overlay)
+    private static void MergeProvider(JsonObject target, JsonObject overlay, bool configured)
     {
         foreach (var (key, value) in overlay)
         {
@@ -352,7 +357,7 @@ public sealed class ConfigLoader
                 foreach (var (id, model) in models)
                 {
                     target[key]![id] ??= new JsonObject();
-                    MergeProvider(target[key]![id]!.AsObject(), model?.AsObject() ?? throw new JsonException("Model must be an object."));
+                    MergeProvider(target[key]![id]!.AsObject(), model?.AsObject() ?? throw new JsonException("Model must be an object."), configured);
                 }
                 continue;
             }
@@ -365,7 +370,7 @@ public sealed class ConfigLoader
                     var id = variant?["id"]?.GetValue<string>() ?? throw new JsonException("Variant requires an id.");
                     var existing = current.FirstOrDefault(item => item?["id"]?.GetValue<string>() == id);
                     if (existing is null) current.Add(variant!.DeepClone());
-                    else MergeProvider(existing.AsObject(), variant!.AsObject());
+                    else MergeProvider(existing.AsObject(), variant!.AsObject(), configured);
                 }
                 continue;
             }
@@ -379,6 +384,14 @@ public sealed class ConfigLoader
                     if (previous is not null) target[key]!.AsObject().Remove(previous);
                     target[key]![name] = header?.DeepClone();
                 }
+                continue;
+            }
+            if (configured && key == "capabilities" && value is JsonObject capabilities)
+            {
+                // ConfigProviderPlugin replaces this record, including removing
+                // earlier provider-plugin extension flags such as responsesWebsockets.
+                target[key] = new JsonObject(capabilities.Where(pair => pair.Key is "tools" or "input" or "output")
+                    .Select(pair => new KeyValuePair<string, JsonNode?>(pair.Key, pair.Value?.DeepClone())));
                 continue;
             }
             if ((key is "settings" or "body" or "compatibility" or "limit" or "capabilities") && value is JsonObject right && target[key] is JsonObject left)

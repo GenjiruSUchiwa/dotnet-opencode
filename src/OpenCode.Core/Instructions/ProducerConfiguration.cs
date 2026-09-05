@@ -74,15 +74,9 @@ internal sealed record ProducerConfiguration(
         }
         if (Environment.GetEnvironmentVariable("OPENCODE_CONFIG_CONTENT") is { } content)
         {
-            var virtualDocument = JsonNode.Parse(content, documentOptions: new JsonDocumentOptions
-            { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip }) as JsonObject
-                ?? throw new JsonException("Virtual configuration must be an object.");
-            var keys = ConfigLoader.NormalizeDocument(virtualDocument).Select(pair => pair.Key);
-            // Non-provider fields are atomic in LoadDocument. Its last, already
-            // substituted value is the virtual document's value, not a guessed origin.
-            var info = new JsonObject();
-            foreach (var key in keys) info[key] = merged[key]?.DeepClone();
-            documents.Add((null, info));
+            // Config.entries keeps the virtual document itself, not a projection
+            // of the effective merged config (which would replay earlier policies).
+            documents.Add((null, ConfigLoader.ParseDocument(content, location)));
         }
         documents = observations.Observe(home, global, documents, referencesAvailable).ToList();
         var roots = new List<string>();

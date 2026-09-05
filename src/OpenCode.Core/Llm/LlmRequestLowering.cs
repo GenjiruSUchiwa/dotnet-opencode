@@ -10,8 +10,10 @@ internal static class LlmRequestLowering
     {
         if (request.Messages.IsDefault || request.System.IsDefault || request.Tools.IsDefault
             || request.Messages.Any(message => message.Content.IsDefault)) throw Invalid("Request arrays must be initialized.");
-        if (request.System.Any(part => part.Cache is not null) || request.Tools.Any(tool => tool.Cache is not null)
-            || request.Messages.Any(message => message.Content.Any(part => part.Cache is not null)))
+        // Gemini ignores inline cache annotations, as cache-policy.ts and its
+        // protocol builder do; explicit cachedContent remains a separate option.
+        if (!google && (request.System.Any(part => part.Cache is not null) || request.Tools.Any(tool => tool.Cache is not null)
+            || request.Messages.Any(message => message.Content.Any(part => part.Cache is not null))))
             throw Unsupported("Explicit cache hints are currently implemented only for Anthropic Messages.");
         if (request.ToolChoice?.DisableParallelToolUse is not null)
             throw Unsupported("Parallel-tool control is not implemented by this protocol lowering.");
@@ -116,7 +118,8 @@ internal static class LlmRequestLowering
                 body["safetySettings"] = safety.DeepClone();
             }
             if (generation.Count > 0) body["generationConfig"] = generation;
-            if (request.PromptCacheKey is not null) throw Unsupported("Google promptCacheKey lowering is not implemented; use cachedContent.");
+            // Gemini.fromRequest does not lower generic cache lineage. cachedContent
+            // above is a caller-supplied remote resource, never synthesized from that key.
         }
         else
         {
@@ -130,7 +133,7 @@ internal static class LlmRequestLowering
                 body["store"] = store.DeepClone();
             }
             else if (request.Compatibility.SupportsStore == true) body["store"] = false;
-            if (!string.IsNullOrEmpty(request.PromptCacheKey)) body["prompt_cache_key"] = request.PromptCacheKey;
+            if (LlmCachePolicy.PromptKey(request.PromptCacheKey) is { Length: > 0 } cacheKey) body["prompt_cache_key"] = cacheKey;
         }
         return body;
     }

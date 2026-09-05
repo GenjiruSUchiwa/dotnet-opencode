@@ -191,3 +191,156 @@ stubs: external JS plugin loading, unsupported provider transports, Unix special
 file classification, linked-directory instruction discovery and explicit workspace
 placement. Existing CodeMode conformance limits remain in its README. No language
 frontend experiment, storage rewrite or public API signature change was introduced.
+
+## Pass 2 — configuration, providers and cache lineage
+
+**Frozen for parent review.** Pass 1 was integrated by the parent as `3194600`.
+This second pass changes only the same owned Core paths and these two records.
+The final Core dependency build reports **0 warnings and 0 errors**, including
+**0 owned diagnostics**. This is not a CLI/full-repository sign-off.
+
+### Implemented source gaps
+
+1. **Virtual configuration retains its own provenance.**
+   `ProducerConfiguration` now parses `OPENCODE_CONFIG_CONTENT` through the same
+   substitution/normalization path as other runtime documents. Previously it
+   copied keys out of the effective merged configuration, promoting earlier
+   provider/policy values into a new highest-priority document. Ordered producers
+   now receive the actual virtual document. Source: `core/src/config.ts:252-281`.
+   Discovery order, environment variable names and existing validation behavior
+   were not otherwise rewritten.
+2. **Configured model capabilities replace rather than recursively merge.**
+   `ConfigLoader` distinguishes local configuration transforms from remote catalog
+   overlays. Local capabilities contain exactly tools/input/output, dropping
+   earlier extension flags as `ConfigProviderPlugin` does. Settings/body retain
+   recursive object overlays, headers retain case-insensitive merging, limits and
+   variants retain their existing composition. Legacy capability migration now
+   supplies the canonical `ModelCapabilities.CreateDefault()` fields before
+   applying tool_call/modalities. Sources: `core/src/config/plugin/provider.ts:66-72`
+   and `core/src/v1/config/migrate.ts:316-324`.
+3. **New configured models start with canonical model defaults.**
+   The final provider catalog initializes only missing model records through
+   `ModelInfo.CreateDefault`, then applies configuration. Custom models no longer
+   fail canonical catalog projection solely because they lack models-dev metadata.
+   This uses the real source defaults (200,000 context / 32,000 output and default
+   capabilities), not guessed provider limits or a substitute model. Existing
+   model records, selection ordering, disabled checks and package support checks
+   remain unchanged. Sources: `core/src/catalog.ts:118` and
+   `schema/src/model.ts:126-139`.
+4. **Failure evidence follows JavaScript character semantics.**
+   `ProviderFailure` now matches the source's JavaScript whitespace set, including
+   NBSP and BOM, excluding U+0085. Dot spans do not cross CR/LF/U+2028/U+2029.
+   String-valued parsed error data is decoded exactly once, like providerCodes;
+   already-decoded raw body/message strings are not decoded a second time.
+   Classification precedence, original error message/body/HTTP context, and
+   unknown-error fallback remain unchanged. This supersedes pass 1's intentionally
+   retained .NET ECMAScript ASCII whitespace behavior after direct source review.
+   Source: `ai/src/provider-error.ts:16-80,102-168`.
+5. **Plugin disposers remove their own registration.**
+   NativePluginScope now gives each hook/transform contribution reference identity.
+   With registrations A, B, A, disposing the final A previously removed the first
+   A and changed execution order. It now leaves A, B. Snapshot iteration, callback
+   context, idempotent disposal and reverse-order resource cleanup are unchanged.
+   Source: `core/src/plugin/hooks.ts:69-98` (entry identity, not callback equality).
+
+### Cache handoff resolved in the provider layer
+
+The Session owner's `PromptCacheKey` rejection finding is fixed. Source evidence:
+
+- `core/src/session/model-request.ts:209-210,323-339`: one generic lineage key.
+- `ai/src/cache-policy.ts:25-44,53-151`: automatic inline policy is independent
+  of that key; protocols that ignore inline hints bypass policy placement.
+- `ai/src/protocols/anthropic-messages.ts:1003-1057`: no wire lineage-key field;
+  inline breakpoints and explicit provider cache_control are separate.
+- `ai/src/protocols/gemini.ts:463-500`: cachedContent comes only from provider
+  options, not promptCacheKey.
+- `ai/src/protocols/shared.ts:28-37`, openai-chat.ts:712-721 and
+  open-responses.ts:694-708: cap a nonempty wire key at 64 Unicode code points.
+
+Implemented behavior:
+
+| Route | Generic PromptCacheKey | Other cache behavior |
+| --- | --- | --- |
+| Anthropic Messages | Accepted; no wire field, metadata/user_id or cache resource is invented | Source default automatic placement: last tool, first/last distinct system parts, final message's last text (otherwise last content); existing manual hints reserve the four-slot budget first |
+| Google/Gemini | Accepted; no wire field is invented | Inline annotations are ignored as in the source; explicit provider cachedContent is preserved and is never derived from lineage |
+| OpenAI Chat/Responses | Nonempty keys are sent as prompt_cache_key, capped at 64 code points | Surrogate pairs are not split; unmatched UTF-16 units are preserved; null/empty keys remain omitted |
+
+`LlmCachePolicy.AnthropicDefault` operates on copied immutable request records,
+not caller-owned messages. The existing Anthropic wire lowering still enforces
+the four-marker limit and TTL buckets. Default placement runs regardless of
+whether a lineage key exists, and therefore also applies to title/compaction
+calls. The port has no request-level `cache: "none"`/custom policy surface yet;
+this pass implements the source's undefined/default policy, not a new policy API.
+Existing explicit hints remain available. No cache-create request, new model
+backend, extra HTTP attempt, Session event, retry or admission change was added.
+
+### Exact remaining Session-owner patch
+
+No Session files were edited. The provider boundary now accepts the source
+lineage field for all implemented routes. To finish caller parity, the parent
+should consolidate the existing SessionGeneration calculation into
+`SessionRequestIdentity.PromptCacheKey(SessionInfo session)`:
+
+```csharp
+internal static string PromptCacheKey(SessionInfo session)
+{
+    var lineage = (session.Fork?.SessionId ?? session.Id).Value;
+    return System.Text.RegularExpressions.Regex.IsMatch(lineage, "^ses_[0-9a-f]{64}$",
+        System.Text.RegularExpressions.RegexOptions.NonBacktracking) ? lineage[4..] : lineage;
+}
+```
+
+Set `PromptCacheKey = SessionRequestIdentity.PromptCacheKey(session)` in the
+LlmRequest initializers in:
+
+- `SessionExecutionEngine`: normal physical steps, including retries/rebuilds.
+- `SessionTitleService.AttemptAsync`: title and distinct-primary fallback attempts.
+- `SessionCompaction.RunAsync`: compaction attempts.
+- `SessionGeneration`: replace its already-present inline calculation.
+
+Source title uses `context.prepare` (`session/title.ts:66-74`); compaction uses
+`plan.prepare` (`session/compaction.ts:284-289`), both sharing model-request's key.
+Use the **immediate fork parent** when present, otherwise the Session itself.
+Do not recursively chase root lineage: upstream explicitly retains that TODO.
+Do not suffix the key with title/compaction/model IDs or map it to Google
+cachedContent/Anthropic metadata. No Schema/EF/SDK/Server change is required for
+this specific handoff.
+
+### Pass 2 files and verification
+
+Ten Core files changed/added:
+
+- Config/ConfigLoader.cs.
+- Instructions/ProducerConfiguration.cs.
+- Llm/ProviderCatalog.cs, ProviderFailure.cs, LlmCachePolicy.cs (new),
+  AnthropicRequestLowering.cs, LlmRequestLowering.cs,
+  ResponsesRequestLowering.cs, LlmRequest.cs.
+- Plugins/NativePluginHost.cs.
+
+No new suppressions or global analyzer settings. Existing exact exceptions remain.
+ProviderUserAgent.Apply, its callers, persistent channel names, TimeProvider,
+Pipelines and Vogen are unchanged.
+
+Artifacts: `C:\tmp\opencode\foundations-pass2-f945-20260905`.
+
+- Initial dependency build, before the cache handoff: 0 warnings / 0 errors;
+  `foundations-pass2-f945-20260905-build.log`.
+- An intermediate dependency build was blocked by a concurrent duplicate
+  Schema.SessionIdleEventData definition; Schema was not edited here.
+- The isolated Core build against prior dependency outputs passed with 0/0;
+  `foundations-pass2-f945-20260905-isolated.log`.
+- **Final dependency build after all code edits passed with 0 warnings / 0 errors**;
+  `C:\tmp\opencode\foundations-pass2-f945-20260905-verified.log`.
+
+The final command used the pinned repo-local SDK, Core.csproj, `--no-restore`,
+the artifact path above, `NuGetAudit=false` and `OpenApiGenerateDocuments=false`.
+It did **not** disable project references. Only source inspection, restore and
+builds ran. No tests, evaluator/regex/cache probes, provider calls, runtime/DI,
+DB/SQL/migration/native/codec execution, Git or publication occurred.
+
+Unverified behavior includes the new cache placement, Unicode regex matching,
+configuration/catalog composition and repeated-registration disposal at runtime.
+Unimplemented config watchers/well-known composition, extra plugin domains,
+request cache-policy controls and other previously documented unsupported routes
+were not replaced by successful stubs. Parent integration still owns the full CLI
+build and any cross-owner follow-up.

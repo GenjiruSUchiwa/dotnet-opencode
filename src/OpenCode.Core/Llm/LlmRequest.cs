@@ -91,5 +91,7 @@ public sealed record LlmRequest(string ModelId, ImmutableArray<LlmMessage> Messa
     public LlmHttpOptions Http { get; init; } = new();
     // An explicitly supplied compatibility record is a complete per-request override.
     public LlmCompatibility Compatibility { get; init; } = LlmCompatibility.Default;
+    /// <summary>Generic lineage hint. Chat/Responses lower up to 64 code points;
+    /// Anthropic/Gemini accept it without a wire field or a fabricated cache resource.</summary>
     public string? PromptCacheKey { get; init; }
 }

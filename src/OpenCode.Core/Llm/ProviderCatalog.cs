@@ -263,12 +263,20 @@ public sealed partial class ProviderResolver
                 {
                     var selected = new JsonObject();
                     foreach (var (modelId, model) in models)
+                    {
                         selected[modelId] = Pick(model?.AsObject() ?? throw new JsonException("Model must be an object."),
                             "modelID", "family", "name", "compatibility", "package", "settings", "headers", "body",
                             "capabilities", "variants", "cost", "disabled", "limit", "options", "id");
+                        // Catalog.model.update starts a missing model with the
+                        // canonical defaults; it does not require models-dev metadata.
+                        providers[id] ??= new JsonObject();
+                        providers[id]!["models"] ??= new JsonObject();
+                        providers[id]!["models"]![modelId] ??= JsonSerializer.SerializeToNode(
+                            ModelInfo.CreateDefault(ProviderId.FromExisting(id), ModelId.FromExisting(modelId)));
+                    }
                     provider["models"] = selected;
                 }
-                ConfigLoader.MergeProviders(providers, new JsonObject { [id] = provider });
+                ConfigLoader.MergeProviders(providers, new JsonObject { [id] = provider }, configured: true);
             }
         }
         if (document["experimental"]?["policies"] is JsonArray policies)

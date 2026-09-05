@@ -21,7 +21,16 @@ changing global analyzer policy, project/package configuration, or generated ass
 The same build succeeded with **10 warnings and 0 errors overall**; its remaining
 warnings belong to other owners. This is not full-graph sign-off.
 
-Details, exact exceptions, the two source-parity fixes, modified-file inventory,
+Pass 1 was integrated by the parent as `3194600`. Foundation **pass 2 is frozen**
+with 0 owned diagnostics and a successful Core dependency build with **0 warnings,
+0 errors** (`C:\tmp\opencode\foundations-pass2-f945-20260905-verified.log`).
+This records only this owner's result, not other workers' sign-off. It fixes
+configuration provenance/capability composition, custom model defaults, provider
+error evidence, plugin registration identity and the provider cache-lineage
+rejection handed off by the Session owner. The remaining Session initializer
+patch is documented for the parent; no Session source was edited.
+
+Details, exact exceptions, source-parity fixes, modified-file inventories,
 and build evidence are in [Core foundations pass](core-foundations-pass.md).
 ProviderUserAgent.Apply and the parent-approved leading `dotnet-opencode` identity
 with configured metadata suffix remain intact.

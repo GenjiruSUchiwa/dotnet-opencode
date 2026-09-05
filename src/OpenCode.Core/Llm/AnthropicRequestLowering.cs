@@ -13,9 +13,12 @@ internal static class AnthropicRequestLowering
 
     internal static JsonObject Body(LlmRequest request, JsonObject options)
     {
-        if (string.IsNullOrEmpty(request.ModelId) || request.Messages.IsDefault || request.System.IsDefault || request.Tools.IsDefault)
+        if (string.IsNullOrEmpty(request.ModelId) || request.Messages.IsDefault || request.System.IsDefault || request.Tools.IsDefault
+            || request.Messages.Any(message => message.Content.IsDefault))
             throw Invalid("Anthropic requires an exact API model ID and initialized request arrays.");
-        if (request.PromptCacheKey is not null) throw Unsupported("Anthropic promptCacheKey placement is not implemented; use explicit cache hints.");
+        // AnthropicMessages.fromRequest has no prompt-cache-key field. Lineage
+        // neither becomes metadata/user_id nor controls inline breakpoint placement.
+        request = LlmCachePolicy.AnthropicDefault(request);
         if (request.Generation is { } generation && (generation.FrequencyPenalty is not null || generation.PresencePenalty is not null || generation.Seed is not null))
             throw Unsupported("Anthropic does not lower frequencyPenalty, presencePenalty, or seed.");
         LlmHttp.RequireFields(options, OptionNames);

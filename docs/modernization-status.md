@@ -1,14 +1,15 @@
 # Modernization completion order
 
-Finish the selected cross-cutting migrations before starting another broad
-multi-agent parity pass. Completed checkpoints are committed and pushed to GitHub
-`main`; every default-branch push runs the timestamped NuGet release workflow.
+Prioritize the selected cross-cutting migrations while source-based parity review
+and implementation proceed in non-overlapping areas. Completed checkpoints are
+committed and pushed to GitHub `main`; every default-branch push runs the timestamped
+NuGet release workflow.
 
 | Work | Current status | Completion evidence still needed |
 | --- | --- | --- |
 | Tool packaging and NuGet Trusted Publishing | Two automatic releases succeeded; the first version is listed in NuGet's public download index | Retain working publication on subsequent pushes |
-| EF Core 11 + SQLite | Whole persistence conversion committed; final source review resumed | Review mappings, query translation from provider source, transactions, errors, precision and callers; build and hand off to analyzer cleanup |
-| Meziantou analyzers | Enabled across owned source; cleanup incomplete | Re-inventory after EF handoff, resolve diagnostics without blanket suppression, then build the full dependency graph |
+| EF Core 11 + SQLite | Whole persistence conversion committed; final review and owned analyzer cleanup resumed | Review mappings, query translation from provider source, transactions, errors, precision and callers; complete a source/build checkpoint |
+| Meziantou analyzers | Enabled across owned source; cleanup split between exclusive owners | Resolve diagnostics without blanket suppression, then re-inventory and build the full dependency graph |
 | Vogen | All 25 scalar wrappers and CLI/non-CLI consumers migrated | Include unchanged factories, codecs and enabled analyzers in the final integrated build |
 | System.CommandLine | Implemented CLI uses one typed command tree | Include the graph in the final build; retain documented parser and Server adapter boundaries |
 | System.IO.Pipelines | Transport inventory and final CLI image-stream collector migrated; full CLI graph built with no errors | Included in final analyzer sign-off; byte limit, overflow read, exception and stream ownership retained |
@@ -29,10 +30,28 @@ or analyzer sign-off. Its isolated build log is under the directory recorded in
   container, EF model, SQL, migrations, native/WASM code, providers, MCP or PTYs for
   verification. Do not read production databases or credentials.
 - Successful builds and publication do not prove runtime or behavioral parity.
-- After the EF owner finishes, transfer persistence ownership to analyzer cleanup;
-  do not let independent workers rewrite the same files concurrently.
-- Return to the broad parity pass only after these selected migrations have a
-  completed source/build checkpoint and all remaining exceptions are explicit.
+- The EF owner also cleans up diagnostics in persistence. Other workers own only
+  non-overlapping source areas; do not let workers rewrite the same files concurrently.
+- Cross-package contract changes require explicit coordination before caller edits.
+- Do not declare the modernization wave complete until the selected migrations have
+  a completed integrated source/build checkpoint and remaining exceptions are explicit.
+
+## Active work allocation
+
+| Slot | Exclusive area | Priority |
+| --- | --- | --- |
+| 1 | EF persistence, its callers and host composition | Finish source-contract review and owned diagnostics |
+| 2 | Core foundations: providers, Code Mode, configuration, plugins, VCS and snapshots | Analyzer cleanup, then confirmed source-gap fixes |
+| 3 | Core tools, integrations, MCP, shell, PTY and jobs; persistence files excluded | Analyzer cleanup and lifecycle/permission gap fixes |
+| 4 | Session execution runtime and SDK adapters; persistence and owned host excluded | Analyzer cleanup and execution/history gap fixes |
+| 5 | Server endpoints and network Client; ServerHost excluded | Analyzer cleanup and actual route/transport gaps |
+| 6 | CLI and Razor application; EF-owned Auth and generated/assets excluded | Source parity review and implementation |
+| 7 | Generic OpenTui, Pipelines and TimeProvider support libraries | Native/transport ownership and algorithm gap fixes |
+| 8 | Schema and Protocol source; generated assets and channel identity excluded | Wire-contract, codec and scalar gap fixes |
+
+The integration owner handles packaging, GitHub/NuGet release status, cross-owner
+handoffs, and commits/pushes. Workers stop at coherent source/build checkpoints so
+their completed changes can be published without staging another worker's WIP.
 
 ## Detailed records
 

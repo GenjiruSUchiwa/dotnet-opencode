@@ -22,6 +22,7 @@ public static class CodeProjection
         }).OrderBy(item => item.Offset).ThenBy(item => item.Start).ToArray();
         var text = new StringBuilder();
         var spans = new List<CodeStyleSpan>();
+        var chunks = new List<CodeChunk>();
         var styles = new Dictionary<(NativeRgba? Foreground, NativeRgba? Background, uint Attributes), string>();
         var outputRules = new List<NativeSyntaxRule>(rules.Values);
         var lines = new List<int> { 0 };
@@ -70,7 +71,8 @@ public static class CodeProjection
             offset = Math.Max(offset, boundary.Offset);
         }
         if (offset < options.Content.Length) Append(options.Content[offset..], offset, fallback);
-        return new(text.ToString(), Array.AsReadOnly(outputRules.ToArray()), Array.AsReadOnly(spans.ToArray()), Array.AsReadOnly(lines.ToArray()));
+        return new CodeDocument(text.ToString(), Array.AsReadOnly(outputRules.ToArray()), Array.AsReadOnly(spans.ToArray()), Array.AsReadOnly(lines.ToArray()))
+            { Chunks = Array.AsReadOnly(chunks.ToArray()) };
 
         bool SplitsSurrogate(int position) => position > 0 && position < options.Content.Length && char.IsHighSurrogate(options.Content[position - 1]) && char.IsLowSurrogate(options.Content[position]);
         NativeSyntaxRule? Resolve(string? scope)
@@ -88,6 +90,7 @@ public static class CodeProjection
         void Append(string value, int sourceOffset, NativeSyntaxRule? style)
         {
             if (value.Length == 0) return;
+            chunks.Add(new(value, style?.Foreground, style?.Background, style?.Attributes ?? 0));
             var start = text.Length;
             if (start == 0 || text[^1] == '\n') lines[^1] = SourceLine(sourceOffset);
             text.Append(value);

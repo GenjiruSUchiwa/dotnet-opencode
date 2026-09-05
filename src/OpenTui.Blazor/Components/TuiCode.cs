@@ -16,6 +16,9 @@ public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
     [Parameter] public bool DrawUnstyledText { get; set; } = true;
     [Parameter] public bool Streaming { get; set; }
     [Parameter] public string? BaseHighlight { get; set; }
+    [Parameter] public IReadOnlyList<CodeChunk>? InitialStyledText { get; set; }
+    [Parameter] public CodeHighlightTransform? OnHighlight { get; set; }
+    [Parameter] public CodeChunkTransform? OnChunks { get; set; }
     [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Character;
     [Parameter] public string? Fg { get; set; }
     [Parameter] public string? Bg { get; set; }
@@ -32,7 +35,8 @@ public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
     protected override void OnInitialized() => _state.Changed += Refresh;
     protected override void OnParametersSet() => _state.Update(new(Content, Filetype,
         Highlighter ?? (string.IsNullOrEmpty(Filetype) ? null : _defaultHighlighter ??= SharedTreeSitter.Retain()), SyntaxRules,
-        Conceal, DrawUnstyledText, Streaming, BaseHighlight));
+        Conceal, DrawUnstyledText, Streaming, BaseHighlight)
+        { InitialStyledText = InitialStyledText, OnHighlight = OnHighlight, OnChunks = OnChunks });
     private void Refresh() => StateHasChanged();
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {

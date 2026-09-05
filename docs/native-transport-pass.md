@@ -287,3 +287,150 @@ Logs: `C:\tmp\opencode\native-pass2-build-final.log` and
 `C:\tmp\opencode\native-pass2-libraries-final.log`. No further C# source changes
 after the successful owned-library rebuild. No tests, parser samples, WASM,
 native, HTTP transport, or application execution occurred.
+
+## Pass 3 — Code hooks, initial styled content, and pointer default focus
+
+This pass preserves the accepted prior commits and changes only owned generic
+C# sources plus this report. No application, project/package, generated, asset,
+license, native ABI, or scalar-ID changes are included.
+
+### Source evidence and implemented public surface
+
+The pinned OpenTUI 0.5.9 CodeRenderable in `chunk-bun-jxfx3h5k.js` provides:
+
+- Lines 3189–3200 and 3211–3225: initialStyledText is displayed when unstyled
+  drawing is allowed; content remains the canonical input even when the text
+  buffer contains styled or transformed text.
+- Lines 3297–3309 and 3332–3378: changing hook/initial/streaming inputs invalidates
+  highlighting; streaming distinguishes initial visibility from later content.
+- Lines 3395–3450: await parsing, invoke onHighlight even for empty captures,
+  reject stale snapshots, project chunks when captures/onChunks/baseHighlight
+  require it, await onChunks, reject stale snapshots again, then replace the
+  actual text buffer. The presence of onChunks invalidates conceal-line mapping.
+- Lines 3456–3488: callback errors fall back to plain source; stale/destroyed
+  completions do not publish; highlight reruns remain single-flight.
+
+`TuiCode` now exposes `OnHighlight`, `OnChunks`, and `InitialStyledText` parameters.
+The same values are init properties on CodeOptions, preserving its existing
+positional constructor/deconstruction and property callers. The delegates return
+ValueTask with a nullable replacement list. They accept an invocation-local
+mutable IList, snapshot context, and CancellationToken. Returning null retains
+mutations to that working list, matching source undefined-return behavior.
+
+`CodeChunk` carries text, nullable foreground/background NativeRgba values and
+native text attributes. Context carries source content, filetype and immutable
+syntax-rule values; the chunk context also carries the post-OnHighlight capture
+snapshot. No native handle, renderer object or borrowed native memory is exposed.
+
+### Actual render path and ordering
+
+The implemented order is:
+
+1. Publish initial styled content when source visibility policy allows it.
+2. Await the real configured highlighter.
+3. Copy captures into a working list and await OnHighlight if present, including
+   an empty capture result or unavailable parser result.
+4. Reject an obsolete revision or disposed state before proceeding.
+5. Freeze the resulting capture list and project source chunks using existing
+   conceal, injection, scope and base-highlight rules.
+6. Await OnChunks with the exact projection segment boundaries, including
+   unstyled segments that do not have native style-span entries.
+7. Reject stale/disposed work again, copy the chosen chunks, and generate the
+   real CodeDocument styles/spans/text consumed by TuiLayoutEngine/NativeTextView.
+8. Publish parser availability, partial-injection diagnostics, document and
+   completed highlighting state together.
+
+The source chunk segmentation is retained explicitly by CodeProjection; it is
+not reconstructed by merging all unstyled gaps. Transformed text uses rendered
+line identities, not stale conceal-source line numbers, even when OnChunks
+returns null. Initial styled content also uses rendered-line identities.
+Initial chunks are copied on parameter update; mutable caller collections cannot
+alter a pending snapshot. Callback output is copied before another await or
+publication, so retaining/mutating an earlier working list does not mutate the
+published native document.
+
+Custom capture/chunk transforms can style content when no parser is available,
+as in the source. This does not set HasParser=true or erase IsPartial/Diagnostic.
+Fatal hook/projection errors instead use the existing plain-source error fallback.
+No approximate visual component or JavaScript execution was introduced.
+
+### Async lifetime, reentrancy, and streaming
+
+Changing content, rules, initial chunks, visibility policy, or delegates cancels
+and invalidates the current snapshot. Delegate equality uses normal C# delegate
+equality rather than invalidating on every newly allocated equivalent method
+delegate. Initial null and an explicitly empty chunk list remain distinct.
+
+The single-flight loop covers both asynchronous hooks, not just parsing.
+Highlighting remains true through both hooks. A callback can synchronously or
+asynchronously request another Update: checks after parsing/each hook prevent
+the stale stage from invoking the next hook or publishing. Cancellation callbacks
+and Changed handlers may reenter Update/Dispose; Update now checks its revision
+after cancellation and notification before continuing with older options.
+
+External DisposeAsync cancels and joins outstanding work. A hook can also await
+disposal of its own component without self-await deadlock: disposal invalidates
+and cancels immediately in that execution scope, then retirement occurs when the
+hook returns. A later external DisposeAsync still joins the retiring loop.
+The scope is marked inactive when the loop exits, so inherited async contexts do
+not permanently bypass joins. No callback receives a native lease that could
+outlive this cancellation path. Callbacks must not await their own
+HighlightingDone task; that is a self-dependency, just as awaiting the source
+highlighting promise from its own hook would be.
+
+With DrawUnstyledText=true, source initial styled chunks are used instead of raw
+text at the relevant initial/non-streaming/content-update stages. With false,
+initial rendering is hidden and later streaming updates retain the preceding
+document until the latest pipeline finishes. An empty content/filetype does not
+invent hook execution or parser availability. Callback execution stays on the
+owner's synchronization context; the parser implementation retains its existing
+worker execution. An uncooperative callback can delay external disposal until it
+returns; no timeout or detached background-work workaround was added.
+
+### Pointer/key/paste review
+
+Pinned renderer `dispatchMouseEvent`, lines 9101–9113, calls handlers before
+default autofocus and checks defaultPrevented. The generic input pointer path
+previously focused before handlers. It now bubbles the down event first and
+autofocuses only if unhandled and still attached in the current focus scope.
+A synchronous handler can therefore prevent focus or remove its target safely.
+As in the source, prevention must happen during synchronous dispatch, not after
+an awaited handler continuation.
+
+Rich key/release routing and bracketed-paste rejection/marker handling were
+reviewed without changing their protocols in this pass. This is not a claim of
+complete pointer parity: separate drag/drop event APIs, stationary-pointer hover
+rechecks after reflow, and independent preventDefault/stopPropagation controls
+remain outside the current generic pointer surface. No synthetic support or
+speculative native-input changes were added.
+
+### Parent counterpart and remaining limits
+
+Existing callers compile unchanged. Applications that want these hooks through
+their own Markdown/Transcript wrappers can forward the new TuiCode parameters;
+no application wrapper was edited here. Chunk styles are application-neutral
+values, not a mutable source SyntaxStyle native object. Transforms must respect
+the existing checked capture ranges and native whole-grapheme display mapping.
+Native rendering of arbitrary cross-grapheme chunk styles, async host teardown,
+and all parser/hook scenarios remain unexecuted under the verification restriction.
+All prior explicit regex/native ABI/grammar limitations remain in force.
+
+### Pass 3 build checkpoint
+
+Final build outcome follows after the last analyzer fix. No tests, callback
+samples, native/WASM, parser, application, or other runtime probes were executed.
+
+**Pass 3 FROZEN.** Final full CLI dependency build succeeded with **0 warnings
+and 0 errors**, including all assigned generic libraries (30.63 seconds).
+
+```powershell
+.\.dotnet\dotnet.exe build src\OpenCode.Cli\OpenCode.Cli.csproj `
+  --artifacts-path C:\tmp\opencode\native-pass3-99bb7c24-6732-4b19-8b25-57b17414ae01 `
+  -p:OpenApiGenerateDocuments=false -v minimal
+```
+
+SDK: repository 11.0.100-preview.7.26381.103. Log:
+`C:\tmp\opencode\native-pass3-build-final.log`. The two initial owned MA0015
+diagnostics were corrected with argument validation naming the actual chunks
+parameter. No suppressions or project changes were added. No C# source changes
+after this final successful build.

@@ -63,13 +63,16 @@ public sealed partial class TuiRenderer
             _dragged = false;
             _pressedTarget = target;
             _pressedAction = path.FirstOrDefault(node => node.ClickHandlerId != 0);
-            if (input.Button == TerminalPointerButton.Left && path.FirstOrDefault(node => node.TagName == "input") is { } editor)
-                SetFocus(editor);
         }
         if (input.Kind == TerminalPointerKind.Move && _pressedTarget is not null && (input.X != _press.X || input.Y != _press.Y))
             _dragged = true;
         var destination = input.Kind is TerminalPointerKind.Move or TerminalPointerKind.Up ? _pressedTarget ?? target : target;
         var handled = BubblePointer(destination, input, layout);
+        // Source dispatchMouseEvent runs handlers before its default autofocus.
+        // A handled down event can prevent focus, and callbacks may remove a node.
+        if (input.Kind == TerminalPointerKind.Down && input.Button == TerminalPointerButton.Left && !handled &&
+            path.FirstOrDefault(node => node.TagName == "input") is { } editor && Attached(editor) &&
+            PointerPath(editor).Contains(FocusScope)) SetFocus(editor);
         if (input.Kind == TerminalPointerKind.Wheel && !handled && input.DeltaY != 0)
         {
             foreach (var node in path)

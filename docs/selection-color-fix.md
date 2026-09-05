@@ -199,7 +199,7 @@ Razor sources stayed under `C:\tmp\opencode` and were only read, never edited or
 executed. No tests or runtime probes ran. No source changes followed the final
 successful build; production caller integration is complete.
 
-## Single-cell corner follow-up
+## Single-cell corner follow-up (superseded by silhouette correction below)
 
 The subsequent user screenshot isolates one remaining black cell behind `╹`,
 not the earlier 12-column whitespace gap. Home explicitly gave this decorative
@@ -224,3 +224,54 @@ and Session (including alternate themes). No runtime or tests were invoked.
 build passed with **0 warnings and 0 errors** (54.17 seconds), with
 `OpenApiGenerateDocuments=false` and the same isolated incremental artifact path.
 Log: `C:\tmp\opencode\composer-corner-build.log`. No source changes after build.
+
+## Corner silhouette regression correction
+
+The next user screenshot showed a grey half-cell protruding below the lower
+edge. The preceding fix was incorrect: a terminal cell background fills the
+entire cell, not just the pixels surrounding the upper stroke of `╹`. Applying
+the prompt surface as that background necessarily painted grey into the lower
+half, below the neighboring `▀` run's cutoff. This was not a selection, whitespace,
+height or clipping failure. Reverting just the background would restore the
+earlier dark notch rather than solve the corner shape.
+
+Upstream still uses a `╹` custom left border next to a `▀` bottom border
+(prompt/index.tsx 1925–1949). It does not provide a three-color terminal cell.
+A thin blue stroke, grey around that stroke in the upper half, and page color
+in the lower half would require three independently colored regions, which an
+ordinary foreground/background glyph cell cannot represent. The native painter's
+scissor clips complete terminal cells; changing it cannot trim half a background
+cell without introducing a different graphics mechanism.
+
+Home and Session now use a **border-colored upper-half block `▀`** for the single
+corner cell, with their existing page background below it. Adjacent cells remain
+prompt-colored `▀` on the same page background. All cells in that bottom row
+therefore have the same half-row silhouette. The corner cap is blue/agent/shell
+colored, not grey; it is intentionally fuller within that one upper half-cell
+than upstream's thin `╹`. This is an explicit two-color geometry adaptation, not
+a claim of glyph-identical upstream rendering. It avoids both the dark upper
+notch and the grey lower protrusion without guessed overlays or a full blue cell.
+
+The vertical border above, surrounding box colors, dimensions, half-block run,
+Home transparent-prompt blank-glyph condition, decorative Selectable=false,
+whitespace filtering, selection inversion, keyboard/pointer handlers and typed
+drafts are unchanged. No generic/native painter or ABI change was necessary.
+Runtime remains unauthorized: confirm the aligned cutoff and the single-cell cap
+shape visually on Home and Session once permitted. The screenshot is evidence
+of the regression, not visual verification of this correction.
+
+**Silhouette correction frozen:** pinned SDK 11.0.100-preview.7.26381.103 full
+CLI dependency build passed with **0 warnings and 0 errors** (36.61 seconds),
+with `OpenApiGenerateDocuments=false` and the existing isolated incremental
+artifact path. Log: `C:\tmp\opencode\composer-silhouette-build.log`.
+No tests/runtime probes or Git operations occurred; no source edits after build.
+
+## Engine-first direction supersedes the corner workaround
+
+The user subsequently requested a core renderer contract before further Razor
+translation. The uncommitted two-line `▀` corner workaround above was withdrawn
+back to the committed caller state; no other application markup was changed in
+the engine checkpoint. The screenshot defect is **not claimed resolved** by that
+rollback or by compilation. `docs/tui-engine-contract.md` records the replacement
+generic border contract and the caller translation still required. Borders should
+be native Box borders, not text cells used to imitate border painting.

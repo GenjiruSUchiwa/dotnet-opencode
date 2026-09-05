@@ -13,7 +13,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
     public TimeProvider Clock { get; } = clock ?? services.GetService(typeof(TimeProvider)) as TimeProvider ?? TimeProvider.System;
     private readonly Dictionary<int, TuiNode> _components = [];
     private readonly Dictionary<IComponent, int> _roots = [];
-    public TuiNode RootNode { get; } = new() { TagName = "root", Grow = 1,
+    public TuiNode RootNode { get; } = new() { TagName = "root", Grow = 1, Overflow = TuiOverflow.Hidden,
         Fg = TerminalRenderColors.Default.Foreground, Bg = TerminalRenderColors.Default.Background };
     private TerminalRenderColors _colors = TerminalRenderColors.Default;
     private TerminalImageContext _imageContext = new(null, 0, 0);
@@ -94,17 +94,20 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
     private static bool Visible(TuiNode node)
     {
         if (node.TagName == "modal") return node.LayoutWidth > 0 && node.LayoutHeight > 0;
-        var left = node.X;
-        var top = node.Y;
+        var left = (long)node.X;
+        var top = (long)node.Y;
         var right = (long)node.X + node.LayoutWidth;
         var bottom = (long)node.Y + node.LayoutHeight;
         for (var parent = node.Parent; parent is not null; parent = parent.Parent)
         {
             if (parent.TagName == "#component") continue;
-            left = Math.Max(left, parent.X);
-            top = Math.Max(top, parent.Y);
-            right = Math.Min(right, (long)parent.X + parent.LayoutWidth);
-            bottom = Math.Min(bottom, (long)parent.Y + parent.LayoutHeight);
+            if (parent.Overflow != TuiOverflow.Visible)
+            {
+                left = Math.Max(left, (long)parent.X + parent.BorderLeft);
+                top = Math.Max(top, (long)parent.Y + parent.BorderTop);
+                right = Math.Min(right, (long)parent.X + parent.LayoutWidth - parent.BorderRight);
+                bottom = Math.Min(bottom, (long)parent.Y + parent.LayoutHeight - parent.BorderBottom);
+            }
             if (parent.TagName == "modal") break;
         }
         return right > left && bottom > top;
@@ -282,6 +285,8 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             // stringifies those. The generic text component owns its immutable runs.
             if (component.Component is TuiText text && component.Children.Count == 1)
                 component.Children[0].TextRuns = text.Runs;
+            if (component.Component is Box box && component.Children.Count == 1)
+                component.Children[0].BorderCodepoints = box.BorderCodepoints;
             if (component.Component is Input input && component.Children.Count == 1)
                 component.Children[0].TextRuns = input.MarkRuns;
             if (component.Component is TuiCode code && component.Children.Count == 1)
@@ -366,7 +371,8 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
         switch (frame.FrameType)
         {
             case RenderTreeFrameType.Element:
-                var node = new TuiNode { TagName = frame.ElementName, Key = frame.ElementKey };
+                var node = new TuiNode { TagName = frame.ElementName, Key = frame.ElementKey,
+                    Overflow = frame.ElementName is "scroll" or "modal" ? TuiOverflow.Hidden : TuiOverflow.Visible };
                 var end = index + frame.ElementSubtreeLength;
                 var next = index + 1;
                 while (next < end && frames[next].FrameType == RenderTreeFrameType.Attribute)
@@ -441,6 +447,17 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
                     ? (string)value : throw InvalidAttribute(node, name, value, "single, double, left, rounded, heavy, or none");
                 break;
             case "border-fg": node.BorderFg = Color(node, name, value); break;
+            case "border-sides":
+                var sides = Number(node, name, value);
+                if (sides > (int)TuiBorderSides.All) throw InvalidAttribute(node, name, value!, "border side flags in [0, 15]");
+                node.BorderSides = sides is { } flags ? (TuiBorderSides)flags : null;
+                break;
+            case "should-fill": node.ShouldFill = value is null || Boolean(node, name, value); break;
+            case "overflow":
+                node.Overflow = value is null ? (node.TagName is "scroll" or "modal" ? TuiOverflow.Hidden : TuiOverflow.Visible) :
+                    Enum.TryParse<TuiOverflow>(value.ToString(), true, out var overflow) && Enum.IsDefined(overflow)
+                        ? overflow : throw InvalidAttribute(node, name, value, "visible, hidden, or scroll");
+                break;
             case "width": node.Width = Number(node, name, value); break;
             case "height": node.Height = Number(node, name, value); break;
             case "grow": node.Grow = Number(node, name, value) ?? 0; break;

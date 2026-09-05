@@ -129,7 +129,8 @@ public sealed partial class TuiRenderer
     private static IEnumerable<TuiNode> SelectionNodes(TuiNode node, int left, int top, int right, int bottom)
     {
         if (!node.PointerEvents || node.LayoutWidth <= 0 || node.LayoutHeight <= 0) yield break;
-        if (node.X > right || (long)node.X + node.LayoutWidth <= left || node.Y > bottom || (long)node.Y + node.LayoutHeight <= top) yield break;
+        if (node.Overflow != TuiOverflow.Visible &&
+            (node.X > right || (long)node.X + node.LayoutWidth <= left || node.Y > bottom || (long)node.Y + node.LayoutHeight <= top)) yield break;
         if (node.Selectable && node.TagName == "text" && node.X <= right && (long)node.X + node.LayoutWidth > left &&
             node.Y <= bottom && (long)node.Y + node.LayoutHeight > top) yield return node;
         foreach (var child in node.PaintChildren)

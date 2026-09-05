@@ -100,7 +100,7 @@ public sealed class TuiLayoutEngine
         : Cells((node.Direction == TuiFlexDirection.Row
             ? node.FlowChildren.Sum(child => (long)NaturalWidth(child)) + (long)Math.Max(0, node.FlowChildren.Count - 1) * node.Gap
             : node.FlowChildren.Select(child => (long)NaturalWidth(child)).DefaultIfEmpty(0).Max())
-          + node.PaddingLeft + node.PaddingRight + (node.BorderStyle is null ? 0 : node.BorderStyle == "left" ? 1 : 2)));
+          + node.PaddingLeft + node.PaddingRight + node.BorderLeft + node.BorderRight));
 
     private int NaturalHeight(TuiNode node, int width)
     {
@@ -108,8 +108,8 @@ public sealed class TuiLayoutEngine
         if (node.TagName == "input") return Math.Min(node.MaxHeight, InputLayout(node, Math.Max(1, width)).Lines.Count);
         if (node.TagName is "text" or "#text") return Math.Min(node.TextMaxHeight ?? int.MaxValue,
             Math.Max(1, checked((int)TextView(node).Measure(Math.Max(1, width)).LineCount)));
-        var inset = node.BorderStyle is null or "left" ? 0 : 2;
-        var inner = Math.Max(1, Cells((long)width - node.PaddingLeft - node.PaddingRight - (node.BorderStyle == "left" ? 1 : inset)));
+        var inset = node.BorderTop + node.BorderBottom;
+        var inner = Math.Max(1, Cells((long)width - node.PaddingLeft - node.PaddingRight - node.BorderLeft - node.BorderRight));
         var content = node.Direction == TuiFlexDirection.Column
             ? node.FlowChildren.Sum(child => child.Grow > 0 ? 0L : NaturalHeight(child, Math.Min(child.Width ?? inner, inner))) + (long)Math.Max(0, node.FlowChildren.Count - 1) * node.Gap
             : AllocateAxis(node, inner, inner, true).Select((childWidth, index) => (long)NaturalHeight(node.FlowChildren[index], childWidth)).DefaultIfEmpty(0).Max();
@@ -205,12 +205,10 @@ public sealed class TuiLayoutEngine
             LayoutAbsoluteChildren(node, x, y, node.LayoutWidth, node.LayoutHeight);
             return;
         }
-        var border = node.BorderStyle is null or "left" ? 0 : 1;
-        var leftBorder = node.BorderStyle is null ? 0 : 1;
-        var innerX = Coordinate((long)x + Math.Min(node.LayoutWidth, (long)leftBorder + node.PaddingLeft));
-        var innerY = Coordinate((long)y + Math.Min(node.LayoutHeight, (long)border + node.PaddingTop));
-        var innerWidth = Cells((long)node.LayoutWidth - leftBorder - border - node.PaddingLeft - node.PaddingRight);
-        var innerHeight = Cells((long)node.LayoutHeight - 2 * border - node.PaddingTop - node.PaddingBottom);
+        var innerX = Coordinate((long)x + Math.Min(node.LayoutWidth, (long)node.BorderLeft + node.PaddingLeft));
+        var innerY = Coordinate((long)y + Math.Min(node.LayoutHeight, (long)node.BorderTop + node.PaddingTop));
+        var innerWidth = Cells((long)node.LayoutWidth - node.BorderLeft - node.BorderRight - node.PaddingLeft - node.PaddingRight);
+        var innerHeight = Cells((long)node.LayoutHeight - node.BorderTop - node.BorderBottom - node.PaddingTop - node.PaddingBottom);
         var row = node.Direction == TuiFlexDirection.Row;
         var available = row ? innerWidth : innerHeight;
         var sizes = AllocateAxis(node, available, innerWidth, row);
@@ -270,14 +268,20 @@ public sealed class TuiLayoutEngine
     private TuiNode? Hit(TuiNode node, long left, long top, long right, long bottom, int x, int y)
     {
         if (!node.PointerEvents) return null;
-        left = Math.Max(left, node.X);
-        top = Math.Max(top, node.Y);
-        right = Math.Min(right, (long)node.X + node.LayoutWidth);
-        bottom = Math.Min(bottom, (long)node.Y + node.LayoutHeight);
         if (x < left || x >= right || y < top || y >= bottom) return null;
+        var inside = x >= node.X && x < (long)node.X + node.LayoutWidth &&
+            y >= node.Y && y < (long)node.Y + node.LayoutHeight;
+        if (node.Overflow != TuiOverflow.Visible)
+        {
+            if (!inside) return null;
+            left = Math.Max(left, (long)node.X + node.BorderLeft);
+            top = Math.Max(top, (long)node.Y + node.BorderTop);
+            right = Math.Min(right, (long)node.X + node.LayoutWidth - node.BorderRight);
+            bottom = Math.Min(bottom, (long)node.Y + node.LayoutHeight - node.BorderBottom);
+        }
         foreach (var child in node.PaintChildren.Reverse())
             if (Hit(child, left, top, right, bottom, x, y) is { } hit) return hit;
-        return node;
+        return inside ? node : null;
     }
 
     private void Paint(TuiNode node, uint buffer, uint renderer, NativeRgba foreground, NativeRgba background,
@@ -287,13 +291,22 @@ public sealed class TuiLayoutEngine
         var top = Math.Max(clipTop, node.Y);
         var right = (int)Math.Min(clipRight, (long)node.X + node.LayoutWidth);
         var bottom = (int)Math.Min(clipBottom, (long)node.Y + node.LayoutHeight);
-        if (right <= left || bottom <= top) return;
         var fg = node.Fg ?? foreground;
-        var bg = node.Bg ?? background;
+        var bg = node.ShouldFill ? node.Bg ?? background : background;
+        if (right <= left || bottom <= top)
+        {
+            if (node.Overflow == TuiOverflow.Visible)
+                foreach (var child in node.PaintChildren) Paint(child, buffer, renderer, fg, bg, clipLeft, clipTop, clipRight, clipBottom);
+            return;
+        }
+        var borderSides = node.EffectiveBorderSides;
         OpenTuiNative.PushScissor(buffer, left, top, (uint)(right - left), (uint)(bottom - top));
         try
         {
-            if (node.Bg.HasValue) OpenTuiNative.FillRect(buffer, left, top, right - left, bottom - top, bg);
+            // Bordered boxes use the native primitive's interior fill and border
+            // background handling, not an opaque prefill followed by glyph text.
+            if (borderSides == TuiBorderSides.None && node.ShouldFill && node.Bg.HasValue)
+                OpenTuiNative.FillRect(buffer, left, top, right - left, bottom - top, bg);
             void Draw(int x, int y, ReadOnlySpan<char> text, uint? attributes = null, NativeRgba? foreground = null, NativeRgba? background = null)
             {
                 var style = attributes ?? ((node.Bold ? 1u : 0) | (node.Dim ? 2u : 0));
@@ -307,12 +320,14 @@ public sealed class TuiLayoutEngine
             // Passing the inherited canvas as an opaque text default changes
             // native selection inversion (and styled-run background composition).
             var textBackground = node.Bg ?? new NativeRgba(0, 0, 0, 0);
-            if (node.BorderStyle is not null)
+            if (borderSides != TuiBorderSides.None)
             {
-                // Native side flags: left=1, bottom=2, right=4, top=8.
+                var characters = node.BorderCodepoints ?? (node.BorderStyle is "left" or "heavy" ? HeavyBorder
+                    : node.BorderStyle == "double" ? DoubleBorder : node.BorderStyle == "rounded" ? RoundedBorder : SingleBorder);
+                var borderColor = node.BorderFg ?? (node.BorderSides.HasValue || node.BorderCodepoints is not null ? NativeRgba.White : fg);
                 OpenTuiNative.DrawBox(buffer, node.X, node.Y, (uint)node.LayoutWidth, (uint)node.LayoutHeight,
-                    node.BorderStyle is "left" or "heavy" ? HeavyBorder : node.BorderStyle == "double" ? DoubleBorder : node.BorderStyle == "rounded" ? RoundedBorder : SingleBorder,
-                    node.BorderStyle == "left" ? 1u : 15u, node.BorderFg ?? fg, bg);
+                    characters, (uint)borderSides | (node.ShouldFill ? 16u : 0u), borderColor,
+                    node.Bg ?? new NativeRgba(0, 0, 0, 0));
             }
             if (node.EmbeddedTerminal is { } embedded)
             {
@@ -403,12 +418,19 @@ public sealed class TuiLayoutEngine
                 // rectangles clip drawing, not the view's local coordinate space.
                 view.Draw(buffer, node.X, node.Y);
             }
-            foreach (var child in node.PaintChildren) Paint(child, buffer, renderer, fg, bg, left, top, right, bottom);
         }
         finally
         {
             OpenTuiNative.PopScissor(buffer);
         }
+        // Source pushes the descendant scissor only for hidden/scroll overflow,
+        // after rendering the box itself. Visible overflow inherits the ancestor clip.
+        var overflowVisible = node.Overflow == TuiOverflow.Visible;
+        var childLeft = overflowVisible ? clipLeft : Coordinate(Math.Max(left, (long)node.X + node.BorderLeft));
+        var childTop = overflowVisible ? clipTop : Coordinate(Math.Max(top, (long)node.Y + node.BorderTop));
+        var childRight = overflowVisible ? clipRight : Coordinate(Math.Min(right, (long)node.X + node.LayoutWidth - node.BorderRight));
+        var childBottom = overflowVisible ? clipBottom : Coordinate(Math.Min(bottom, (long)node.Y + node.LayoutHeight - node.BorderBottom));
+        foreach (var child in node.PaintChildren) Paint(child, buffer, renderer, fg, bg, childLeft, childTop, childRight, childBottom);
     }
 
     public int CellWidth(string text) => CellWidth(text.AsSpan());

@@ -15,6 +15,10 @@ public enum TuiFlexDirection
 
 public enum TuiCrossAlignment { Stretch, Start, Center, End }
 public enum TuiPosition { Flow, Absolute }
+public enum TuiOverflow { Visible, Hidden, Scroll }
+
+[Flags]
+public enum TuiBorderSides : uint { None = 0, Left = 1, Bottom = 2, Right = 4, Top = 8, All = Left | Bottom | Right | Top }
 
 public sealed class TuiNode
 {
@@ -91,6 +95,7 @@ public sealed class TuiNode
     public int Shrink { get; internal set; }
     public bool Center { get; internal set; }
     public TuiPosition Position { get; internal set; }
+    public TuiOverflow Overflow { get; internal set; } = TuiOverflow.Visible;
     public int? Left { get; internal set; }
     public int? Right { get; internal set; }
     public int? Top { get; internal set; }
@@ -194,6 +199,15 @@ public sealed class TuiNode
     public bool Bold { get; internal set; }
     public bool Dim { get; internal set; }
     public string? BorderStyle { get; internal set; }
+    internal TuiBorderSides? BorderSides;
+    internal uint[]? BorderCodepoints;
+    internal bool ShouldFill = true;
+    internal TuiBorderSides EffectiveBorderSides => BorderSides ?? (BorderStyle == "left" ? TuiBorderSides.Left :
+        BorderStyle is not null || BorderCodepoints is not null ? TuiBorderSides.All : TuiBorderSides.None);
+    internal int BorderLeft => (EffectiveBorderSides & TuiBorderSides.Left) != TuiBorderSides.None ? 1 : 0;
+    internal int BorderRight => (EffectiveBorderSides & TuiBorderSides.Right) != TuiBorderSides.None ? 1 : 0;
+    internal int BorderTop => (EffectiveBorderSides & TuiBorderSides.Top) != TuiBorderSides.None ? 1 : 0;
+    internal int BorderBottom => (EffectiveBorderSides & TuiBorderSides.Bottom) != TuiBorderSides.None ? 1 : 0;
     public NativeRgba? BorderFg { get; internal set; }
 
     private string _textContent = "";

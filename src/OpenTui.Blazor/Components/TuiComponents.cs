@@ -14,6 +14,13 @@ public class Box : PointerComponentBase
     [Parameter] public TuiFlexDirection Direction { get; set; } = TuiFlexDirection.Column;
     [Parameter] public string? Border { get; set; }
     [Parameter] public string? BorderFg { get; set; }
+    /// <summary>When supplied, overrides the sides implied by the legacy Border style.</summary>
+    [Parameter] public TuiBorderSides? BorderSides { get; set; }
+    [Parameter] public TuiBorderCharacters? CustomBorderChars { get; set; }
+    [Parameter] public bool ShouldFill { get; set; } = true;
+    [Parameter] public TuiOverflow Overflow { get; set; } = TuiOverflow.Visible;
+    internal uint[]? BorderCodepoints { get; private set; }
+    private TuiBorderCharacters? _previousBorderChars;
     [Parameter] public int? Width { get; set; }
     [Parameter] public int? Height { get; set; }
     [Parameter] public int Gap { get; set; }
@@ -37,6 +44,13 @@ public class Box : PointerComponentBase
     [Parameter] public int PaddingBottom { get; set; }
     [Parameter] public int? PaddingLeft { get; set; }
     [Parameter] public int? PaddingRight { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (_previousBorderChars == CustomBorderChars) return;
+        BorderCodepoints = CustomBorderChars?.ToCodepoints();
+        _previousBorderChars = CustomBorderChars;
+    }
 
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
@@ -67,6 +81,11 @@ public class Box : PointerComponentBase
         builder.AddAttribute(25, "focus-key", FocusKey);
         builder.AddAttribute(26, "onkeydown", OnKeyDown);
         builder.AddAttribute(27, "onsizechanged", OnSizeChanged);
+        builder.AddAttribute(28, "border-sides", BorderSides is { } sides ? (uint?)sides : null);
+        // False boolean element attributes are omitted by RenderTreeBuilder.
+        // Keep false explicit because the source/default fill policy is true.
+        builder.AddAttribute(29, "should-fill", ShouldFill.ToString());
+        builder.AddAttribute(30, "overflow", Overflow.ToString());
         AddPointerAttributes(builder);
         builder.AddContent(108, ChildContent);
         builder.CloseElement();

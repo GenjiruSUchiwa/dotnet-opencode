@@ -3,6 +3,7 @@ namespace OpenCode.Cli.Tui.Components;
 using System.Globalization;
 using Microsoft.AspNetCore.Components;
 using OpenCode.Cli.Tui.Keymap;
+using OpenCode.Cli.Tui.Attachments;
 using OpenCode.Schema;
 using OpenCode.Cli.Tui.Models;
 using OpenTui.Blazor.TextMarks;
@@ -42,7 +43,7 @@ public partial class OpenCodeApp
                 Title = id is "input.undo" or "input.redo" or "input.newline" ? DefaultBindings.All.FirstOrDefault(binding => binding.Id == id)?.Description : null,
                 Category = "Prompt",
                 Palette = id is "input.undo" or "input.redo" or "input.newline",
-                Condition = new() { When = _ => id != "input.undo" && id != "input.redo" || (id == "input.undo" ? _editHistory.CanUndo : _editHistory.CanRedo) }
+                Condition = new() { When = _ => ActivePrompt is { } state && (id != "input.undo" && id != "input.redo" || (id == "input.undo" ? state.CanUndo : state.CanRedo)) }
             }).ToArray();
         _keyLeases.Add(_keyLayers.Register(TuiEditorKeymap.CreateCommands(editor, PromptFocus)));
         _keyLeases.Add(_keyLayers.Register(TuiEditorKeymap.CreateBindings(config, context => PromptFocus(context)
@@ -176,8 +177,8 @@ public partial class OpenCodeApp
         "session.first" or "session.last" or "session.page.up" or "session.page.down" or "session.half.page.up" or "session.half.page.down" => _hasConversation,
         _ => !name.StartsWith("session.tab.", StringComparison.Ordinal) || TabNavigationReady
     };
-    private static bool PromptFocus(KeymapContext context) => context.Data.GetValueOrDefault("terminal.editor") is true
-        && Equals(context.Data.GetValueOrDefault("terminal.focusKey"), "prompt");
+    private bool PromptFocus(KeymapContext context) => context.Data.GetValueOrDefault("terminal.textarea") is TextareaState state
+        && ReferenceEquals(state, ActivePrompt) && Equals(context.Data.GetValueOrDefault("terminal.focusKey"), "prompt");
     private bool NavigationReady => _request is null && !_configurationBusy;
     private bool SelectionReady => !_configurationBusy;
 
@@ -192,13 +193,7 @@ public partial class OpenCodeApp
         if (modal && _modalKeyMode is null) _modalKeyMode = _keyMode.Push(TuiKeymapLayer.ModalMode);
         if (!modal && _modalKeyMode is not null) { _modalKeyMode.Dispose(); _modalKeyMode = null; }
         _focusedPrompt = PromptFocus(context);
-        if (context.Data.GetValueOrDefault("terminal.measure") is Func<string, int?, TerminalTextLayout> metrics) _measure = metrics;
         if (context.Data.GetValueOrDefault("terminal.focusKey") is string focus && (focus == "terminal-list" || focus.StartsWith("activity-", StringComparison.Ordinal))) return null;
-        if (_focusedPrompt && HasSelection && key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control))
-        {
-            _keyTasks.Add(CopyPromptSelection());
-            return new KeymapDispatchResult(true, true, true, [], [], KeymapDispatchReason.Handled);
-        }
         if (HandleReferenceAutocomplete(key) || HandleCommandAutocomplete(key)) return new KeymapDispatchResult(true, true, true, [], [], KeymapDispatchReason.Handled);
         if (KeyName(key) is { } shellKey && HandleShellControl(new(new KeyStroke(shellKey, key.Modifiers.HasFlag(ConsoleModifiers.Control),
             key.Modifiers.HasFlag(ConsoleModifiers.Shift), key.Modifiers.HasFlag(ConsoleModifiers.Alt)))))
@@ -210,7 +205,6 @@ public partial class OpenCodeApp
             _keyHint = null;
             return null; // Let the form's focused Input consume editing, submit, and cancellation.
         }
-        if (_focusedPrompt && context.Data.GetValueOrDefault("terminal.measure") is Func<string, int?, TerminalTextLayout> measure) _measure = measure;
         var name = KeyName(key);
         if (name is null) return null;
         var result = _keyDispatcher.Dispatch(new(new KeyStroke(name, key.Modifiers.HasFlag(ConsoleModifiers.Control),
@@ -231,14 +225,8 @@ public partial class OpenCodeApp
         if (modal && _modalKeyMode is null) _modalKeyMode = _keyMode.Push(TuiKeymapLayer.ModalMode);
         if (!modal && _modalKeyMode is not null) { _modalKeyMode.Dispose(); _modalKeyMode = null; }
         _focusedPrompt = PromptFocus(context);
-        if (context.Data.GetValueOrDefault("terminal.measure") is Func<string, int?, TerminalTextLayout> measure) _measure = measure;
         if (context.Data.GetValueOrDefault("terminal.focusKey") is string focus && (focus is "form" or "terminal-list" || focus.StartsWith("activity-", StringComparison.Ordinal))) return null;
         if (!input.TryGetKeymapEvent(out var key)) return null;
-        if (_focusedPrompt && HasSelection && key.Type == KeyEventType.Press && key.Stroke == new KeyStroke("c", ctrl: true))
-        {
-            _keyTasks.Add(CopyPromptSelection());
-            return new KeymapDispatchResult(true, true, true, [], [], KeymapDispatchReason.Handled);
-        }
         if (HandleRichAutocomplete(key)) return new KeymapDispatchResult(true, true, true, [], [], KeymapDispatchReason.Handled);
         if (HandleShellControl(key)) return new KeymapDispatchResult(true, true, true, [], [], KeymapDispatchReason.Handled);
         var result = _keyDispatcher.Dispatch(key, _keyLayers, _keyMode.Apply(context), now);
@@ -312,146 +300,48 @@ public partial class OpenCodeApp
 
     private bool ClearPrompt()
     {
-        if (HasSelection) _selectionAnchor = null;
-        else if (_input.Length > 0)
-        {
-            _editHistory.Record(CurrentEdit);
-            _input = _draft = "";
-            ClearPromptAttachments(EditorKey);
-            RememberPromptMetadata(EditorKey, null);
-            _cursor = 0;
-            _selectionAnchor = null;
-            _preferredColumn = null;
-            _highSurrogate = null;
-            _historyIndex = _history.Count;
-            _draftRevision++;
-        }
+        if (ActivePrompt is not { } state) return false;
+        if (HasSelection) state.ClearSelection();
+        else if (state.Text.Length > 0) { ResetPromptDocument(); _historyIndex = _history.Count; }
         else return false;
-        _dirty = true;
+        ObservePrompt(EditorKey, state);
         return true;
     }
 
     private bool MoveHistory(int direction)
     {
-        if (!_focusedPrompt || _history.Count == 0) return false;
+        if (!_focusedPrompt || ActivePrompt is not { } state || _history.Count == 0) return false;
+        ObservePrompt(EditorKey, state);
         if (direction < 0 && _cursor != 0 || direction > 0 && _cursor != _input.Length)
         {
-            if (_measure is not null && _measure(_input, InputWidth).MoveVertical(_cursor, direction,
-                _measure(_input, InputWidth).Position(_cursor).Column) is not null) return false;
-            _cursor = direction < 0 ? 0 : _input.Length;
-            _selectionAnchor = null;
-            _dirty = true;
+            var before = state.Snapshot.CursorUtf16;
+            state.Execute(direction < 0 ? TextareaCommand.Up : TextareaCommand.Down);
+            if (state.Snapshot.CursorUtf16 == before) state.Execute(direction < 0 ? TextareaCommand.BufferHome : TextareaCommand.BufferEnd);
+            ObservePrompt(EditorKey, state);
             return true;
         }
-        _editHistory.Record(CurrentEdit);
-        _selectionAnchor = null;
         if (direction < 0 && _historyIndex == _history.Count)
         {
-            _draft = _input;
-            var input = CapturePromptAdmission(_input);
-            _historyDrafts[EditorKey] = new(new(input.Text, input.Files, input.Agents, input.Skills), input.Metadata, GetPromptMarks().Snapshot(), ShellMode);
+            _historyDrafts[EditorKey] = CapturePromptDocument();
         }
-        _historyIndex = Math.Clamp(_historyIndex + direction, 0, _history.Count);
-        _input = _historyIndex == _history.Count ? _draft : _history[_historyIndex];
-        var document = _historyIndex == _history.Count ? _historyDrafts.GetValueOrDefault(EditorKey)
-            : _historyDocuments.GetValueOrDefault((EditorKey, _historyIndex));
-        RestoreEditDocument(document);
-        _shellModes[EditorKey] = document?.ShellMode == true;
-        _cursor = direction < 0 ? 0 : _input.Length;
-        _draftRevision++;
-        _dirty = true;
+        var next = Math.Clamp(_historyIndex + direction, 0, _history.Count);
+        var document = next == _history.Count ? _historyDrafts.GetValueOrDefault(EditorKey) : _historyDocuments.GetValueOrDefault((EditorKey, next));
+        if (document is null) { OnInputError("The structured history document is unavailable."); return true; }
+        RestorePromptDocument(EditorKey, PromptDocumentAdapter.Prepare(document, direction < 0 ? 0 : document.Input.Text.Length));
+        _historyIndex = next;
         return true;
     }
 
     private bool ExecuteEditor(string command)
     {
-        if (!_focusedPrompt) return false;
-        var select = command.StartsWith("input.select.", StringComparison.Ordinal);
-        var boundaries = StringInfo.ParseCombiningCharacters(_input).Append(_input.Length).ToArray();
-        var previous = boundaries.LastOrDefault(index => index < _cursor);
-        var next = boundaries.FirstOrDefault(index => index > _cursor, _input.Length);
-        var target = _cursor;
-        switch (command)
-        {
-            case "input.undo": return RestoreEdit(false);
-            case "input.redo": return RestoreEdit(true);
-            case "input.move.left": target = HasSelection ? Math.Min(_cursor, _selectionAnchor!.Value) : previous; break;
-            case "input.move.right": target = HasSelection ? Math.Max(_cursor, _selectionAnchor!.Value) : next; break;
-            case "input.select.left": target = previous; break;
-            case "input.select.right": target = next; break;
-            case "input.move.up": case "input.move.down": case "input.select.up": case "input.select.down":
-                if (_measure is null) return false;
-                var layout = _measure(_input, InputWidth);
-                _preferredColumn ??= layout.Position(_cursor).Column;
-                if (layout.MoveVertical(_cursor, command.EndsWith("up", StringComparison.Ordinal) ? -1 : 1, _preferredColumn.Value) is not { } vertical) return false;
-                MoveCursor(vertical, select, command.EndsWith("up", StringComparison.Ordinal) ? TerminalMarkMotion.Up : TerminalMarkMotion.Down);
-                return true;
-            case "input.line.home": case "input.select.line.home": target = TerminalTextEditing.LineStart(_input, _cursor); break;
-            case "input.line.end": case "input.select.line.end": target = TerminalTextEditing.LineEnd(_input, _cursor); break;
-            case "input.buffer.home": case "input.select.buffer.home": target = 0; break;
-            case "input.buffer.end": case "input.select.buffer.end": target = _input.Length; break;
-            case "input.visual.line.home": case "input.select.visual.line.home": case "input.visual.line.end": case "input.select.visual.line.end":
-                if (_measure is null) return false;
-                var visual = _measure(_input, InputWidth);
-                var line = visual.Lines[visual.Position(_cursor).Row];
-                target = command.EndsWith("home", StringComparison.Ordinal) ? line.Start : line.End;
-                break;
-            // Source moveWordForward/Backward collapses an existing selection when Shift is
-            // absent. Selecting moves from the active cursor while retaining the original anchor.
-            case "input.word.forward": target = HasSelection ? Math.Max(_cursor, _selectionAnchor!.Value) : TerminalTextEditing.WordBoundary(_input, _cursor, 1); break;
-            case "input.word.backward": target = HasSelection ? Math.Min(_cursor, _selectionAnchor!.Value) : TerminalTextEditing.WordBoundary(_input, _cursor, -1); break;
-            case "input.select.word.forward": target = TerminalTextEditing.WordBoundary(_input, _cursor, 1); break;
-            case "input.select.word.backward": target = TerminalTextEditing.WordBoundary(_input, _cursor, -1); break;
-            case "input.select.all": _selectionAnchor = 0; MoveCursor(_input.Length, true); return true;
-            case "input.newline": InsertText("\n"); return true;
-            case "input.submit": return SubmitPrompt();
-            case "input.backspace": case "input.delete": case "input.delete.word.backward": case "input.delete.word.forward":
-            case "input.delete.line": case "input.delete.to.line.start": case "input.delete.to.line.end":
-                if (HasSelection)
-                {
-                    _editHistory.Record(CurrentEdit);
-                    RemoveSelection();
-                    return true;
-                }
-                if (command is "input.backspace" or "input.delete")
-                {
-                    try
-                    {
-                        if (AtomicPromptDeletion(command == "input.backspace") is { } range)
-                            return ReplacePromptRange(range.Start, range.Length, "");
-                    }
-                    catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-                    { _inputError = exception.Message; _dirty = true; return true; }
-                }
-                var start = command switch
-                {
-                    "input.backspace" => previous,
-                    "input.delete.word.backward" => TerminalTextEditing.WordBoundary(_input, _cursor, -1),
-                    "input.delete.line" or "input.delete.to.line.start" => TerminalTextEditing.LineStart(_input, _cursor),
-                    _ => _cursor
-                };
-                var end = command switch
-                {
-                    "input.delete" => next,
-                    "input.delete.word.forward" => TerminalTextEditing.WordBoundary(_input, _cursor, 1),
-                    "input.delete.line" or "input.delete.to.line.end" => TerminalTextEditing.LineEnd(_input, _cursor),
-                    _ => _cursor
-                };
-                if (end < _input.Length && (command == "input.delete.line" || command == "input.delete.to.line.end" && start == end)) end++;
-                if (start == end) return false;
-                return ReplacePromptRange(start, end - start, "");
-            default: return false;
-        }
-        _preferredColumn = null;
-        MoveCursor(target, select, command == "input.move.left" ? TerminalMarkMotion.Left
-            : command == "input.move.right" ? TerminalMarkMotion.Right
-            : command.Contains(".line.", StringComparison.Ordinal) || command.Contains(".buffer.", StringComparison.Ordinal)
-                ? TerminalMarkMotion.Direct : TerminalMarkMotion.Set);
-        return true;
+        if (!_focusedPrompt || ActivePrompt is not { } state || TuiEditorKeymap.EditorCommand(command) is not { } binding) return false;
+        return state.Execute(binding.Command, binding.Select);
     }
 
     private bool SubmitPrompt(InboxDeliveryMode? delivery = null)
     {
+        if (ActivePrompt is not { } state) { OnInputError("The native prompt is not ready."); return true; }
+        ObservePrompt(EditorKey, state);
         if (PromptBlocked)
         {
             _status = "Answer the pending request first; the draft was kept.";
@@ -492,14 +382,7 @@ public partial class OpenCodeApp
         }
         RememberPromptHistory(prompt);
         var document = _historyDocuments[(EditorKey, _history.Count)];
-        _input = _draft = "";
-        ClearPromptAttachments(EditorKey);
-        _cursor = 0;
-        _selectionAnchor = null;
-        _highSurrogate = null;
-        _preferredColumn = null;
-        _editHistory.Clear();
-        _draftRevision++;
+        ResetPromptDocument();
         _request = new CancellationTokenSource();
         _status = "Checking configuration...";
         _stream = StreamAsync(prompt, _request.Token, selection, document);

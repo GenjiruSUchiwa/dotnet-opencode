@@ -1,6 +1,7 @@
 namespace OpenCode.Cli.Tui.Components;
 
 using Microsoft.AspNetCore.Components;
+using System.Collections.Immutable;
 using OpenCode.Cli.Tui.Attachments;
 using OpenCode.Cli.Tui.Commands;
 using OpenCode.Cli.Tui.Dialogs;
@@ -149,21 +150,14 @@ public partial class OpenCodeApp
         var append = _cursor >= _input.Length || _input[_cursor] != ' ' ? " " : "";
         try
         {
-            // Compute native-display offsets before recording or changing the document.
-            var start = AttachmentEdits.Offset(_input, query.Start, MeasureMentionElement);
-            var end = start + AttachmentEdits.Offset(label, label.Length, MeasureMentionElement);
             if (!ReplacePromptRange(query.Start, _cursor - query.Start, label + append)) return;
-            var mention = new PromptMention(start, end, label);
-            var prompt = CapturePromptInput(_input);
             if (option.Kind == AttachmentKind.Agent)
-                prompt = prompt with { Agents = (prompt.Agents ?? []).Append(new PromptAgentAttachment(option.Key, mention)).ToArray() };
+                AddPromptMark(query.Start, label, new(AttachmentKind.Agent, 0, label, Agent: new PromptAgentAttachment(option.Key)));
             else
             {
                 _attachmentKinds[option.Key] = option.Kind;
-                var file = new PromptInputFileAttachment(option.Key, option.Label, option.Description, mention);
-                prompt = prompt with { Files = (prompt.Files ?? []).Where(item => item.Uri != file.Uri).Append(file).ToArray() };
+                AddPromptMark(query.Start, label, new(AttachmentKind.File, 0, label, File: new PromptInputFileAttachment(option.Key, option.Label, option.Description)));
             }
-            RestorePromptAttachments(EditorKey, prompt);
             _dismissedReferenceText = _input;
             _referenceQuery = null;
             _dirty = true;
@@ -174,39 +168,16 @@ public partial class OpenCodeApp
 
     private void RemoveAttachment(AttachmentTarget target)
     {
-        if (PromptBlocked) return;
-        var input = CapturePromptInput(_input);
-        var mention = target.Kind switch
+        if (PromptBlocked || ActivePrompt is not { } state) return;
+        var document = CapturePromptDocument();
+        var bound = document.Editor!.MarkData.FirstOrDefault(pair => pair.Value is PromptAttachmentData part && part.Kind == target.Kind && part.Key == target.Key);
+        if (document.Editor.MarkPositions?.FirstOrDefault(position => position.Id == bound.Key) is { } range)
         {
-            AttachmentKind.File => input.Files?.FirstOrDefault(file => file.Uri == target.Key)?.Mention,
-            AttachmentKind.Agent => input.Agents?.FirstOrDefault(agent => agent.Name == target.Key)?.Mention,
-            _ => input.Skills?.FirstOrDefault(skill => skill.Id.Value == target.Key)?.Mention
-        };
-        _editHistory.Record(CurrentEdit);
-        if (mention is not null)
-        {
-            try
-            {
-                var start = AttachmentEdits.Index(_input, mention.Start, MeasureMentionElement);
-                var end = AttachmentEdits.Index(_input, mention.End, MeasureMentionElement);
-                var cursor = _cursor;
-                var anchor = _selectionAnchor;
-                if (!ReplacePromptRange(start, end - start, "", record: false)) return;
-                _cursor = Remap(cursor);
-                _selectionAnchor = anchor is { } selected ? Remap(selected) : null;
-                int Remap(int position) => position <= start ? position : position >= end ? position - (end - start) : start;
-                input = CapturePromptInput(_input);
-            }
-            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
-            { _inputError = exception.Message; _dirty = true; return; }
+            state.SelectUtf16(range.StartUtf16, range.EndUtf16);
+            state.Execute(OpenTui.Blazor.TextareaCommand.Delete);
         }
-        RestorePromptAttachments(EditorKey, input with
-        {
-            Files = target.Kind == AttachmentKind.File ? input.Files?.Where(file => file.Uri != target.Key).ToArray() : input.Files,
-            Agents = target.Kind == AttachmentKind.Agent ? input.Agents?.Where(agent => agent.Name != target.Key).ToArray() : input.Agents,
-            Skills = target.Kind == AttachmentKind.Skill ? input.Skills?.Where(skill => skill.Id.Value != target.Key).ToArray() : input.Skills
-        });
-        _draftRevision++;
-        _dirty = true;
+        else _editorDocuments[EditorKey] = document with { Unmarked = document.Unmarked.Where(part => part.Kind != target.Kind || part.Key != target.Key).ToImmutableArray() };
+        _nativeRevision = -1;
+        ObservePrompt(EditorKey, state);
     }
 }

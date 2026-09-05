@@ -11,7 +11,6 @@ public partial class OpenCodeApp
     private readonly SessionFrameState _frame = new();
     private SessionFrame? _sessionFrame;
     private SessionPresentation? _presentation;
-    private int? _pointerAnchor;
     private SessionSummary Summary => SessionSummary.Create(_transcriptMessages, _presentation?.Models ?? _catalog?.Models ?? [],
         _sessionId is { } id && ReadSessionObservation?.Invoke(id)?.Session is { } observed ? observed
             : _presentation?.Session is { } session && session.Id == _sessionId ? session : null, _projectedHistory);
@@ -44,22 +43,4 @@ public partial class OpenCodeApp
         return true;
     }
 
-    private void PromptPointerDown(TerminalPointerEventArgs args)
-    {
-        if (PromptBlocked || args.Button != TerminalPointerButton.Left || args.TextIndex is not { } index) return;
-        args.Handled = true;
-        var select = args.Modifiers.HasFlag(ConsoleModifiers.Shift);
-        _pointerAnchor = select ? _selectionAnchor ?? _cursor : index;
-        MoveCursor(index, select, TerminalMarkMotion.Direct);
-    }
-
-    private void PromptPointerMove(TerminalPointerEventArgs args)
-    {
-        if (PromptBlocked || _pointerAnchor is not { } anchor || args.TextIndex is not { } index) return;
-        args.Handled = true;
-        _selectionAnchor = anchor;
-        MoveCursor(index, true);
-    }
-
-    private void PromptPointerUp(TerminalPointerEventArgs args) { _pointerAnchor = null; args.Handled = true; }
 }

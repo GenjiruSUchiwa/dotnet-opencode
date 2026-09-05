@@ -32,6 +32,7 @@ public partial class OpenCodeApp
     private PromptStashAccess StashAccess()
     {
         if (!StashReady) return new(false, null, "The prompt stash is not ready.");
+        if (ActivePrompt is null) return new(false, null, "Wait for the native prompt to mount before changing this draft.");
         // Inspect the retained retry before CapturePromptAdmission: that method deliberately
         // clears an ID when edited text differs, which is not stash admission authority.
         if (_retryPromptInputs.TryGetValue(EditorKey, out var retry))
@@ -66,23 +67,14 @@ public partial class OpenCodeApp
             var access = StashAccess();
             access.RequireEditable();
             if (_input.Length == 0) return false;
-            var edit = CurrentEdit;
-            if (!_editDocuments.TryGetValue(edit, out var document)) throw new InvalidOperationException("The complete editor snapshot is unavailable.");
+            var document = CapturePromptDocument();
             // Current paste is literal text or typed file data. The root creates no collapsed
             // pasted-text descriptors; do not invent them from text resembling a placeholder.
             var mutation = _promptStash.Push(StashPrompt.Capture(document, Array.Empty<StashPastedText>()), access);
             if (mutation.Entry is null) throw new InvalidOperationException("The stash did not accept the prompt in memory.");
-            _input = _draft = "";
-            ClearPromptAttachments(EditorKey);
-            RememberPromptMetadata(EditorKey, null);
-            _cursor = 0;
-            _selectionAnchor = null;
-            _highSurrogate = null;
-            _preferredColumn = null;
+            ResetPromptDocument();
             _historyIndex = _history.Count;
             _historyDrafts.Remove(EditorKey);
-            _editHistory.Clear();
-            _draftRevision++;
             _stashActionError = _inputError = null;
             _keyTasks.Add(ObserveStashWrite(mutation.Persistence));
             CloseDialog();
@@ -128,51 +120,24 @@ public partial class OpenCodeApp
         catch (Exception exception) { return new(false, null, exception.Message); }
     }
 
-    private (PromptEditDocument Document, AttachmentTextMarks Marks) PrepareStashRestore(StashEntry entry)
+    private PromptEditDocument PrepareStashRestore(StashEntry entry)
     {
         var data = entry.Prompt.RestoreData();
         if (data.Pasted.Count > 0)
             throw new NotSupportedException("This stash contains tracked pasted-text descriptors that this editor cannot reconstruct. The entry was kept.");
-        var document = data.Document;
-        var state = document.Marks is { } snapshot ? AttachmentTextMarks.Restore(document.Input, snapshot) : new AttachmentTextMarks(document.Input);
-        if (document.Marks is { } original)
-        {
-            state.Reconcile(document.Input);
-            var restored = state.Snapshot();
-            if (!original.Bindings.SequenceEqual(restored.Bindings) || !original.Marks.Marks.SequenceEqual(restored.Marks.Marks)
-                || original.Marks.NextId <= original.Marks.Marks.Select(mark => mark.Id).DefaultIfEmpty(0).Max())
-                throw new InvalidOperationException("The stash has unsupported or inconsistent virtual-mark bindings. The entry was kept.");
-        }
-        if (state.Marks.All.Count > 0)
-        {
-            var map = new TerminalTextMap(document.Input.Text, MeasureMentionElement);
-            if (state.Marks.All.Any(mark => mark.Id <= 0 || mark.Start < 0 || mark.End < mark.Start || mark.End > map.DisplayLength))
-                throw new InvalidOperationException("The stash has invalid virtual-mark ranges. The entry was kept.");
-            _ = state.Project(MeasureMentionElement, PromptMarkStyle);
-        }
-        return (document, state);
+        return PromptDocumentAdapter.Prepare(data.Document);
     }
 
     private void RestoreStashedPrompt(StashEntry entry)
     {
         StashAccess().RequireEditable();
         var restored = PrepareStashRestore(entry);
-        // No await: admission validation, undo capture, and complete restore are one dispatcher action.
-        _editHistory.Record(CurrentEdit);
-        _input = restored.Document.Input.Text;
-        _promptParts[EditorKey] = restored.Document.Input;
-        _promptMarkStates[EditorKey] = restored.Marks;
-        RememberPromptMetadata(EditorKey, restored.Document.Metadata);
-        _shellModes[EditorKey] = restored.Document.ShellMode;
-        _cursor = _input.Length;
-        _selectionAnchor = null;
-        _highSurrogate = null;
-        _preferredColumn = null;
+        // SetDocument validates native coordinates before replacement. No await separates
+        // admission validation from restore, and the stash consumes only after this succeeds.
+        RestorePromptDocument(EditorKey, restored, moveToEnd: true);
         _historyIndex = _history.Count;
-        _draft = "";
         _historyDrafts.Remove(EditorKey);
         _dismissedReferenceText = _dismissedCommandInput = _input;
-        _draftRevision++;
         _stashActionError = _inputError = null;
         _dirty = true;
     }

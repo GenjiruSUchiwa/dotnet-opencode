@@ -47,11 +47,8 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     private string _status = "Ready";
     private readonly List<string> _history = [];
     private int _historyIndex;
-    private string _draft = "";
-    private char? _highSurrogate;
     private bool _dirty;
-    private int? _preferredColumn;
-    private Func<string, int?, TerminalTextLayout>? _measure;
+    private int _composerWidth = 1;
     private bool _palette;
     private bool _models;
     private bool _agents;
@@ -350,29 +347,13 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     // explicitly render sooner because the host can dispatch several keys per frame.
     Task IHandleEvent.HandleEventAsync(EventCallbackWorkItem callback, object? arg) => callback.InvokeAsync(arg);
 
-    private int SidePadding => _width < 4 ? 0 : _width < 44 ? 1 : 2;
-    private int ComposerWidth => Math.Max(1, _hasConversation ? _frame.ContentWidth(_width, _childSession) - SidePadding * 2 : Math.Min(75, _width - SidePadding * 2));
-    private int InputWidth => Math.Max(1, ComposerWidth - (_height < 6 ? 0 : 1 + (_width < 44 ? 2 : 4)));
-    private int InputHeight => Math.Min(Math.Max(6, _height / 3), _measure?.Invoke(_input, InputWidth).Lines.Count ?? 1);
-    private int FooterHeight => _height >= 12 && _width >= 44 ? _height < 16 ? 1 : 3 : 0;
+    private int SidePadding => _width < 44 ? 1 : 2;
+    private int ComposerWidth => Math.Max(1, _composerWidth);
     private int TabHeight => _height >= 6 ? 1 : 0;
-
-    private void InputKey(TerminalKeyEventArgs args)
-    {
-        _measure = args.Measure;
-        args.Handled = true;
-        HandleKey(args.Key);
-    }
-
-    private void InputPaste(TerminalPasteEventArgs args)
-    {
-        args.Handled = true;
-        Paste(args.Text);
-    }
 
     public void OnFrame()
     {
-        ReadTextMarkMetrics();
+        if (_nativePromptOwner is { } owner && _nativePrompt is { IsMounted: true, IsDisposed: false } editor) ObservePrompt(owner, editor);
         ReadObservedSession();
         if (!ReferenceEquals(_previousTheme, ThemeView)) { _previousTheme = ThemeView; ApplyHostTheme(); _dirty = true; }
         ReadSessionPresentation();
@@ -435,15 +416,13 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
     {
         _width = width;
         _height = height;
-        _preferredColumn = null;
-        _pointerAnchor = null;
         _dirty = true;
     }
 
     public void Paste(string text)
     {
-        if (PromptBlocked || PromptOverlayOpen || _activitiesOpen || _terminalFocused || _terminalListOpen) return;
-        try { InsertText(TerminalTextEditing.NormalizePaste(text)); }
+        if (ActivePrompt is not { Focused: true } || PromptBlocked || PromptOverlayOpen || _activitiesOpen || _terminalFocused || _terminalListOpen) return;
+        try { if (DispatchPromptPaste?.Invoke(text) != true) OnInputError("The native paste route is unavailable."); }
         catch (ArgumentException exception) { OnInputError(exception.Message); }
     }
 
@@ -453,17 +432,9 @@ public partial class OpenCodeApp : ComponentBase, ITerminalApp, IHandleEvent
         _dirty = true;
     }
 
-    public void HandleKey(ConsoleKeyInfo key)
-    {
-        // Keymap callbacks own editing and commands. Only unmatched character input
-        // reaches this fallback, preventing a handled operation from running twice.
-        if (PromptBlocked || PromptOverlayOpen || !_focusedPrompt || char.IsControl(key.KeyChar) || key.Modifiers.HasFlag(ConsoleModifiers.Control)) return;
-        if (!key.Modifiers.HasFlag(ConsoleModifiers.Alt) && EnterShellMode(key.KeyChar.ToString())) return;
-        if (char.IsHighSurrogate(key.KeyChar)) { _highSurrogate = key.KeyChar; return; }
-        var text = char.IsLowSurrogate(key.KeyChar) ? _highSurrogate is char high ? new string([high, key.KeyChar]) : "" : key.KeyChar.ToString();
-        _highSurrogate = null;
-        InsertText(text);
-    }
+    // Required legacy host hook. The native textarea route consumes its own text/keys;
+    // unrelated legacy controls retain their component callbacks, not a root insertion fallback.
+    public void HandleKey(ConsoleKeyInfo key) { }
 
     public async Task StopAsync()
     {

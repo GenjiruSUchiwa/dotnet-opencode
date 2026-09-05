@@ -1,10 +1,34 @@
 using OpenTui.Blazor.Keymap;
+using OpenTui.Blazor;
 
 namespace OpenCode.Cli.Tui.Keymap;
 
-/// <summary>Managed textarea bindings. Editing remains in the app's existing editor callbacks.</summary>
+/// <summary>OpenCode binding/command metadata. Operations delegate to the single native TextareaState.</summary>
 public static class TuiEditorKeymap
 {
+    public static TextareaBinding? EditorCommand(string id)
+    {
+        var select = id.StartsWith("input.select.", StringComparison.Ordinal);
+        var command = (select ? id.Replace("input.select.", "input.", StringComparison.Ordinal) : id) switch
+        {
+            "input.move.left" or "input.left" => TextareaCommand.Left,
+            "input.move.right" or "input.right" => TextareaCommand.Right,
+            "input.move.up" or "input.up" => TextareaCommand.Up,
+            "input.move.down" or "input.down" => TextareaCommand.Down,
+            "input.word.forward" => TextareaCommand.WordRight, "input.word.backward" => TextareaCommand.WordLeft,
+            "input.line.home" => TextareaCommand.LineHome, "input.line.end" => TextareaCommand.LineEnd,
+            "input.visual.line.home" => TextareaCommand.VisualHome, "input.visual.line.end" => TextareaCommand.VisualEnd,
+            "input.buffer.home" => TextareaCommand.BufferHome, "input.buffer.end" => TextareaCommand.BufferEnd,
+            "input.all" => TextareaCommand.SelectAll,
+            "input.backspace" => TextareaCommand.Backspace, "input.delete" => TextareaCommand.Delete,
+            "input.delete.word.backward" => TextareaCommand.DeleteWordLeft, "input.delete.word.forward" => TextareaCommand.DeleteWordRight,
+            "input.delete.line" => TextareaCommand.DeleteLine, "input.delete.to.line.start" => TextareaCommand.DeleteToLineStart,
+            "input.delete.to.line.end" => TextareaCommand.DeleteToLineEnd, "input.newline" => TextareaCommand.NewLine,
+            "input.undo" => TextareaCommand.Undo, "input.redo" => TextareaCommand.Redo, "input.submit" => TextareaCommand.Submit,
+            _ => (TextareaCommand?)null
+        };
+        return command is { } value ? new(value, select) : null;
+    }
     // @opentui/core defaultTextareaKeyBindings, in source order; OpenCode config is prepended.
     private static readonly (string Key, string Command)[] NativeDefaults =
     [

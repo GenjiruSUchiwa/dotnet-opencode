@@ -20,6 +20,7 @@
 @using OpenCode.Cli.Tui.Models
 @using OpenCode.Cli.Tui.SystemDialogs
 @using OpenCode.Cli.Tui.Stash
+@using OpenTui.Blazor.Nodes
 
 <Box Grow="1" Bg="@BaseColors.Background.Hex">
     @if ((_hasConversation || _tabs.Tabs.Length > 1) && TabHeight > 0)
@@ -31,6 +32,7 @@
     @if (_hasConversation)
     {
         <SessionFrame @ref="_sessionFrame" State="_frame" Width="_width" ChildSession="_childSession" BlockingRequest="PromptBlocked" Theme="TranscriptColors"
+                      OnContentSizeChanged="PromptSizeChanged"
                       TerminalFocused="_terminalFocused" OnFocusSession="FocusSessionPane" OnResizeStart="BeginTerminalResize" OnResize="ResizeTerminal" OnResizeEnd="EndTerminalResize"
                       Title="@_conversationTitle" Directory="@CurrentDirectory" Workspace="@_presentation?.Location.WorkspaceId?.Value"
                       Summary="Summary" Mcp="@(_presentation?.Mcp ?? [])" SidebarError="@_presentation?.McpError"
@@ -110,13 +112,7 @@
         }
         else
         {
-            <SessionComposer Value="@_input" Cursor="_cursor" SelectionAnchor="_selectionAnchor" Width="ComposerWidth"
-                             TerminalWidth="_width" TerminalHeight="_height" Directory="@CurrentDirectory" Loading="_configurationBusy"
-                              Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant" ShellMode="ShellMode" ShellColor="@ShellColor"
-                             Summary="Summary" Running="SelectedSessionRunning" RunningChildren="RunningChildren" Theme="TranscriptColors"
-                             CommandShortcut="@Shortcut("command.palette.show")" AgentShortcut="@Shortcut("agent.cycle")"
-                             InterruptShortcut="@Shortcut("session.interrupt")" OnKeyDown="InputKey" OnPaste="InputPaste"
-                             OnPointerDown="PromptPointerDown" OnPointerMove="PromptPointerMove" OnPointerUp="PromptPointerUp" OnTextInput="InputText" Muted="_terminalFocused" TextMarks="PromptTextMarks" />
+            @CurrentPrompt
         }
         </Composer>
         <Terminal>
@@ -180,30 +176,16 @@
     }
     else
     {
-        <Box Grow="1" Center="true" PaddingX="SidePadding">
-            <Box Grow="1" Height="0" />
-            <Box Height="4" Shrink="1" />
-            @if (_height >= 12)
-            {
-                <Wordmark TerminalWidth="_width" Theme="WordmarkColors" />
-            }
-            <Box Height="1" Shrink="1" />
-            @if (ActiveForm is not null)
-            {
-                <SessionComposer Value="@_input" Width="ComposerWidth" TerminalWidth="_width" TerminalHeight="_height"
-                                 Directory="@CurrentDirectory" Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
-                                 Theme="TranscriptColors" Disabled="true" Summary="Summary" CommandShortcut="@Shortcut("command.palette.show")" />
-            }
-            else
-            {
-                <Box Width="ComposerWidth" Shrink="0" FocusKey="command-composer">
-                <Composer Value="@_input" Cursor="_cursor" SelectionAnchor="_selectionAnchor" TerminalWidth="_width" TerminalHeight="_height"
-                          Home="true" Width="ComposerWidth" CurrentDirectory="@CurrentDirectory" Loading="_configurationBusy" Theme="ComposerColors" ShellMode="ShellMode"
-                          CommandShortcut="@Shortcut("command.palette.show")" Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
-                           OnKeyDown="InputKey" OnPaste="InputPaste" OnTextInput="InputText" TextMarks="PromptTextMarks"
-                           OnPointerDown="PromptPointerDown" OnPointerMove="PromptPointerMove" OnPointerUp="PromptPointerUp" />
-                </Box>
-            }
+        <Box Grow="1" AlignItems="TuiAlign.Center" PaddingLeft="SidePadding" PaddingRight="SidePadding">
+            <Box Grow="1" MinHeight="TuiLength.Cells(0)" />
+            <Box Height="4" MinHeight="TuiLength.Cells(0)" Shrink="1" />
+            <Box Shrink="0">
+                @if (_height >= 12) { <Wordmark TerminalWidth="_width" Theme="WordmarkColors" /> }
+            </Box>
+            <Box Height="1" MinHeight="TuiLength.Cells(0)" Shrink="1" />
+            <Box WidthValue="TuiLength.Percent(100)" MaxWidth="TuiLength.Cells(75)" ZIndex="1000" PaddingTop="1" Shrink="0">
+                @CurrentPrompt
+            </Box>
             @StashFeedback
             @if (_modelPreferenceInfo is { } homeModelInformation)
             {
@@ -213,20 +195,23 @@
             {
                 <Box Width="ComposerWidth" PaddingTop="1" Shrink="1"><TuiText Value="@homeError" Fg="@TranscriptColors.Error" /></Box>
             }
-            <Box Grow="1" Height="0" />
+            <Box Grow="1" MinHeight="TuiLength.Cells(0)" />
         </Box>
     }
-    @if (!_hasConversation && FooterHeight > 0)
+    @if (!_hasConversation && _height >= 12 && _width >= 44)
     {
-        <Box Height="FooterHeight" Shrink="0" PaddingX="2" PaddingTop="@(_height < 16 ? 0 : 1)" PaddingBottom="@(_height < 16 ? 0 : 1)">
-            <Box Direction="TuiFlexDirection.Row" Height="1">
-                <TuiText Value="@(_keyHint ?? _tabStorageError ?? (_configurationBusy ? (_connection is null ? "Connecting..." : "Refreshing...") : SelectionError is not null || ExecutionError is not null || _status == "Ready" ? "" : _status))"
-                      Grow="1" Height="1" Dim="true" />
-                @if (_width >= 64)
-                {
-                    <TuiText Value="@Version" Height="1" Dim="true" />
-                }
-            </Box>
+        <Box WidthValue="TuiLength.Percent(100)" Direction="TuiFlexDirection.Row" Shrink="0" Gap="2" PaddingLeft="2" PaddingRight="2"
+             PaddingTop="@(_height < 16 ? 0 : 1)" PaddingBottom="@(_height < 16 ? 0 : 1)">
+            @if (_presentation?.McpError is { } mcpError) { <TuiText Value="@mcpError" Fg="@BaseColors.Color("text.feedback.error.default").Hex" /> }
+            else if (_presentation?.Mcp is { Count: > 0 } mcp)
+            {
+                <Box Direction="TuiFlexDirection.Row" Gap="1" Shrink="0" OnClick="OpenHomeMcp">
+                    <TuiText Runs="HomeMcpRuns(mcp)" Fg="@BaseColors.Text.Hex" />
+                    @if (_width >= 64) { <TuiText Value="/mcps" Fg="@BaseColors.Subdued.Hex" /> }
+                </Box>
+            }
+            <Box Grow="1" />
+            @if (_width >= 64) { <Box Shrink="0"><TuiText Value="@Version" Fg="@BaseColors.Subdued.Hex" /></Box> }
         </Box>
     }
     @if (!_hasConversation && ActiveForm is not null && _formScope is { } homeForms)
@@ -404,6 +389,27 @@
 }
 
 @code {
+    private RenderFragment CurrentPrompt => @<Prompt @key="EditorKey" EditorKey="EditorKey" Clock="Clock" Theme="BaseColors"
+        Home="@(!_hasConversation)" Disabled="@(PromptBlocked || _nativeRestoreFailed)" SuspendFocus="@(PromptOverlayOpen || _terminalFocused)"
+        Muted="@(_terminalFocused || _keyDispatcher?.Pending.Count > 0)" ShellMode="ShellMode" Running="@(_hasConversation && SelectedSessionRunning)"
+        Agent="@_agentSelection?.Value" AgentColor="@(ActiveAgent is null ? null : AgentColor)" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
+        Directory="@CurrentDirectory" AgentShortcut="@Shortcut("agent.cycle")" CommandShortcut="@Shortcut("command.palette.show")" InterruptShortcut="@Shortcut("session.interrupt")"
+        ActivityLabel="@(_hasConversation && RunningChildren > 0 ? $"{RunningChildren} subagent{(RunningChildren == 1 ? "" : "s")}" : null)"
+        StatusLabel="@(_hasConversation ? string.Join(" · ", new[] { Summary.ContextLabel, Summary.CostLabel }.Where(value => value is not null)) : null)"
+        TerminalWidth="_width" TerminalHeight="_height" OnReady="PromptReady" OnChanged="PromptChanged" OnSubmit="PromptSubmitted" OnUnmount="PromptUnmounted"
+        OnKeyInput="PromptKeyInput" OnPasteInput="PromptPasteInput" OnFocusChange="PromptFocusChanged" OnSizeChanged="PromptSizeChanged" OnOpenActivities="OpenPromptActivities" />;
+
+    private Task OpenHomeMcp(TerminalPointerEventArgs args) { args.Handled = true; return OpenManagement(true); }
+    private Task OpenPromptActivities(TerminalPointerEventArgs args) { args.Handled = true; return OpenActivities(Activities.ActivityTab.Subagents); }
+    private System.Collections.Immutable.ImmutableArray<OpenTui.Native.NativeTextRun> HomeMcpRuns(IReadOnlyList<McpServer> mcp)
+    {
+        var failed = mcp.Count(item => item.Status is McpFailedStatus);
+        var connected = mcp.Count(item => item.Status is McpConnectedStatus);
+        var color = failed > 0 ? BaseColors.Color("text.feedback.error.default")
+            : connected > 0 ? BaseColors.Color("text.feedback.success.default") : BaseColors.Subdued;
+        return [new("⊙ ", color.Native), new(failed > 0 ? $"{failed} MCP failed" : $"{connected} MCP", BaseColors.Text.Native)];
+    }
+
     private RenderFragment StashFeedback => @<Box Shrink="0">
         @if (_stashActionError is { } actionError)
         {

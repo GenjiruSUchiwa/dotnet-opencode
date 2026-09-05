@@ -6,6 +6,7 @@ using OpenCode.Cli.Tui.Tabs;
 using OpenCode.Schema;
 using OpenTui.Blazor;
 using OpenTui.Blazor.Components;
+using OpenCode.Cli.Tui.Attachments;
 
 public partial class OpenCodeApp
 {
@@ -32,15 +33,16 @@ public partial class OpenCodeApp
     private bool _tabActionsStopped;
     private bool _refreshDeletedTabSelection;
 
-    private sealed record TabView(string Input, int Cursor, int? SelectionAnchor, string Draft, ImmutableArray<string> History, int HistoryIndex,
-        TerminalScrollState Scroll, bool Reasoning, bool ToolDetails, bool Usage, bool Timestamps, TerminalEditHistory EditHistory,
+    private sealed record TabView(string Input, int Cursor, int? SelectionAnchor, ImmutableArray<string> History, int HistoryIndex,
+        TerminalScrollState Scroll, bool Reasoning, bool ToolDetails, bool Usage, bool Timestamps,
         ImmutableHashSet<string> ExpandedRows, ImmutableHashSet<string> CollapsedRows, string? InputError = null);
 
     private void CaptureTab()
     {
+        CapturePromptDocument();
         TranscriptScroll.Detach();
-        _tabViews[EditorKey] = new(_input, _cursor, _selectionAnchor, _draft, _history.ToImmutableArray(), _historyIndex,
-            TranscriptScroll, ShowReasoning, ShowToolDetails, ShowUsage, ShowTimestamps, _editHistory, _expandedRows, _collapsedRows, _inputError);
+        _tabViews[EditorKey] = new(_input, _cursor, _selectionAnchor, _history.ToImmutableArray(), _historyIndex,
+            TranscriptScroll, ShowReasoning, ShowToolDetails, ShowUsage, ShowTimestamps, _expandedRows, _collapsedRows, _inputError);
         if (_sessionId is { } route) _familyRoutes[_tabs.Selected] = route;
         else _homeLocations[_tabs.Selected] = SelectionLocation;
     }
@@ -49,20 +51,16 @@ public partial class OpenCodeApp
     {
         if (_presentation?.Session?.Id != configuration.SessionId) _presentation = null;
         if (configuration.Directory is { } directory && directory != CurrentDirectory) _catalog = null;
-        _tabViews.TryGetValue(EditorFor(tab.Key, configuration.SessionId), out var view);
-        _input = view?.Input ?? "";
-        _editHistory = view?.EditHistory ?? new TerminalEditHistory();
+        var editor = EditorFor(tab.Key, configuration.SessionId);
+        _tabViews.TryGetValue(editor, out var view);
+        var document = _editorDocuments.GetValueOrDefault(editor) ?? PromptDocumentAdapter.Prepare(
+            new(_promptParts.GetValueOrDefault(editor) ?? new(view?.Input ?? ""), _promptMetadata.GetValueOrDefault(editor), ShellMode: _shellModes.GetValueOrDefault(editor)),
+            view?.Cursor ?? 0, view?.SelectionAnchor);
         _draftRevision++;
         _inputError = view?.InputError;
-        _cursor = view?.Cursor ?? 0;
-        _selectionAnchor = view?.SelectionAnchor;
-        _pointerAnchor = null;
-        _draft = view?.Draft ?? "";
         _history.Clear();
         if (view is not null) _history.AddRange(view.History);
         _historyIndex = view?.HistoryIndex ?? _history.Count;
-        _preferredColumn = null;
-        _highSurrogate = null;
         TranscriptScroll = view?.Scroll ?? new TerminalScrollState();
         ShowReasoning = view?.Reasoning ?? false;
         ShowToolDetails = view?.ToolDetails ?? false;
@@ -77,6 +75,8 @@ public partial class OpenCodeApp
         _transcriptMessages = [];
         _hasConversation = configuration.SessionId is not null;
         _sessionId = configuration.SessionId;
+        if (_nativePromptOwner == editor && ActivePrompt is { } state) ObservePrompt(editor, state);
+        else RestorePromptDocument(editor, document);
         if (_sessionId is { } route) _familyRoutes[tab.Key] = route;
         _conversationTitle = tab.Title;
         _permissions = [];

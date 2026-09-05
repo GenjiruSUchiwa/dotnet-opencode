@@ -7,8 +7,8 @@ using OpenTui.Blazor.TextMarks;
 public sealed record AttachmentMarkBinding(int Id, AttachmentKind Kind, int Index);
 public sealed record AttachmentMarksSnapshot(TerminalTextMarksSnapshot Marks, ImmutableArray<AttachmentMarkBinding> Bindings);
 
-/// <summary>Owns the relationship between managed marks and actual PromptInput arrays.
-/// Text edits change only marker intervals; URI/agent/skill payloads retain their identity.</summary>
+/// <summary>Imports historical/source display-coordinate mentions into a snapshot.
+/// This is not a live editor: TextareaState owns all new editing, movement, and history.</summary>
 public sealed class AttachmentTextMarks
 {
     public PromptInput Input { get; private set; }
@@ -24,20 +24,6 @@ public sealed class AttachmentTextMarks
     }
 
     public AttachmentMarksSnapshot Snapshot() => new(Marks.Snapshot(), _bindings);
-
-    public static AttachmentTextMarks Restore(PromptInput input, AttachmentMarksSnapshot snapshot)
-    {
-        var state = new AttachmentTextMarks(new("")) { Input = input, _bindings = snapshot.Bindings };
-        state.Marks.Restore(snapshot.Marks);
-        return state;
-    }
-
-    public void Clear()
-    {
-        Marks.Clear();
-        _bindings = [];
-        Input = new("");
-    }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "MA0015", Justification = "The source mention-range error describes nested mention data and must keep its existing user-visible text.")]
     public void Reconcile(PromptInput input)
@@ -63,61 +49,6 @@ public sealed class AttachmentTextMarks
         }
         foreach (var mark in Marks.All.Where(mark => !used.Contains(mark.Id))) Marks.Delete(mark.Id);
         Input = input;
-        _bindings = bindings.ToImmutable();
-    }
-
-    public AttachmentTextMarks Replace(int start, int length, string inserted, Func<string, int> width)
-    {
-        var result = Restore(Input, Snapshot());
-        if (Marks.All.Count == 0)
-        {
-            result.Input = Input with { Text = Input.Text.Remove(start, length).Insert(start, inserted) };
-            return result;
-        }
-        var oldMap = new TerminalTextMap(Input.Text, width);
-        var first = oldMap.DisplayAtUtf16(start);
-        result.Marks.AdjustDeletion(first, oldMap.DisplayAtUtf16(start + length) - first);
-        var removed = Input.Text.Remove(start, length);
-        var text = removed.Insert(start, inserted);
-        if (inserted.Length > 0)
-        {
-            var insertion = new TerminalTextMap(removed, width).DisplayAtUtf16(start);
-            var after = new TerminalTextMap(text, width).DisplayAtUtf16(start + inserted.Length);
-            result.Marks.AdjustInsertion(insertion, after - insertion);
-        }
-        result.Materialize(text);
-        return result;
-    }
-
-    public IReadOnlyList<TerminalTextMark> Project(Func<string, int> width, Func<AttachmentKind, string?, TerminalTextMarkStyle> style)
-    {
-        if (_bindings.IsEmpty) return [];
-        var map = new TerminalTextMap(Input.Text, width);
-        return _bindings.Select(binding => (Binding: binding, Mark: Marks.Get(binding.Id)))
-            .Where(item => item.Mark is not null && item.Mark.End > item.Mark.Start)
-            .Select(item => map.Project(item.Mark!, style(item.Binding.Kind, item.Mark!.StyleKey))).ToArray();
-    }
-
-    private void Materialize(string text)
-    {
-        var bindings = ImmutableArray.CreateBuilder<AttachmentMarkBinding>();
-        var files = new List<PromptInputFileAttachment>();
-        var agents = new List<PromptAgentAttachment>();
-        var skills = new List<PromptInputSkillAttachment>();
-        foreach (var part in Parts(Input))
-        {
-            var binding = _bindings.FirstOrDefault(binding => binding.Kind == part.Kind && binding.Index == part.Index);
-            var mark = binding is null ? null : Marks.Get(binding.Id);
-            if (part.Mention is { Text.Length: > 0 } && mark is null) continue;
-            var mention = mark is null ? part.Mention : part.Mention! with { Start = mark.Start, End = mark.End };
-            var index = part.Kind switch { AttachmentKind.File => files.Count, AttachmentKind.Agent => agents.Count, _ => skills.Count };
-            if (mark is not null) bindings.Add(new(mark.Id, part.Kind, index));
-            if (part.Kind == AttachmentKind.File) files.Add(Input.Files![part.Index] with { Mention = mention });
-            if (part.Kind == AttachmentKind.Agent) agents.Add(Input.Agents![part.Index] with { Mention = mention });
-            if (part.Kind == AttachmentKind.Skill) skills.Add(Input.Skills![part.Index] with { Mention = mention });
-        }
-        Input = Input with { Text = text, Files = Input.Files is null ? null : files.ToArray(),
-            Agents = Input.Agents is null ? null : agents.ToArray(), Skills = Input.Skills is null ? null : skills.ToArray() };
         _bindings = bindings.ToImmutable();
     }
 

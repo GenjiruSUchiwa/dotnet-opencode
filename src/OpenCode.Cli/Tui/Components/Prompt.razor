@@ -1,0 +1,143 @@
+@namespace OpenCode.Cli.Tui.Components
+@using System.Collections.Immutable
+@using System.Globalization
+@using OpenCode.Cli.Tui.Theme
+@using OpenCode.Cli.Tui.Transcript
+@using OpenTui.Blazor.Nodes
+@using OpenTui.Native
+@implements IDisposable
+
+<Box WidthValue="TuiLength.Percent(100)" FocusKey="command-composer" OnSizeChanged="OnSizeChanged">
+    <Box WidthValue="TuiLength.Percent(100)" BorderSides="TuiBorderSides.Left" BorderFg="@Highlight.Hex" CustomBorderChars="Rail">
+        <Box WidthValue="TuiLength.Percent(100)" Grow="1" Shrink="0" PaddingLeft="@(TerminalWidth < 44 ? 1 : 2)"
+             PaddingRight="@(TerminalWidth < 44 ? 1 : 2)" PaddingTop="1" Bg="@Surface.Hex">
+            <Textarea State="_state" FocusKey="prompt" WidthValue="TuiLength.Percent(100)" MinHeight="TuiLength.Cells(1)"
+                      MaxHeightValue="TuiLength.Cells(Math.Max(6, TerminalHeight / 3))" Disabled="Disabled"
+                      Fg="@TextColor.Hex" FocusedFg="@TextColor.Hex" FocusedBg="transparent" Placeholder="@Placeholder"
+                      PlaceholderFg="@Theme.Subdued.Hex" CursorColor="@(Disabled ? Theme.Color("background.surface.offset").Native : Theme.Text.Native)"
+                      SyntaxRules="@(TranscriptSyntax.Rules(Theme))" OnReady="Ready" OnContentChange="Changed" OnCursorChange="Changed"
+                      OnSubmit="Submitted" OnKeyInput="OnKeyInput" OnPasteInput="OnPasteInput" OnFocusChange="OnFocusChange" />
+            <Box Direction="TuiFlexDirection.Row" Shrink="0" PaddingTop="1" Gap="1" JustifyContent="TuiJustify.SpaceBetween">
+                <Box Direction="TuiFlexDirection.Row" Gap="1" Grow="1" Shrink="1" MinWidth="TuiLength.Cells(0)">
+                    @if (AgentLabel is { } label)
+                    {
+                        <TuiText Value="@label" Fg="@Highlight.Hex" />
+                        @if (!ShellMode && TerminalWidth >= 28)
+                        {
+                            <Box Direction="TuiFlexDirection.Row" Gap="1" Grow="1" Shrink="1" MinWidth="TuiLength.Cells(0)">
+                                <TuiText Value="·" Fg="@Theme.Subdued.Hex" />
+                                <TuiText Value="@Model" Fg="@TextColor.Hex" FlexShrink="1" MinWidth="TuiLength.Cells(0)" WrapMode="NativeTextWrapMode.None" Truncate="true" />
+                                @if (TerminalWidth >= 50) { <TuiText Value="@Provider" Fg="@Theme.Subdued.Hex" FlexShrink="0" /> }
+                                @if (Variant is not null && TerminalWidth >= 70)
+                                {
+                                    <TuiText Value="·" Fg="@Theme.Subdued.Hex" />
+                                    <TuiText Value="@Variant" Fg="@Theme.Color("text.feedback.warning.default").Hex" Bold="true" />
+                                }
+                            </Box>
+                        }
+                    }
+                    else { <Box Height="1" /> }
+                </Box>
+                @if (Right is not null) { <Box Direction="TuiFlexDirection.Row" Gap="1" AlignItems="TuiAlign.Center">@Right</Box> }
+            </Box>
+        </Box>
+    </Box>
+    <Box Height="1" BorderSides="TuiBorderSides.Left" BorderFg="@Highlight.Hex"
+         CustomBorderChars="@(TuiBorderCharacters.Empty with { Vertical = Surface.Alpha != 0 ? '╹' : ' ' })">
+        <Box Height="1" BorderSides="TuiBorderSides.Bottom" BorderFg="@Surface.Hex"
+             CustomBorderChars="@(TuiBorderCharacters.Empty with { Horizontal = Surface.Alpha != 0 ? '▀' : ' ' })" />
+    </Box>
+    <Box WidthValue="TuiLength.Percent(100)" Direction="TuiFlexDirection.Row" JustifyContent="TuiJustify.SpaceBetween" Gap="2">
+        <Box Grow="1" Shrink="1" MinWidth="TuiLength.Cells(0)">
+            @if (Running) { <TuiText Value="@("[⋯] " + InterruptShortcut + " interrupt")" Fg="@Theme.Subdued.Hex" WrapMode="NativeTextWrapMode.None" Truncate="true" /> }
+            else { <TuiText Value="@Directory" Fg="@Theme.Subdued.Hex" FlexGrow="1" FlexShrink="1" WrapMode="NativeTextWrapMode.None" Truncate="true" /> }
+        </Box>
+        @if (ShellMode)
+        {
+            <TuiText Runs="@(Hint("esc", TerminalWidth < 44 ? "shell" : "exit shell mode"))" FlexShrink="0" />
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(ActivityLabel) || !string.IsNullOrEmpty(StatusLabel))
+            {
+                <Box Direction="TuiFlexDirection.Row" Shrink="1" MinWidth="TuiLength.Cells(0)">
+                    @if (!string.IsNullOrEmpty(ActivityLabel)) { <TuiText Value="@ActivityLabel" Fg="@Theme.Subdued.Hex" FlexShrink="0" WrapMode="NativeTextWrapMode.None" OnClick="OnOpenActivities" /> }
+                    @if (!string.IsNullOrEmpty(StatusLabel)) { <TuiText Value="@((string.IsNullOrEmpty(ActivityLabel) ? "" : " · ") + StatusLabel)" Fg="@Theme.Subdued.Hex" FlexShrink="1" WrapMode="NativeTextWrapMode.None" Truncate="true" /> }
+                </Box>
+            }
+            else if (TerminalWidth >= 44) { <TuiText Runs="@(Hint(AgentShortcut, "agents"))" FlexShrink="0" /> }
+            @if (TerminalWidth >= 44) { <TuiText Runs="@(Hint(CommandShortcut, "commands"))" FlexShrink="0" /> }
+        }
+    </Box>
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public Guid EditorKey { get; set; }
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public TimeProvider Clock { get; set; } = TimeProvider.System;
+    [Parameter] public bool Home { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Muted { get; set; }
+    [Parameter] public bool SuspendFocus { get; set; }
+    [Parameter] public bool ShellMode { get; set; }
+    [Parameter] public bool Running { get; set; }
+    [Parameter] public string? Agent { get; set; }
+    [Parameter] public string? AgentColor { get; set; }
+    [Parameter] public string? Model { get; set; }
+    [Parameter] public string? Provider { get; set; }
+    [Parameter] public string? Variant { get; set; }
+    [Parameter] public string Directory { get; set; } = "";
+    [Parameter] public string AgentShortcut { get; set; } = "";
+    [Parameter] public string CommandShortcut { get; set; } = "";
+    [Parameter] public string InterruptShortcut { get; set; } = "";
+    [Parameter] public string? ActivityLabel { get; set; }
+    [Parameter] public string? StatusLabel { get; set; }
+    [Parameter] public int TerminalWidth { get; set; }
+    [Parameter] public int TerminalHeight { get; set; }
+    [Parameter] public RenderFragment? Right { get; set; }
+    [Parameter] public Action<Guid, TextareaState>? OnReady { get; set; }
+    [Parameter] public Action<Guid, TextareaState, TextareaChangeEventArgs>? OnChanged { get; set; }
+    [Parameter] public Action<Guid, TextareaState, TextareaSubmitEventArgs>? OnSubmit { get; set; }
+    [Parameter] public Action<Guid, TextareaState>? OnUnmount { get; set; }
+    [Parameter] public EventCallback<TerminalRoutedKeyEventArgs> OnKeyInput { get; set; }
+    [Parameter] public EventCallback<TerminalRoutedPasteEventArgs> OnPasteInput { get; set; }
+    [Parameter] public EventCallback<TerminalFocusEventArgs> OnFocusChange { get; set; }
+    [Parameter] public EventCallback<TerminalSizeEventArgs> OnSizeChanged { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnOpenActivities { get; set; }
+    private TextareaState _state = null!;
+    private bool? _focusAllowed;
+    private static readonly string[] NormalExamples = ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"];
+    private static readonly string[] ShellExamples = ["ls -la", "git status", "pwd"];
+    private int _placeholderIndex;
+    private bool _previousShell;
+    private static readonly TuiBorderCharacters Rail = TuiBorderCharacters.Empty with { Vertical = '┃', BottomLeft = '╹' };
+    private ThemeColor Surface => Theme.Raise(Theme.Color("background.surface.offset"));
+    private ThemeColor TextColor => Muted ? Theme.Subdued : Theme.Text;
+    private ThemeColor Highlight => Muted ? Theme.Border : ShellMode ? Theme.ActionText(ThemeActionVariant.Primary, ThemeActionState.Selected)
+        : AgentColor is null ? Theme.Border : ThemeColor.Parse(AgentColor);
+    private string? AgentLabel => ShellMode ? "Shell" : Agent is null ? null : CultureInfo.CurrentCulture.TextInfo.ToTitleCase(Agent);
+    private string? Placeholder => !Home ? null : ShellMode ? $"Run a command… \"{ShellExamples[_placeholderIndex]}\""
+        : $"Ask anything… \"{NormalExamples[_placeholderIndex]}\"";
+    protected override void OnInitialized() { _state = new(clock: Clock); _placeholderIndex = Random.Shared.Next(3); _previousShell = ShellMode; }
+    protected override void OnParametersSet()
+    {
+        if (_previousShell == ShellMode) return;
+        _previousShell = ShellMode;
+        _placeholderIndex = Random.Shared.Next(3);
+    }
+    private void Ready() { OnReady?.Invoke(EditorKey, _state); UpdateFocus(); }
+    private void Changed(TextareaChangeEventArgs args) { if (args.IsCurrent) OnChanged?.Invoke(EditorKey, _state, args); }
+    private void Submitted(TextareaSubmitEventArgs args) => OnSubmit?.Invoke(EditorKey, _state, args);
+    protected override Task OnAfterRenderAsync(bool firstRender) { UpdateFocus(); return Task.CompletedTask; }
+    private void UpdateFocus()
+    {
+        if (!_state.IsMounted) return;
+        var allowed = !Disabled && !SuspendFocus;
+        if (_focusAllowed == allowed) return;
+        _focusAllowed = allowed;
+        if (allowed) _state.Focus();
+        else _state.Blur();
+    }
+    private ImmutableArray<NativeTextRun> Hint(string shortcut, string label) => [new(shortcut + " ", Theme.Text.Native), new(label, Theme.Subdued.Native)];
+    public void Dispose() => OnUnmount?.Invoke(EditorKey, _state); // Textarea alone owns State disposal.
+}

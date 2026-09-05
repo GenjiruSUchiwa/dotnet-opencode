@@ -232,8 +232,7 @@ public static class InteractiveTui
                 [nameof(OpenCodeApp.Clipboard)] = host.Clipboard,
                 [nameof(OpenCodeApp.ReadPromptClipboard)] = (Func<ClipboardReadRequest, CancellationToken, Task<ClipboardReadResult>>)host.ReadClipboardAsync,
                 [nameof(OpenCodeApp.ApplyRenderColors)] = (Action<TerminalRenderColors>)(colors => host.Colors = colors),
-                [nameof(OpenCodeApp.InlineTextMarksSupported)] = true,
-                [nameof(OpenCodeApp.ReadPromptMarkMetrics)] = (Func<TerminalTextMarkMetrics?>)(() => TerminalTextMarkMetrics.FromInput(host.Renderer.RootNode, "prompt")),
+                [nameof(OpenCodeApp.DispatchPromptPaste)] = (Func<string, bool>)host.Renderer.DispatchPaste,
                 [nameof(OpenCodeApp.FocusComponent)] = (Func<string, bool>)host.Renderer.Focus,
                 [nameof(OpenCodeApp.ReadComposerAnchor)] = (Func<ComposerAnchor?>)(() => FindComposerAnchor(host.Renderer.RootNode)),
                 [nameof(OpenCodeApp.CreateImageLoader)] = (Func<LocationRef, CancellationToken, ImageSourceLoader>)((location, lifetime) =>

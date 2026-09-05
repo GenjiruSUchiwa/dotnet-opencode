@@ -1,11 +1,11 @@
 @namespace OpenCode.Cli.Tui.Layout
 @using OpenCode.Cli.Tui.Transcript
+@using OpenTui.Blazor.Nodes
 
-<Box Direction="TuiFlexDirection.Row" Grow="1">
-    <Box Width="State.ContentWidth(Width, ChildSession)" Grow="1" PaddingBottom="1" PaddingX="@(Width < 44 ? 1 : 2)">
-        @Transcript
-        <Box Direction="TuiFlexDirection.Row" Height="1" Shrink="0">
-            <Box Grow="1" />
+<Box Direction="TuiFlexDirection.Row" Grow="1" MinHeight="TuiLength.Cells(0)">
+    <Box Grow="1" MinWidth="TuiLength.Cells(0)" MinHeight="TuiLength.Cells(0)" PaddingBottom="1" PaddingX="@(Width < 44 ? 1 : 2)">
+        <Box Grow="1" MinHeight="TuiLength.Cells(0)" OnSizeChanged="OnContentSizeChanged">@Transcript</Box>
+        <Box Direction="TuiFlexDirection.Row" Height="1" Shrink="0" JustifyContent="TuiJustify.End">
             @if (AwayFromBottom)
             {
                 <TuiText Value="Jump to latest ↓" Fg="@Theme.Text" Height="1" OnClick="Jump" />
@@ -64,6 +64,7 @@
     [Parameter] public EventCallback<TerminalPointerEventArgs> OnResizeEnd { get; set; }
     [Parameter] public EventCallback OnJumpToLatest { get; set; }
     [Parameter] public EventCallback OnCloseSidebar { get; set; }
+    [Parameter] public EventCallback<TerminalSizeEventArgs> OnContentSizeChanged { get; set; }
     private SessionSidebar? _sidebar;
     private Task Jump(TerminalPointerEventArgs args) { args.Handled = true; return OnJumpToLatest.InvokeAsync(); }
     private Task FocusSession(TerminalPointerEventArgs args) { args.Handled = true; return OnFocusSession.InvokeAsync(); }

@@ -19,7 +19,7 @@ public partial class OpenCodeApp
 
     private bool EnterShellMode(string text)
     {
-        if (ShellMode || PromptBlocked || text != "!" || _cursor != 0 || CommandAutocompleteVisible || ReferenceAutocompleteVisible) return false;
+        if (ShellMode || PromptBlocked || text != "!" || ActivePrompt?.Snapshot.Cursor.Offset != 0 || CommandAutocompleteVisible || ReferenceAutocompleteVisible) return false;
         _shellModes[EditorKey] = true;
         _dirty = true;
         return true;
@@ -28,7 +28,7 @@ public partial class OpenCodeApp
     private bool HandleShellControl(KeymapEvent input)
     {
         if (!_focusedPrompt || !ShellMode || input.Type != KeyEventType.Press) return false;
-        var exit = input.Stroke == new KeyStroke("escape") || _cursor == 0 && input.Stroke == new KeyStroke("backspace")
+        var exit = input.Stroke == new KeyStroke("escape") || ActivePrompt?.Snapshot.Cursor.Offset == 0 && input.Stroke == new KeyStroke("backspace")
             || _input.Length == 0 && input.Stroke == new KeyStroke("c", ctrl: true);
         if (!exit) return false;
         _shellModes[EditorKey] = false;
@@ -56,21 +56,12 @@ public partial class OpenCodeApp
         { _inputError = "The selected model is unavailable for the new Session; the shell draft was kept."; _dirty = true; return true; }
         var tab = _tabs.Selected;
         var origin = EditorKey;
-        var captured = CapturePromptAdmission(_input);
-        var entry = new PromptEditDocument(new(captured.Text, captured.Files, captured.Agents, captured.Skills), captured.Metadata, GetPromptMarks().Snapshot(), ShellMode: true);
+        var entry = CapturePromptDocument() with { ShellMode = true };
         var submission = new SessionShellSubmission(_sessionId, SelectionLocation, _input, _agentSelection, model);
         _historyDocuments[(origin, _history.Count)] = entry;
         _history.Add(_input);
         _historyIndex = _history.Count;
-        _input = _draft = "";
-        _cursor = 0;
-        _selectionAnchor = null;
-        _preferredColumn = null;
-        _highSurrogate = null;
-        ClearPromptAttachments(origin);
-        RememberPromptMetadata(origin, null);
-        _editHistory.Clear();
-        _draftRevision++;
+        ResetPromptDocument();
         _shellModes[origin] = false;
         _shellErrors.Remove(origin);
         _inputError = null;
@@ -99,23 +90,15 @@ public partial class OpenCodeApp
             if (EditorKey == origin)
             {
                 _inputError = error;
-                if (_input.Length == 0)
+                if (EditorEmpty(origin))
                 {
-                    _input = entry.Input.Text;
-                    RestoreEditDocument(entry);
-                    _cursor = _input.Length;
-                    _selectionAnchor = null;
-                    _shellModes[origin] = true;
-                    _draftRevision++;
+                    RestorePromptDocument(origin, entry, moveToEnd: true);
                 }
             }
-            else if (RetainsEditor(origin) && _tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
+            else if (RetainsEditor(origin) && EditorEmpty(origin))
             {
-                _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null, InputError = error };
-                RestorePromptAttachments(origin, entry.Input);
-                RememberPromptMetadata(origin, entry.Metadata);
-                if (entry.Marks is { } marks) _promptMarkStates[origin] = AttachmentTextMarks.Restore(entry.Input, marks);
-                _shellModes[origin] = true;
+                RestorePromptDocument(origin, entry, moveToEnd: true);
+                if (_tabViews.TryGetValue(origin, out var view)) _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null, InputError = error };
             }
         }
         finally { _shellPreparing.Remove(origin); _dirty = true; }

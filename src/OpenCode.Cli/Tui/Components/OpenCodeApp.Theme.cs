@@ -30,8 +30,6 @@ public partial class OpenCodeApp
     private ThemeTokens BaseColors => ThemeView.Base;
     private ThemeTokens ElevatedColors => ThemeView.Elevated;
     private ThemeTokens OverlayColors => ThemeView.Overlay;
-    private string ShellColor => BaseColors.ActionText(ThemeActionVariant.Primary, ThemeActionState.Selected).Hex;
-    private ComposerTheme ComposerColors => ComposerTheme.From(BaseColors, ShellMode ? ShellColor : ActiveAgent is null ? null : AgentColor);
     private WordmarkTheme WordmarkColors => WordmarkTheme.From(BaseColors);
 
     private string AgentColor

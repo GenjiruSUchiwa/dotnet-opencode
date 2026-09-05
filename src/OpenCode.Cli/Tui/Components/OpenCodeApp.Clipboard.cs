@@ -90,21 +90,18 @@ public partial class OpenCodeApp
     private void InsertClipboardParts(IReadOnlyList<(string Text, PromptInputFileAttachment? File)> parts)
     {
         parts = parts.Select(part => (TerminalTextEditing.NormalizePaste(part.Text), part.File)).ToArray();
-        var start = HasSelection ? Math.Min(_cursor, _selectionAnchor!.Value) : _cursor;
-        var length = HasSelection ? Math.Abs(_cursor - _selectionAnchor!.Value) : 0;
+        var range = PromptInsertionRange();
+        var start = range.Start;
+        var length = range.Length;
         var text = string.Concat(parts.Select(part => part.Text + " "));
-        var offset = AttachmentEdits.Offset(_input, start, MeasureMentionElement);
-        var files = new List<PromptInputFileAttachment>();
-        foreach (var part in parts)
-        {
-            var end = offset + AttachmentEdits.Offset(part.Text, part.Text.Length, MeasureMentionElement);
-            if (part.File is { } file) files.Add(file with { Mention = new(offset, end, part.Text) });
-            offset = end + MeasureMentionElement(" ");
-        }
         // The entire list is one edit: rejected entries never leave a partial paste.
         if (!ReplacePromptRange(start, length, text)) return;
-        var input = CapturePromptInput(_input);
-        RestorePromptAttachments(EditorKey, input with { Files = (input.Files ?? []).Concat(files).ToArray() });
+        var offset = start;
+        foreach (var part in parts)
+        {
+            if (part.File is { } file) AddPromptMark(offset, part.Text, new(AttachmentKind.File, 0, part.Text, File: file));
+            offset += part.Text.Length + 1; // UTF-16 endpoints; the native editor converts to display coordinates.
+        }
         _dismissedReferenceText = _input;
         _dismissedCommandInput = _input;
         _dirty = true;

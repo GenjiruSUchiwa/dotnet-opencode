@@ -193,18 +193,14 @@ public partial class OpenCodeApp
             {
                 // Source restoreEntry uses emptiness, not a draft revision. Apply it only to the
                 // origin editor; a failed background request must never touch the selected draft.
-                if (OriginVisible(origin) && _input.Length == 0)
+                if (OriginVisible(origin) && EditorEmpty(origin.Key))
                 {
-                    _editHistory.Record(CurrentEdit);
-                    _input = prompt; _cursor = prompt.Length; _selectionAnchor = null;
-                    _highSurrogate = null; _preferredColumn = null; _draftRevision++;
-                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document?.Marks, document?.ShellMode == true);
+                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document);
                 }
-                else if (!OriginVisible(origin) && RetainsEditor(origin.Key) && _tabViews.TryGetValue(origin.Key, out var view) && view.Input.Length == 0)
+                else if (!OriginVisible(origin) && RetainsEditor(origin.Key) && EditorEmpty(origin.Key))
                 {
-                    view.EditHistory.Record(new(view.Input, view.Cursor, view.SelectionAnchor));
-                    _tabViews[origin.Key] = view with { Input = prompt, Cursor = prompt.Length, SelectionAnchor = null, InputError = origin.Error };
-                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document?.Marks, document?.ShellMode == true);
+                    RestoreCompletePrompt(origin.Key, input with { Id = origin.Input ?? input.Id }, selection, document);
+                    if (_tabViews.TryGetValue(origin.Key, out var view)) _tabViews[origin.Key] = view with { Input = prompt, Cursor = prompt.Length, SelectionAnchor = null, InputError = origin.Error };
                 }
             }
             _originRequests.Remove(origin.RequestId);
@@ -213,25 +209,23 @@ public partial class OpenCodeApp
         }
     }
 
-    private void RestoreCompletePrompt(Guid origin, SessionPromptInput input, PromptSelection? selection, AttachmentMarksSnapshot? marks, bool shellMode)
+    private void RestoreCompletePrompt(Guid origin, SessionPromptInput input, PromptSelection? selection, PromptEditDocument? document)
     {
         _retryPromptInputs[origin] = input;
-        _shellModes[origin] = shellMode;
-        RestorePromptAttachments(origin, new PromptInput(input.Text, input.Files, input.Agents, input.Skills));
-        RememberPromptMetadata(origin, input.Metadata);
+        RestorePromptDocument(origin, (document ?? new(new(input.Text, input.Files, input.Agents, input.Skills), input.Metadata))
+            with { Metadata = input.Metadata }, moveToEnd: true);
         if (selection is not null) _retryPromptSelections[origin] = selection;
-        if (marks is not null) _promptMarkStates[origin] = AttachmentTextMarks.Restore(new(input.Text, input.Files, input.Agents, input.Skills), marks);
     }
 
     private void TrimPromptDocuments(IReadOnlySet<Guid> retained)
     {
-        foreach (var key in _retryPromptInputs.Keys.Concat(_promptMetadata.Keys).Concat(_promptParts.Keys).Concat(_promptMarkStates.Keys).Concat(_shellModes.Keys)
+        foreach (var key in _retryPromptInputs.Keys.Concat(_promptMetadata.Keys).Concat(_promptParts.Keys).Concat(_editorDocuments.Keys).Concat(_shellModes.Keys)
             .Concat(_commandErrors.Keys).Concat(_shellErrors.Keys).Concat(_historyDrafts.Keys).Concat(_retryPromptSelections.Keys).Distinct().Where(key => !retained.Contains(key)).ToArray())
         {
             _retryPromptInputs.Remove(key);
             _promptMetadata.Remove(key);
-            ClearPromptAttachments(key);
-            _promptMarkStates.Remove(key);
+            _promptParts.Remove(key);
+            _editorDocuments.Remove(key);
             _retryPromptSelections.Remove(key);
             _shellModes.Remove(key); _shellErrors.Remove(key); _commandErrors.Remove(key); _historyDrafts.Remove(key);
         }

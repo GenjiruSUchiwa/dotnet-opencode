@@ -38,8 +38,8 @@ public partial class OpenCodeApp
     private void CacheSkills(SkillCatalogSnapshot catalog) { _skillCatalog = catalog; _skillPresentation = _presentation; _dirty = true; }
     private Task SelectSkill(SkillSelection selection)
     {
-        AttachSkill(selection, "@" + selection.Skill.Id.Value, HasSelection ? Math.Min(_cursor, _selectionAnchor!.Value) : _cursor,
-            HasSelection ? Math.Abs(_cursor - _selectionAnchor!.Value) : 0);
+        var range = PromptInsertionRange();
+        AttachSkill(selection, "@" + selection.Skill.Id.Value, range.Start, range.Length);
         return Task.CompletedTask;
     }
 
@@ -48,12 +48,8 @@ public partial class OpenCodeApp
         if (selection.Location != SelectionLocation)
             throw new InvalidOperationException("The skill belongs to a different location.");
         if ((CapturePromptInput(_input).Skills ?? []).Any(skill => skill.Id == selection.Skill.Id)) return;
-        var offset = AttachmentEdits.Offset(_input, start, MeasureMentionElement);
-        var end = offset + AttachmentEdits.Offset(label, label.Length, MeasureMentionElement);
         if (!ReplacePromptRange(start, length, label + " ")) throw new InvalidOperationException(_inputError ?? "Could not insert the skill mention.");
-        var input = CapturePromptInput(_input);
-        RestorePromptAttachments(EditorKey, input with
-        { Skills = (input.Skills ?? []).Append(selection.ToAttachment(new(offset, end, label))).ToArray() });
+        AddPromptMark(start, label, new(AttachmentKind.Skill, 0, label, Skill: selection.ToAttachment()));
         _dismissedReferenceText = _input;
         _dismissedCommandInput = _input;
         _dirty = true;

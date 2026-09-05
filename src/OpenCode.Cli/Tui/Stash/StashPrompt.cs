@@ -5,6 +5,8 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using OpenCode.Cli.Tui.Attachments;
 using OpenCode.Schema;
+using OpenTui.Blazor;
+using System.Collections.Immutable;
 
 public sealed record StashPastedText(
     [property: JsonPropertyName("text"), JsonRequired] string Text,
@@ -29,13 +31,17 @@ public sealed class StashPrompt
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(pasted);
+        document = PromptDocumentAdapter.Prepare(document);
         var prompt = JsonSerializer.SerializeToNode(document.Input, OpenCodeJsonContext.Default.PromptInput)!.AsObject();
         prompt["pasted"] = JsonSerializer.SerializeToNode(pasted.ToArray(), StashJsonContext.Default.StashPastedTextArray);
         prompt["mode"] = document.ShellMode ? "shell" : "normal";
         // parsePromptInfo preserves extra fields. Keep native metadata/virtual marks in one
         // explicit extension without changing the source text/files/agents/skills/pasted shape.
         if (document.Metadata is not null || document.Marks is not null)
-            prompt["$dotnet"] = JsonSerializer.SerializeToNode(new StashNativeEditor(1, document.Metadata, document.Marks), StashJsonContext.Default.StashNativeEditor);
+            prompt["$dotnet"] = JsonSerializer.SerializeToNode(new StashNativeEditor(2, document.Metadata, document.Marks,
+                document.Editor is { } editor ? new StashEditorDocument(editor.CursorUtf16, editor.AnchorUtf16, editor.Selection,
+                    editor.MarkPositions?.ToArray(), editor.MarkData.ToDictionary(pair => pair.Key, pair => (PromptAttachmentData)pair.Value!), document.Unmarked.ToArray()) : null),
+                StashJsonContext.Default.StashNativeEditor);
         return new(JsonSerializer.SerializeToElement(prompt, StashJsonContext.Default.JsonObject));
     }
 
@@ -54,8 +60,20 @@ public sealed class StashPrompt
         if (pasted.Any(item => item is null || item.Text is null || item.Source is null)) throw new JsonException("Invalid pasted prompt descriptor.");
         var native = _value.TryGetProperty("$dotnet", out var extension)
             ? extension.Deserialize(StashJsonContext.Default.StashNativeEditor) ?? throw new JsonException("Invalid native prompt metadata.") : null;
-        if (native is not null && native.Version != 1) throw new NotSupportedException("This native prompt metadata version is unsupported.");
-        return new(new PromptEditDocument(input, native?.Metadata, native?.Marks, mode == "shell"), Array.AsReadOnly(pasted), _value.Clone());
+        if (native is not null && native.Version is not (1 or 2)) throw new NotSupportedException("This native prompt metadata version is unsupported.");
+        if (native is { Version: 2, Editor: null }) throw new JsonException("Native prompt document is missing.");
+        var document = new PromptEditDocument(input, native?.Metadata, native?.Marks, mode == "shell");
+        if (native?.Editor is { } editor)
+            document = document with
+            {
+                Editor = new TextareaDocument(input.Text, editor.CursorUtf16, editor.AnchorUtf16, native.Marks?.Marks)
+                {
+                    Selection = editor.Selection, MarkPositions = editor.MarkPositions?.ToImmutableArray(),
+                    MarkData = editor.MarkData.ToImmutableDictionary(pair => pair.Key, pair => (object?)pair.Value)
+                },
+                Unmarked = editor.Unmarked.ToImmutableArray()
+            };
+        return new(PromptDocumentAdapter.Prepare(document), Array.AsReadOnly(pasted), _value.Clone());
     }
 }
 
@@ -71,7 +89,9 @@ public sealed record PromptStashAccess(bool Allowed, MessageId? AdmissionId, str
     }
 }
 
-internal sealed record StashNativeEditor(int Version, IReadOnlyDictionary<string, JsonElement>? Metadata = null, AttachmentMarksSnapshot? Marks = null);
+internal sealed record StashNativeEditor(int Version, IReadOnlyDictionary<string, JsonElement>? Metadata = null, AttachmentMarksSnapshot? Marks = null, StashEditorDocument? Editor = null);
+internal sealed record StashEditorDocument(int CursorUtf16, int? AnchorUtf16, TextareaSelectionRange? Selection,
+    TextareaMarkPosition[]? MarkPositions, IReadOnlyDictionary<int, PromptAttachmentData> MarkData, PromptAttachmentData[] Unmarked);
 internal sealed record StashDiskEntry([property: JsonPropertyName("prompt")] JsonElement Prompt, [property: JsonPropertyName("timestamp")] double Timestamp);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,

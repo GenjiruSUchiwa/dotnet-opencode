@@ -169,9 +169,7 @@ public partial class OpenCodeApp
             if (!_keyLayers.ReachableCommands(context).Any(command => command.Name == id))
             { _inputError = $"Command '/{slash.Name}' is unavailable."; _dirty = true; return true; }
             // Clear this origin synchronously before a local command can navigate to another tab.
-            if (!ReplacePromptRange(0, _input.Length, "")) return true;
-            ClearPromptAttachments(EditorKey);
-            RememberPromptMetadata(EditorKey, null);
+            ResetPromptDocument();
             if (_keyDispatcher?.DispatchCommand(id, _keyLayers, context).Handled != true)
             { _inputError = $"Command '/{slash.Name}' could not run."; _dirty = true; }
             return true;
@@ -233,21 +231,13 @@ public partial class OpenCodeApp
         var tab = _tabs.Selected;
         var editor = EditorKey;
         _commandErrors.Remove(editor);
-        var entry = new PromptEditDocument(CapturePromptInput(_input), _promptMetadata.GetValueOrDefault(editor), GetPromptMarks().Snapshot(), ShellMode);
+        var entry = CapturePromptDocument();
         RememberPromptHistory(CapturePromptAdmission(_input));
         var submission = new CommandSubmission(_sessionId, SelectionLocation,
             slash.Name, entry.Input with { Text = slash.Arguments }, _agentSelection, model, delivery);
         _history.Add(entry.Input.Text);
         _historyIndex = _history.Count;
-        _input = _draft = "";
-        _cursor = 0;
-        _selectionAnchor = null;
-        _preferredColumn = null;
-        _editHistory.Clear();
-        ClearPromptAttachments(editor);
-        RememberPromptMetadata(editor, null);
-        _highSurrogate = null;
-        _draftRevision++;
+        ResetPromptDocument();
         _commandQuery = null;
         _commandAdmissions.Add(editor);
         _keyTasks.Add(AdmitSlashCommand(tab, editor, entry, submission));
@@ -273,22 +263,14 @@ public partial class OpenCodeApp
             _commandErrors[origin] = error;
             var visible = EditorKey == origin && (_sessionId == target || submission.Session is null && _sessionId is null);
             if (visible) _inputError = error;
-            if (visible && _input.Length == 0)
+            if (visible && EditorEmpty(origin))
             {
-                _input = entry.Input.Text;
-                _cursor = _input.Length;
-                _selectionAnchor = null;
-                RestoreEditDocument(entry);
-                _shellModes[origin] = entry.ShellMode;
-                _draftRevision++;
+                RestorePromptDocument(origin, entry, moveToEnd: true);
             }
-            else if (!visible && RetainsEditor(origin) && _tabViews.TryGetValue(origin, out var view) && view.Input.Length == 0)
+            else if (!visible && RetainsEditor(origin) && EditorEmpty(origin))
             {
-                _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null, InputError = error };
-                RestorePromptAttachments(origin, entry.Input);
-                RememberPromptMetadata(origin, entry.Metadata);
-                if (entry.Marks is { } marks) _promptMarkStates[origin] = AttachmentTextMarks.Restore(entry.Input, marks);
-                _shellModes[origin] = entry.ShellMode;
+                RestorePromptDocument(origin, entry, moveToEnd: true);
+                if (_tabViews.TryGetValue(origin, out var view)) _tabViews[origin] = view with { Input = entry.Input.Text, Cursor = entry.Input.Text.Length, SelectionAnchor = null, InputError = error };
             }
         }
         finally { _commandAdmissions.Remove(origin); _dirty = true; }

@@ -198,3 +198,153 @@ and opaque prompt surfaces, exact border cells, and selection reversal/word move
 First compare structural node/property maps; visual/runtime acceptance requires
 separate explicit authorization. No broad feature parity or engine usability claim
 is made by this report. **Wait for the engine handoff before application edits.**
+
+---
+
+## 7. Application implementation after engine handoff
+
+This section supersedes the read-only/application-wait status above. The delivered
+contracts were read in full: `native-textarea-contract.md` and the E2/E5/E6/E7
+continuations in `tui-engine-contract.md` (engine checkpoints 120ac14, f551426,
+5f02b1a). This implementation changes CLI/TUI source only. No generic engine,
+Native, Core, Server, Client, Schema, Protocol, project file, build asset, or
+grammar/theme bytes were changed.
+
+### Shared production tree
+
+`Components/Prompt.razor` is now the common Home and normal-Session Prompt. Its
+P0–P4 structure is the source structure, not the old merged rail/surface:
+
+- P0: full-width anchor box; actual size notifications supply compatibility consumers.
+- P1: full-width left rail with source SplitBorder characters and bottomLeft `╹`.
+- P2: separate full-width, growing/non-shrinking surface using
+  `raise(background.surface.offset)`, source horizontal/top padding, one Textarea,
+  and the metadata row with paddingTop=1. Model text uses minWidth=0, shrink,
+  wrap=None and native truncation, not fixed-height clipping.
+- P3: a one-row left-border box containing a one-row bottom-border box. Custom
+  Vertical is `╹` and Horizontal is `▀`, or spaces for transparent surfaces. These
+  are actual native borders with no explicit page/grey corner background and no
+  `Width-1` string construction.
+- P4: source-shaped status/location and hint row, including agents/commands and the
+  narrow shell hint. Inline hint colors use immutable native text runs because
+  the delivered generic text surface deliberately has Value/Runs, not inline spans.
+
+Home uses percentage width plus maxWidth=75, alignItems=Center, min-height-zero
+flex spacers, the source compressible offsets, and one outer paddingTop row.
+The disabled/form branch keeps this same Textarea and document rather than a
+TuiText substitute. The normal Session host uses growing/min-height-zero native
+Yoga containers. Its width is no longer preallocated with ContentWidth arithmetic.
+The Home footer is content-sized and uses real MCP data and version visibility.
+The agreed dotnet badge is retained; logo text is nonselectable as in source.
+
+### One editor owner and explicit Blazor adaptation
+
+- Each Prompt instance constructs one `TextareaState`. Only the mounted generic
+  Textarea disposes it. A new route/mount restores a captured document into a new
+  state; a rerender does not SetText, SetDocument, or echo Value.
+- OnReady binds the actual state and restores once. OnCursorChange/OnContentChange
+  consume immutable event documents and project the application prompt state only.
+  Duplicate notifications for one native revision are coalesced. A restore guard
+  prevents replacement notifications from being interpreted against the previous
+  document's metadata. A failed initial restore keeps the cached document and
+  reports an error instead of overwriting it with a successful empty prompt.
+- The existing CLI keymap owns configured command policy. Its callbacks map command
+  IDs to `TextareaState.Execute`; the state binding table is cleared on Ready so
+  an editor command cannot run again through a second default binding. Native
+  default committed-text insertion remains active. Ctrl+Shift aliases remain in
+  the configured default resolver. Other legacy Input controls remain independent.
+- Native EditBuffer owns movement, word boundaries, selection, deletion and undo/
+  redo. There is no root pointer-selection handler, word algorithm, native-width
+  estimate, or second text undo stack for the Prompt. Prompt history is still an
+  application history of complete submitted drafts, not an editor undo stack.
+- Submit captures the native document before clearing and entering the existing
+  typed admission flow. Queue/steer, immutable model/agent capture, origin identity,
+  unconfirmed IDs and the single Session observer are retained. Failed admission
+  restores only the appropriate empty editor, including captured mode and payloads.
+- Terminal paste uses the delivered routed default once. Empty paste prevents the
+  default synchronously before starting the explicit clipboard action. Clipboard
+  text is returned through the real renderer paste route, not reinsertion by an
+  app text loop. File/image/skill insertion uses native UTF-16 operations and then
+  CreateMark. Replacement uses the document's explicit native selection extent,
+  not a guessed anchor/caret range for word or line selections.
+- Focus requests occur on Ready or allowed/blocked transitions, not every render.
+  Dialogs, disabled forms and terminal focus blur the editor through the real state.
+  Input and submit timing use committed native notifications; no arbitrary sleeps
+  or second IME insertion path were added.
+
+### Typed document and stash boundary
+
+`PromptDocumentAdapter` carries immutable `PromptAttachmentData` as opaque native
+MarkData. File URI/data, agent and skill descriptors, labels and stable ordering
+are preserved. Native mark IDs, type/style/priority/virtual flags and next-ID state
+remain in the document. Portable UTF-16 mark positions and selection extent/anchor
+are retained across capture/remount. Mentionless parts and native metadata stay in
+an immutable application document, outside text mutation; they are not fabricated
+as visible labels or discarded when marks change.
+
+The adapter copies collections and JSON metadata. It is a typed conversion layer,
+not an editing/history implementation. The old AttachmentTextMarks class is reduced
+to a legacy display-coordinate snapshot importer; it no longer edits or paints.
+Unknown/malformed payloads are rejected instead of downgraded to text-only input.
+
+Draft capture, route restoration, history, fork/message restoration, command/shell
+failure recovery, and stash now carry the full native document. Native undo history
+is per mounted editor; it is not serialized or recreated as an application stack.
+Stash version 2 persists known typed payloads, portable positions and selection;
+version 1 remains an explicit legacy import. Stash consumes an entry only after a
+ready native editor has accepted SetDocument. Persistence failure remains separate
+from memory acceptance. No prompt/session wire format changed.
+
+### Changed files / removed paths
+
+New: `Tui/Components/Prompt.razor`, `Tui/Attachments/PromptDocumentAdapter.cs`.
+
+Reworked: `OpenCodeApp.Editing.cs`, `.Keybindings.cs`, `.Layout.cs`, `.razor[.cs]`,
+`.Tabs.cs`, `.Commands.cs`, `.Shell.cs`, `.Streaming.cs`, `.MessageActions.cs`,
+`.Attachments.cs`, `.Clipboard.cs`, `.Skills.cs`, `.Stash.cs`, `.Theme.cs`;
+`Keymap/TuiEditorKeymap.cs`; `Attachments/PromptEditDocument.cs` and
+`AttachmentTextMarks.cs`; `Stash/StashPrompt.cs`; `Layout/SessionFrame.razor`;
+`InteractiveTui.cs`, `Theme/ThemeComponentColors.cs`, and `Components/Wordmark.razor`.
+
+Removed: the duplicated `Components/Composer.razor` and
+`Layout/SessionComposer.razor`, `Components/OpenCodeApp.TextMarks.cs`, and
+`Attachments/AttachmentEdits.cs`. The `<Composer>` element remaining under
+SessionFrame is a named RenderFragment slot, not the deleted component.
+
+The source audit found no remaining CLI prompt calls to old root word-boundary,
+pointer-selection, `TerminalEditHistory`, `InputWidth`/`InputHeight`, ComposerTheme,
+or repeated-half-block decoration paths. Scalar `_input`/cursor fields are read-model
+projections used by admission/completion, never a controlled Value sent back to
+Textarea. The only remaining TerminalTextEditing call in prompt callers normalizes
+explicit clipboard attachment labels; it does not calculate movement or widths.
+
+### Limits and final verification gate
+
+- No runtime, native editor/Yoga, TUI, JS, clipboard, codec/WASM, DI/SDK, database,
+  provider/MCP/PTY or test was executed. No tests were added/edited, no Git actions,
+  publication, live configurations or credentials were read, and no subdelegation
+  occurred. Compile success is not a screenshot or usability result.
+- The fixed-width-method first milestone is wired. A live width-method change is
+  an explicit engine follow-up: State requires a remount but exposes no public
+  width-method-change notification. The app does not poll native handles or replace
+  undo history to hide that limitation. Version-1 legacy display-only mark snapshots
+  also lack portable positions; native validation, not guessed widths, governs import.
+- The source's optional metadata fades/animated spinner, editor-file/VCS footer
+  enrichment, prompt-image preview strip, plugin-supplied footer/right content and
+  full custom cursor-settings producer are not claimed by this milestone. The
+  underlying defaults, meaningful tree constraints, real typed text/attachment
+  workflow and native selection owner are implemented; no fake plugin/health data
+  or graphics fallback was introduced. Full IME/platform cadence and font/terminal
+  behavior remain runtime acceptance work under separate authorization.
+- An integrated intermediate full CLI build passed with 0 warnings/errors. Final
+  completion build/freeze is recorded below after the last source changes.
+
+Artifact directory:
+`C:\tmp\opencode\shared-prompt-8a743ea3-81f5-4417-9d78-122c0e2a0a43`.
+All builds use the pinned local SDK 11.0.100-preview.7.26381.103 and
+`OpenApiGenerateDocuments=false`; restore uses only the approved local source/cache.
+
+**Implementation checkpoint frozen:** final full CLI dependency-graph build
+succeeded with **0 warnings and 0 errors** (1:02.83), and staged the complete Server
+runtime. No source/build changes follow this recorded checkpoint. Runtime and
+visual acceptance remain explicitly unverified.

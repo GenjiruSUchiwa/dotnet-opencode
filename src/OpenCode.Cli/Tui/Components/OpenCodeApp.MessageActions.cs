@@ -5,6 +5,7 @@ using OpenCode.Cli.Tui.MessageActions;
 using OpenCode.Cli.Tui.Transcript;
 using OpenCode.Schema;
 using OpenTui.Blazor;
+using OpenCode.Cli.Tui.Attachments;
 
 public partial class OpenCodeApp
 {
@@ -16,7 +17,6 @@ public partial class OpenCodeApp
     private MessageTarget? _messageTarget;
     private MarkdownPresentation _markdownMode;
     private readonly Dictionary<Guid, PromptInput> _promptParts = [];
-    private bool _copyingPrompt;
 
     private void ConnectMessageActions()
     {
@@ -83,56 +83,21 @@ public partial class OpenCodeApp
 
     private void RestoreProjectedUserPrompt(UserMessage message)
     {
-        _editHistory.Record(CurrentEdit);
-        _promptParts[EditorKey] = new(message.Text,
+        var input = new PromptInput(message.Text,
             message.Files?.Select(file => new PromptInputFileAttachment(file.Source is PromptUriFileSource uri
                 ? uri.Uri : $"data:{file.Mime};base64,{file.Data}", file.Name, file.Description, file.Mention)).ToArray(),
             message.Agents?.ToArray(), message.Skills?.Select(skill => new PromptInputSkillAttachment(skill.Id, skill.Mention)).ToArray());
-        RememberPromptMetadata(EditorKey, message.Metadata);
         foreach (var file in message.Files ?? [])
             _attachmentKinds[file.Source is PromptUriFileSource uri ? uri.Uri : $"data:{file.Mime};base64,{file.Data}"] =
                 file.Mime == "application/x-directory" ? Attachments.AttachmentKind.Directory : Attachments.AttachmentKind.File;
-        _input = message.Text;
-        _cursor = _input.Length;
-        _selectionAnchor = null;
-        _preferredColumn = null;
-        _draftRevision++;
-        _dirty = true;
+        RestorePromptDocument(EditorKey, new(input, message.Metadata), moveToEnd: true);
     }
 
     // Shared with the admission owner: the canonical unprepared prompt is captured
     // before clearing the origin draft, without minting a second message/inbox ID.
     private PromptInput CapturePromptInput(string text) => _promptParts.TryGetValue(EditorKey, out var parts)
         ? parts.Text == text ? parts : parts with { Text = text } : new(text);
-    private void ClearPromptAttachments(Guid tab)
-    {
-        _promptParts.Remove(tab);
-        if (_promptMarkStates.TryGetValue(tab, out var state)) state.Clear();
-    }
-    private void RestorePromptAttachments(Guid tab, PromptInput prompt)
-    {
-        _promptParts[tab] = prompt;
-        if (_promptMarkStates.TryGetValue(tab, out var state)) state.Reconcile(prompt);
-    }
     private bool HasPromptAttachments => _promptParts.TryGetValue(EditorKey, out var parts)
         && ((parts.Files?.Count ?? 0) + (parts.Agents?.Count ?? 0) + (parts.Skills?.Count ?? 0) > 0);
 
-    private async Task CopyPromptSelection()
-    {
-        if (_copyingPrompt || !HasSelection) return;
-        if (Clipboard is null) { _inputError = "Clipboard writing is unavailable."; _dirty = true; return; }
-        _copyingPrompt = true;
-        var text = _input;
-        var cursor = _cursor;
-        var anchor = _selectionAnchor!.Value;
-        var editor = EditorKey;
-        try
-        {
-            await Clipboard.WriteTextAsync(text[Math.Min(cursor, anchor)..Math.Max(cursor, anchor)], _configurationLifetime.Token);
-            if (EditorKey == editor && _input == text && _cursor == cursor && _selectionAnchor == anchor) _selectionAnchor = null;
-        }
-        catch (OperationCanceledException) when (_configurationLifetime.IsCancellationRequested) { }
-        catch (Exception exception) { _inputError = SessionClientAdapter.Describe(exception); }
-        finally { _copyingPrompt = false; _dirty = true; }
-    }
 }

@@ -3,6 +3,7 @@ namespace OpenCode.Cli.Tui.Images;
 using System.Net;
 using System.Text;
 using OpenTui.Native;
+using Transport;
 
 /// <summary>Explicit source boundary. A returned media stream transfers disposal to the loader.</summary>
 public sealed record ImageSourceAccess(
@@ -60,16 +61,15 @@ public sealed class ImageSourceLoader(ImageSourceAccess access) : IDisposable
 
     private static async Task<byte[]> ReadBounded(Stream stream, CancellationToken cancellationToken)
     {
-        using var bytes = new MemoryStream();
-        var buffer = new byte[64 * 1024];
+        using var bytes = new SequenceBuffer();
         while (true)
         {
-            var read = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, NativeImage.MaximumEncodedBytes - bytes.Length + 1)), cancellationToken);
+            // Preserve the one-byte overflow probe and the original stream-read boundary.
+            var size = (int)Math.Min(64 * 1024, NativeImage.MaximumEncodedBytes - bytes.Length + 1);
+            var read = await stream.ReadAsync(bytes.GetMemory(size)[..size], cancellationToken);
             if (read == 0) return bytes.ToArray();
             if (bytes.Length + read > NativeImage.MaximumEncodedBytes) throw new NativeImageException(NativeImageStatus.MemoryLimit);
-#pragma warning disable MA0042 // MemoryStream.Write is the bounded in-memory copy, not blocking I/O; preserve the existing cancellation boundary at ReadAsync.
-            bytes.Write(buffer, 0, read);
-#pragma warning restore MA0042
+            bytes.Commit(read);
         }
     }
 

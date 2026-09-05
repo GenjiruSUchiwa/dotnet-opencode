@@ -5,6 +5,7 @@
     <ProjectReference Include="..\OpenCode.Core\OpenCode.Core.csproj" />
     <ProjectReference Include="..\OpenCode.Schema\OpenCode.Schema.csproj" />
     <ProjectReference Include="..\Runtime.Time\Runtime.Time.csproj" />
+    <ProjectReference Include="..\Transport.Pipelines\Transport.Pipelines.csproj" />
     <Using Include="Runtime.Time" />
     <ProjectReference Include="..\OpenCode.Server\OpenCode.Server.csproj" />
     <ProjectReference Include="..\OpenCode.Client\OpenCode.Client.csproj" />

@@ -40,8 +40,9 @@ third-party HTTP/MCP internals are part of this change.
   records, poll/read handles, and bounded VT grammar scratch state are not stream
   framing. Native resource loading via framework CopyTo and JSON serialization
   into a MemoryStream are complete-object serialization, not incremental framing.
-- CLI image loading is outside the explicitly limited CLI transport-controller
-  ownership; existing codecs/HTTP loaders are not silently reassigned.
+- CLI image loading was initially outside the transport worker's ownership. The
+  final integration pass also migrates its stream collector; image codecs, access
+  authorization, redirect policy and complete data-URI decoding remain unchanged.
 - ReadTool's 2002-character display preview/binary detection is a semantic paging
   algorithm, not a wire record accumulator; its underlying byte ingestion is in
   scope. No grammar/query asset content changes.
@@ -147,7 +148,9 @@ Remaining search hits were inspected and classified:
 | `Core/Tools/ShellProcessSource.cs`, `Core/Shell/ShellRuntime.cs` ReadAtLeastAsync | One bounded random-access spool-file snapshot, deliberately not a tailing stream; no custom accumulator. |
 | `OpenTui.Blazor/UnixTerminalInput.cs` 4096-byte array | Fixed native read scratch space within the original dispatch byte budget; pending bytes are now in the parser's Pipe. |
 | `OpenTui.Blazor/TerminalInput.cs` 4096-character scratch | Bounded grammar/parser state, not a byte transport queue; paste and pending byte storage migrated. |
-| `Cli/Tui/Images/ImageSourceLoader.cs`, `InteractiveTui.cs`, `Cli/Commands/Run/RunFiles.cs` | Outside the explicitly limited CLI transport-controller/API-response ownership. No claim of migrating these separately owned loaders. |
+| `Cli/Tui/Images/ImageSourceLoader.cs` data-URI MemoryStream | Synchronous encoding of an already complete string, not stream framing. Its asynchronous stream collector now uses SequenceBuffer. |
+| `Cli/Tui/InteractiveTui.cs` MemoryStream | Read-only adapter over a complete Client-owned response byte array; no custom streaming accumulator. |
+| `Cli/Commands/Run/RunFiles.cs` fixed byte array | One file snapshot bounded by its captured initial length, not a growing stream collector. Preserve truncation at that length even if the file grows. |
 | Server EventFeedService frame strings and outbox Channels | Complete semantic event serialization and ordering, not bespoke byte buffering. |
 
 No eligible old accumulator remains in the owned inventory. No Schema/ID
@@ -160,3 +163,25 @@ Verification is build/source inspection only: repository `.dotnet` .NET 11
 preview 7, isolated `C:\tmp\opencode\pipelines-migration` artifacts,
 `OpenApiGenerateDocuments=false`. No tests, samples, sockets, parser/provider,
 native/WASM, API/DB, network or application execution. No zero-copy claim.
+
+## Final CLI integration
+
+The final integration review expands the original worker boundary to include
+`Tui/Images/ImageSourceLoader.ReadBounded`. It now acquires stream bytes directly
+into the existing neutral `SequenceBuffer` and returns an owned byte array at EOF.
+The CLI references `Transport.Pipelines` directly, also making its existing API
+and terminal transport usages explicit rather than relying on transitive references.
+
+- Reads retain the 64 KiB maximum request and the one-byte overflow probe.
+- The encoded-image limit and `NativeImageException(MemoryLimit)` are unchanged.
+- Cancellation remains at the same stream-read boundary. Continuations retain
+  their existing caller context; the collector does not take stream ownership.
+- The pipe is disposed on EOF, cancellation and error. Overflow bytes are not
+  committed, decoded, or passed to native code.
+- Complete data-URI conversion and fixed-length file snapshots remain deliberate
+  non-streaming exceptions, not unfinished Pipelines adapters.
+
+The earlier zero-warning build above predates this integration and EF work. The
+September 5 full CLI integration build passed with 0 errors and 1,979 existing
+analyzer warnings, none in CLI. See the modernization completion record for the
+current cleanup status. No image/codec/native execution is part of this review.

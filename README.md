@@ -33,6 +33,8 @@
 - **Meziantou.Analyzer** — compile-time quality checks and a full diagnostic cleanup, coordinated with the persistence migration.
 - Marten, Fisher, and Wolverine are **not part of the selected persistence stack**.
 
+[Modernization status and completion order](docs/modernization-status.md)
+
 ## Same protocol. C# server.
 
 ```mermaid

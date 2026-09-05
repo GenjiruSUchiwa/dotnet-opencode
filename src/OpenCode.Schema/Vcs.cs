@@ -3,15 +3,18 @@ namespace OpenCode.Schema;
 using System.Text.Json.Serialization;
 
 public sealed record VcsBranch(
-    [property: JsonPropertyName("current")] string? Current = null,
-    [property: JsonPropertyName("default")] string? Default = null
+    [property: JsonPropertyName("current"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Current = null,
+    [property: JsonPropertyName("default"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Default = null
 );
 
 public sealed record VcsInfo(
-    [property: JsonPropertyName("branch")] VcsBranch Branch
-);
+    [property: JsonPropertyName("branch"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<VcsBranch>))] VcsBranch Branch
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Branch);
+}
 
-[JsonConverter(typeof(JsonStringEnumConverter<VcsFileChangeStatus>))]
+[JsonConverter(typeof(SourceStringEnumJsonConverter<VcsFileChangeStatus>))]
 public enum VcsFileChangeStatus
 {
     [JsonStringEnumMemberName("added")]
@@ -23,8 +26,11 @@ public enum VcsFileChangeStatus
 }
 
 public sealed record VcsFileStatus(
-    [property: JsonPropertyName("file")] string File,
-    [property: JsonPropertyName("additions")] int Additions,
-    [property: JsonPropertyName("deletions")] int Deletions,
-    [property: JsonPropertyName("status")] VcsFileChangeStatus Status
-);
+    [property: JsonPropertyName("file"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string File,
+    [property: JsonPropertyName("additions"), JsonRequired, JsonConverter(typeof(NonNegativeIntegerJsonConverter<int>))] int Additions,
+    [property: JsonPropertyName("deletions"), JsonRequired, JsonConverter(typeof(NonNegativeIntegerJsonConverter<int>))] int Deletions,
+    [property: JsonPropertyName("status"), JsonRequired] VcsFileChangeStatus Status
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(File);
+}

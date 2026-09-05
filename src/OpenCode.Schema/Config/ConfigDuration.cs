@@ -23,7 +23,7 @@ public abstract partial record ConfigDuration
     }
     public sealed record Infinite(bool Negative) : ConfigDuration;
 
-    [GeneratedRegex(@"\A(-?[0-9]+(?:\.[0-9]+)?)[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+(nanos?|micros?|millis?|seconds?|minutes?|hours?|days?|weeks?)\z", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\A(?<number>-?[0-9]+(?:\.[0-9]+)?)[\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF]+(?<unit>nanos?|micros?|millis?|seconds?|minutes?|hours?|days?|weeks?)\z", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture | RegexOptions.NonBacktracking)]
     private static partial Regex Syntax();
 
     public static ConfigDuration Parse(string input)
@@ -32,8 +32,8 @@ public abstract partial record ConfigDuration
         if (input == "-Infinity") return new Infinite(true);
         var match = Syntax().Match(PromptValidation.Required(input));
         if (!match.Success) throw new JsonException("Invalid duration string.");
-        var text = match.Groups[1].Value;
-        var unit = match.Groups[2].Value;
+        var text = match.Groups["number"].Value;
+        var unit = match.Groups["unit"].Value;
         if (unit is "nano" or "nanos" or "micro" or "micros")
         {
             var scale = unit is "micro" or "micros" ? 1000 : 1;

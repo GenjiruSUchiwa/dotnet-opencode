@@ -42,7 +42,7 @@ public enum PermissionEffect
     Ask
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<PermissionReply>))]
+[JsonConverter(typeof(SourceStringEnumJsonConverter<PermissionReply>))]
 public enum PermissionReply
 {
     [JsonStringEnumMemberName("once")]
@@ -68,18 +68,30 @@ public sealed record PermissionRule(
 }
 
 public sealed record PermissionSource(
-    [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("messageID")] string MessageId,
-    [property: JsonPropertyName("id")] string Id
-);
+    [property: JsonPropertyName("type"), JsonRequired] string Type,
+    [property: JsonPropertyName("messageID"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string MessageId,
+    [property: JsonPropertyName("id"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Id
+) : IJsonOnSerializing, IJsonOnDeserialized
+{
+    private void Validate()
+    {
+        SourceObjectContract.Required(MessageId, Id);
+        if (Type != "tool") throw new JsonException("Permission source type must be tool.");
+    }
+    void IJsonOnSerializing.OnSerializing() => Validate();
+    void IJsonOnDeserialized.OnDeserialized() => Validate();
+}
 
 public sealed record PermissionRequest(
-    [property: JsonPropertyName("id")] PermissionId Id,
-    [property: JsonPropertyName("sessionID")] SessionId SessionId,
-    [property: JsonPropertyName("action")] string Action,
-    [property: JsonPropertyName("resources")] IReadOnlyList<string> Resources,
-    [property: JsonPropertyName("save")] IReadOnlyList<string>? Save = null,
-    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
-    [property: JsonPropertyName("source")] PermissionSource? Source = null,
-    [property: JsonPropertyName("message")] string? Message = null
-);
+    [property: JsonPropertyName("id"), JsonRequired] PermissionId Id,
+    [property: JsonPropertyName("sessionID"), JsonRequired] SessionId SessionId,
+    [property: JsonPropertyName("action"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Action,
+    [property: JsonPropertyName("resources"), JsonRequired, JsonConverter(typeof(PromptAttachmentListJsonConverter<string>))] IReadOnlyList<string> Resources,
+    [property: JsonPropertyName("save"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<string>))] IReadOnlyList<string>? Save = null,
+    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
+    [property: JsonPropertyName("source"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<PermissionSource>))] PermissionSource? Source = null,
+    [property: JsonPropertyName("message"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Message = null
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Action, Resources);
+}

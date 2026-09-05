@@ -38,12 +38,18 @@ public abstract record PluginSource;
 public sealed record PluginSourceBuiltin : PluginSource;
 
 public sealed record PluginSourcePackage(
-    [property: JsonPropertyName("package")] string Package
-) : PluginSource;
+    [property: JsonPropertyName("package"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Package
+) : PluginSource, IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Package);
+}
 
 public sealed record PluginSourceLocal(
-    [property: JsonPropertyName("path")] string Path
-) : PluginSource;
+    [property: JsonPropertyName("path"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Path
+) : PluginSource, IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Path);
+}
 
 public sealed record PluginSourceSdk : PluginSource;
 
@@ -51,9 +57,20 @@ public sealed record PluginSourceSdk : PluginSource;
 /// 1:1 port of Plugin.Info from packages/schema/src/plugin.ts
 /// </summary>
 public sealed record PluginInfo(
-    [property: JsonPropertyName("source")] PluginSource Source,
-    [property: JsonPropertyName("status")] string Status,
-    [property: JsonPropertyName("tui")] bool Tui,
+    [property: JsonPropertyName("source"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<PluginSource>))] PluginSource Source,
+    [property: JsonPropertyName("status"), JsonRequired] string Status,
+    [property: JsonPropertyName("tui"), JsonRequired] bool Tui,
     [property: JsonPropertyName("id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<PluginId>))] PluginId? Id = null,
-    [property: JsonPropertyName("error")] string? Error = null
-);
+    [property: JsonPropertyName("error"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Error = null
+) : IJsonOnSerializing, IJsonOnDeserialized
+{
+    private void Validate()
+    {
+        SourceObjectContract.Required(Source);
+        if (Status is not ("active" or "failed")) throw new JsonException("Plugin status must be active or failed.");
+        if (Status == "active" && Id is null) throw new JsonException("Active plugin requires id.");
+        if (Status == "failed" && Error is null) throw new JsonException("Failed plugin requires error.");
+    }
+    void IJsonOnSerializing.OnSerializing() => Validate();
+    void IJsonOnDeserialized.OnDeserialized() => Validate();
+}

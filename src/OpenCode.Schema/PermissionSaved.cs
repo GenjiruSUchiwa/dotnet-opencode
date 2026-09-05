@@ -35,8 +35,11 @@ public sealed class PermissionSavedIdJsonConverter() : ScalarJsonConverter<Permi
 /// 1:1 port of PermissionSaved.Info from packages/schema/src/permission-saved.ts
 /// </summary>
 public sealed record PermissionSavedInfo(
-    [property: JsonPropertyName("id")] PermissionSavedId Id,
-    [property: JsonPropertyName("projectID")] ProjectId ProjectId,
-    [property: JsonPropertyName("action")] string Action,
-    [property: JsonPropertyName("resource")] string Resource
-);
+    [property: JsonPropertyName("id"), JsonRequired] PermissionSavedId Id,
+    [property: JsonPropertyName("projectID"), JsonRequired] ProjectId ProjectId,
+    [property: JsonPropertyName("action"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Action,
+    [property: JsonPropertyName("resource"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Resource
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Action, Resource);
+}

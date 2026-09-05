@@ -5,45 +5,56 @@ using System.Text.Json.Serialization;
 using OpenCode.Protocol.Errors;
 using OpenCode.Schema;
 
-public sealed record ApiResult<T>([property: JsonPropertyName("data"), JsonRequired] T Data) : IJsonOnDeserialized
+public sealed record ApiResult<T>([property: JsonPropertyName("data"), JsonRequired] T Data) : IJsonOnDeserialized, IJsonOnSerializing
 {
-    void IJsonOnDeserialized.OnDeserialized()
+    private void Validate()
     {
         if (Data is null) throw new JsonException("Response requires non-null data.");
     }
+    void IJsonOnDeserialized.OnDeserialized() => Validate();
+    void IJsonOnSerializing.OnSerializing() => Validate();
 }
 
 public sealed record ApiCursor(
-    [property: JsonPropertyName("previous"), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Previous = null,
-    [property: JsonPropertyName("next"), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Next = null);
+    [property: JsonPropertyName("previous"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Previous = null,
+    [property: JsonPropertyName("next"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Next = null);
 
 public sealed record ApiPage<T>(
     [property: JsonPropertyName("data"), JsonRequired] IReadOnlyList<T> Data,
-    [property: JsonPropertyName("cursor"), JsonRequired] ApiCursor Cursor) : IJsonOnDeserialized
+    [property: JsonPropertyName("cursor"), JsonRequired] ApiCursor Cursor) : IJsonOnDeserialized, IJsonOnSerializing
 {
-    void IJsonOnDeserialized.OnDeserialized()
+    private void Validate()
     {
         if (Data is null || Cursor is null) throw new JsonException("Page requires non-null data and cursor.");
+        if (Data.Any(item => item is null)) throw new JsonException("Page entries must not be null.");
     }
+    void IJsonOnDeserialized.OnDeserialized() => Validate();
+    void IJsonOnSerializing.OnSerializing() => Validate();
 }
 
 public sealed record SessionCreateInput(
-    [property: JsonPropertyName("id")] SessionId? Id = null,
-    [property: JsonPropertyName("title")] string? Title = null,
-    [property: JsonPropertyName("agent")] string? Agent = null,
-    [property: JsonPropertyName("model")] ModelRef? Model = null,
-    [property: JsonPropertyName("location")] LocationRef? Location = null,
-    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null);
+    [property: JsonPropertyName("id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<SessionId>))] SessionId? Id = null,
+    [property: JsonPropertyName("title"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Title = null,
+    [property: JsonPropertyName("agent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Agent = null,
+    [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<ModelRef>))] ModelRef? Model = null,
+    [property: JsonPropertyName("location"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<LocationRef>))] LocationRef? Location = null,
+    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null);
 
 public sealed record SessionPromptInput(
-    [property: JsonPropertyName("text"), JsonRequired] string Text,
-    [property: JsonPropertyName("id")] MessageId? Id = null,
-    [property: JsonPropertyName("files")] IReadOnlyList<PromptInputFileAttachment>? Files = null,
-    [property: JsonPropertyName("agents")] IReadOnlyList<PromptAgentAttachment>? Agents = null,
-    [property: JsonPropertyName("skills")] IReadOnlyList<PromptInputSkillAttachment>? Skills = null,
-    [property: JsonPropertyName("metadata")] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
-    [property: JsonPropertyName("delivery")] InboxDeliveryMode? Delivery = null,
-    [property: JsonPropertyName("resume")] bool? Resume = null);
+    [property: JsonPropertyName("text"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Text,
+    [property: JsonPropertyName("id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<MessageId>))] MessageId? Id = null,
+    [property: JsonPropertyName("files"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<PromptInputFileAttachment>))] IReadOnlyList<PromptInputFileAttachment>? Files = null,
+    [property: JsonPropertyName("agents"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<PromptAgentAttachment>))] IReadOnlyList<PromptAgentAttachment>? Agents = null,
+    [property: JsonPropertyName("skills"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<PromptInputSkillAttachment>))] IReadOnlyList<PromptInputSkillAttachment>? Skills = null,
+    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
+    [property: JsonPropertyName("delivery"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<InboxDeliveryMode>))] InboxDeliveryMode? Delivery = null,
+    [property: JsonPropertyName("resume"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<bool>))] bool? Resume = null) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing()
+    {
+        if (Text is null) throw new JsonException("Prompt requires text.");
+    }
+}
 
 public sealed record InterruptSessionResponse([property: JsonPropertyName("interrupted"), JsonRequired] bool Interrupted);
 
@@ -64,7 +75,13 @@ public sealed record SessionEnvironmentInput(
 }
 
 public sealed record SessionRenameInput(
-    [property: JsonPropertyName("title"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Title);
+    [property: JsonPropertyName("title"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Title) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing()
+    {
+        if (Title is null) throw new JsonException("Rename requires title.");
+    }
+}
 
 public sealed record SessionSwitchAgentInput([property: JsonPropertyName("agent"), JsonRequired] AgentId Agent)
     : IJsonOnSerializing, IJsonOnDeserialized
@@ -78,7 +95,13 @@ public sealed record SessionSwitchAgentInput([property: JsonPropertyName("agent"
 }
 
 public sealed record SessionSwitchModelInput(
-    [property: JsonPropertyName("model"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<ModelRef>))] ModelRef Model);
+    [property: JsonPropertyName("model"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<ModelRef>))] ModelRef Model) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing()
+    {
+        if (Model is null) throw new JsonException("Switch model requires model.");
+    }
+}
 
 public sealed record SessionActive([property: JsonPropertyName("type"), JsonRequired] string Type)
     : IJsonOnSerializing, IJsonOnDeserialized

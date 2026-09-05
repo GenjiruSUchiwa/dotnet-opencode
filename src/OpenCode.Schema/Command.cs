@@ -6,6 +6,9 @@ using System.Text.Json.Serialization;
 /// 1:1 port of Command.Info from packages/schema/src/command.ts
 /// </summary>
 public sealed record CommandInfo(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("description")] string? Description = null
-);
+    [property: JsonPropertyName("name"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Name,
+    [property: JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Description = null
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Name);
+}

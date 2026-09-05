@@ -7,22 +7,24 @@ using OpenCode.Schema;
 
 public sealed record PermissionSavedListResponse(
     [property: JsonPropertyName("data"), JsonRequired] IReadOnlyList<PermissionSavedInfo> Data
-) : IJsonOnDeserialized
+) : IJsonOnDeserialized, IJsonOnSerializing
 {
-    void IJsonOnDeserialized.OnDeserialized()
+    private void Validate()
     {
         if (Data is null || Data.Any(item => item is null)) throw new JsonException("Saved permission response requires a non-null data array.");
     }
+    void IJsonOnDeserialized.OnDeserialized() => Validate();
+    void IJsonOnSerializing.OnSerializing() => Validate();
 }
 
 public sealed record PermissionCreateInput(
     [property: JsonPropertyName("action"), JsonRequired] string Action,
     [property: JsonPropertyName("resources"), JsonRequired, JsonConverter(typeof(PromptAttachmentListJsonConverter<string>))] IReadOnlyList<string> Resources,
-    [property: JsonPropertyName("id"), JsonConverter(typeof(OptionalValueJsonConverter<PermissionId>))] PermissionId? Id = null,
-    [property: JsonPropertyName("save"), JsonConverter(typeof(PromptAttachmentListJsonConverter<string>))] IReadOnlyList<string>? Save = null,
-    [property: JsonPropertyName("metadata"), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
-    [property: JsonPropertyName("source"), JsonConverter(typeof(NonNullPromptJsonConverter<PermissionSource>))] PermissionSource? Source = null,
-    [property: JsonPropertyName("agent"), JsonConverter(typeof(OptionalValueJsonConverter<AgentId>))] AgentId? Agent = null
+    [property: JsonPropertyName("id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<PermissionId>))] PermissionId? Id = null,
+    [property: JsonPropertyName("save"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<string>))] IReadOnlyList<string>? Save = null,
+    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
+    [property: JsonPropertyName("source"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<PermissionSource>))] PermissionSource? Source = null,
+    [property: JsonPropertyName("agent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<AgentId>))] AgentId? Agent = null
 ) : IJsonOnSerializing, IJsonOnDeserialized
 {
     void IJsonOnSerializing.OnSerializing() => Validate();
@@ -39,7 +41,7 @@ public sealed record PermissionCreateInput(
 
 public sealed record PermissionReplyInput(
     [property: JsonPropertyName("reply"), JsonRequired, JsonConverter(typeof(PermissionReplyWireConverter))] PermissionReply Reply,
-    [property: JsonPropertyName("message"), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Message = null);
+    [property: JsonPropertyName("message"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Message = null);
 
 public sealed record PermissionDecisionInfo(
     [property: JsonPropertyName("id"), JsonRequired] PermissionId Id,

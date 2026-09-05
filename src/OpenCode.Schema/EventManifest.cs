@@ -62,14 +62,16 @@ public static class EventManifest
          .. AgentEventDefinitions.Definitions, .. SessionEventDefinitions.ImplementedDefinitions]);
 
     private static IReadOnlyList<EventDefinition> Features { get; } = EventDefinitions.Inventory(
-        [.. ReferenceEventDefinitions.Definitions, .. ProjectEventDefinitions.Definitions,
+        [.. FileSystemEventDefinitions.Definitions, .. ReferenceEventDefinitions.Definitions,
+         .. PermissionEventDefinitions.Definitions, .. PluginEventDefinitions.Definitions, .. ProjectEventDefinitions.Definitions,
          .. WorktreeEventDefinitions.Definitions, .. CommandEventDefinitions.Definitions,
          .. ConfigEventDefinitions.Definitions, .. SkillEventDefinitions.Definitions,
          .. PtyEventDefinitions.Definitions, .. PersistentPtyEventDefinitions.Definitions,
-         .. ShellEventDefinitions.Definitions, .. FormEventDefinitions.Definitions]);
+         .. ShellEventDefinitions.Definitions, .. FormEventDefinitions.Definitions, .. WebSearchEventDefinitions.Definitions]);
 
     public static IReadOnlyList<EventDefinition> ImplementedPublicDefinitions { get; } =
-        EventDefinitions.Inventory([.. Foundation, .. Features, .. InstallationEventDefinitions.Definitions,
+        EventDefinitions.Inventory([.. Foundation, .. Features, .. SessionStatusEventDefinitions.Definitions,
+            .. TuiEventDefinitions.Definitions, .. InstallationEventDefinitions.Definitions,
             .. VcsEventDefinitions.Definitions, McpEventDefinitions.StatusChanged, McpEventDefinitions.ResourcesChanged]);
     public static IReadOnlyDictionary<string, EventDefinition> ImplementedPublicLatest { get; } =
         EventDefinitions.Latest(ImplementedPublicDefinitions);
@@ -77,7 +79,8 @@ public static class EventManifest
     // Preserve the source's broader Definitions membership and relative inventory order.
     public static IReadOnlyList<EventDefinition> ImplementedDefinitions { get; } =
         EventDefinitions.Inventory([.. Foundation, .. InstallationEventDefinitions.Definitions, .. Features,
-            .. McpEventDefinitions.Definitions, .. SessionCompactionEventDefinitions.Definitions,
+            .. TuiEventDefinitions.Definitions, .. McpEventDefinitions.Definitions,
+            .. SessionStatusEventDefinitions.Definitions, .. SessionCompactionEventDefinitions.Definitions,
             .. VcsEventDefinitions.Definitions, .. ServerEventDefinitions.Definitions]);
     public static IReadOnlyDictionary<string, EventDefinition> ImplementedLatest { get; } =
         EventDefinitions.Latest(ImplementedDefinitions);

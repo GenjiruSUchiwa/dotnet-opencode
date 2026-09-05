@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 /// </summary>
 public sealed record SessionRevert(
     [property: JsonPropertyName("messageID"), JsonRequired] MessageId MessageId,
-    [property: JsonPropertyName("partID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? PartId = null,
+    [property: JsonPropertyName("partID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? PartId = null,
     [property: JsonPropertyName("snapshot"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<SnapshotId>))] SnapshotId? Snapshot = null,
-    [property: JsonPropertyName("files"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<FileDiffInfo>? Files = null
+    [property: JsonPropertyName("files"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(PromptAttachmentListJsonConverter<FileDiffInfo>))] IReadOnlyList<FileDiffInfo>? Files = null
 );

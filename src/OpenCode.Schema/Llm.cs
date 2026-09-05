@@ -2,7 +2,7 @@ namespace OpenCode.Schema;
 
 using System.Text.Json.Serialization;
 
-[JsonConverter(typeof(JsonStringEnumConverter<LlmFinishReason>))]
+[JsonConverter(typeof(SourceStringEnumJsonConverter<LlmFinishReason>))]
 public enum LlmFinishReason
 {
     [JsonStringEnumMemberName("stop")]

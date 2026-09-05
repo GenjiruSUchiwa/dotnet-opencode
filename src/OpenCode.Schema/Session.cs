@@ -24,8 +24,11 @@ public sealed record SessionTime(
 
 public sealed record SessionForkInfo(
     [property: JsonPropertyName("sessionID"), JsonRequired] SessionId SessionId,
-    [property: JsonPropertyName("boundary"), JsonRequired] ForkBoundary Boundary
-);
+    [property: JsonPropertyName("boundary"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<ForkBoundary>))] ForkBoundary Boundary
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Boundary);
+}
 
 /// <summary>
 /// Session wire fields; legacy store convenience fields are not emitted.
@@ -35,20 +38,20 @@ public sealed record SessionInfo(
     [property: JsonPropertyName("projectID"), JsonRequired] ProjectId ProjectId,
     [property: JsonPropertyName("cost"), JsonRequired] Money Cost,
     [property: JsonPropertyName("tokens"), JsonRequired] TokenUsageInfo Tokens,
-    [property: JsonPropertyName("time"), JsonRequired] SessionTime Time,
+    [property: JsonPropertyName("time"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<SessionTime>))] SessionTime Time,
     [property: JsonIgnore] string? Slug = null,
     [property: JsonIgnore] string? Directory = null,
     [property: JsonIgnore] string Version = "2",
-    [property: JsonPropertyName("parentID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionId? ParentId = null,
-    [property: JsonPropertyName("fork"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionForkInfo? Fork = null,
-    [property: JsonPropertyName("agent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Agent = null,
-    [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ModelRef? Model = null,
-    [property: JsonPropertyName("outcome"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionOutcome? Outcome = null,
-    [property: JsonPropertyName("title"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Title = null,
-    [property: JsonPropertyName("location"), JsonRequired] LocationRef Location = default!,
-    [property: JsonPropertyName("subpath"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Subpath = null,
-    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
-    [property: JsonPropertyName("revert"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] SessionRevert? Revert = null
+    [property: JsonPropertyName("parentID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<SessionId>))] SessionId? ParentId = null,
+    [property: JsonPropertyName("fork"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<SessionForkInfo>))] SessionForkInfo? Fork = null,
+    [property: JsonPropertyName("agent"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Agent = null,
+    [property: JsonPropertyName("model"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<ModelRef>))] ModelRef? Model = null,
+    [property: JsonPropertyName("outcome"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<SessionOutcome>))] SessionOutcome? Outcome = null,
+    [property: JsonPropertyName("title"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Title = null,
+    [property: JsonPropertyName("location"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<LocationRef>))] LocationRef Location = default!,
+    [property: JsonPropertyName("subpath"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Subpath = null,
+    [property: JsonPropertyName("metadata"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<IReadOnlyDictionary<string, JsonElement>>))] IReadOnlyDictionary<string, JsonElement>? Metadata = null,
+    [property: JsonPropertyName("revert"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<SessionRevert>))] SessionRevert? Revert = null
 ) : IJsonOnSerializing, IJsonOnDeserialized
 {
     void IJsonOnSerializing.OnSerializing() => Validate();

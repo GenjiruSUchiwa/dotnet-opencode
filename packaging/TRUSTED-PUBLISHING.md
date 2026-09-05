@@ -47,3 +47,11 @@ To update, use `dotnet tool update --global dotnet-opencode --prerelease`.
 To pin a snapshot, replace `--prerelease` with `--version <published-version>`.
 
 The .NET tool shim is named `dotnet-opencode`; the .NET CLI resolves that prefix when invoked as `dotnet opencode`. The local checkout name and existing `dotnet`-channel data filenames do not need to change.
+
+## First successful publication
+
+- [Workflow run 33938379734](https://github.com/Hona/dotnet-opencode/actions/runs/33938379734) completed successfully on September 5, 2026.
+- Package version: `0.1.0-ci.20260905021128.33938379734.1`, source commit `6e28d830d2d4b23f248348bc234b8140bfd682c2`.
+- The clean GitHub runner installed the exact pinned SDK, built/packed the tool, and passed static package inspection.
+- `NuGet/login` authenticated with GitHub OIDC. NuGet.org accepted the package upload, and the workflow created the [matching GitHub prerelease](https://github.com/Hona/dotnet-opencode/releases/tag/v0.1.0-ci.20260905021128.33938379734.1).
+- NuGet indexing can lag a successful upload. Publication does not establish tool installation, application startup, database or native-runtime compatibility; none of those were executed for verification.

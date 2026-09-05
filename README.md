@@ -62,9 +62,10 @@ flowchart LR
 ## Install as a .NET tool
 
 - The tool command is `dotnet-opencode`; the .NET CLI also exposes it as **`dotnet opencode`**.
-- Tool packaging is in progress. This project has not published a NuGet release yet; see [packaging notes](packaging/README.md).
+- Development prereleases are published to [NuGet.org](https://www.nuget.org/packages/dotnet-opencode). See [packaging notes](packaging/README.md) for payload and platform limits.
+- Install the exact **.NET 11 Preview 7 SDK** `11.0.100-preview.7.26381.103` first. The tool requires its matching .NET and ASP.NET Core shared frameworks; runtime roll-forward is disabled. The bundled OpenTUI binary supports **Windows x64**.
 - Default-branch releases use UTC-timestamped prerelease versions and GitHub OIDC **NuGet Trusted Publishing**, without a stored long-lived API key. [Publishing setup](packaging/TRUSTED-PUBLISHING.md)
-- After publication, the intended global installation interface is:
+- With that SDK on `PATH`:
 
 ```powershell
 dotnet tool install --global dotnet-opencode --prerelease

@@ -3,10 +3,12 @@
 Independent .NET 11 port of OpenCode V2. Installed command: **`dotnet opencode`**.
 
 This is a **development prerelease tool**, default local version `0.0.0-local`.
-The parent owns the private `Hona/dotnet-opencode` repository and release workflow.
-No NuGet release was published or tool installed during packaging verification.
+The private `Hona/dotnet-opencode` repository publishes public NuGet prereleases.
+No tool was installed or executed during packaging verification.
 CI supplies a timestamped version, for example `0.1.0-ci.20260905120000.12345.1`,
-and publishes separately using NuGet trusted publishing/OIDC, not a stored API key.
+and publishes using NuGet trusted publishing/OIDC, not a stored API key.
+The first release workflow successfully authenticated, uploaded the package, and
+created a GitHub prerelease. See [publishing evidence](TRUSTED-PUBLISHING.md#first-successful-publication).
 
 Requires the repository-pinned **.NET 11 Preview 7 SDK/runtime**
 (`11.0.100-preview.7.26381.103`) and its matching **Microsoft.AspNetCore.App**
@@ -57,7 +59,7 @@ identical to the requested version. The CI timestamp prerelease format is accept
 package identity, runtime framework requirements, both dependency closures, build
 identity and every runtime-asset hash without extracting or loading application code.
 Neither script installs, invokes, signs into NuGet, pushes a package, or deletes
-user/build state. Workflow authentication and publication are parent-owned.
+user/build state. The GitHub workflow owns authentication and publication.
 
 The normal release path uses source-vendored OpenTUI bytes/component notices and
 grammar assets. It does not look in a user's Bun cache or ambient native DLL path.

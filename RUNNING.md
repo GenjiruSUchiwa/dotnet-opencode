@@ -9,7 +9,7 @@ assembly/project names and the dotnet data channel are intentionally unchanged.
 Install the exact SDK from global.json in the checkout's `.dotnet` directory,
 or explicitly select its installation through `OPENCODE_DOTNET_SDK_ROOT`:
 `11.0.100-preview.7.26381.103`. Packaging never falls back to PATH. CI uses that
-explicit SDK-root override after the parent workflow's pinned setup-dotnet step.
+explicit SDK-root override after the workflow's pinned setup-dotnet step.
 The framework-dependent tool requires **Microsoft.NETCore.App** and
 **Microsoft.AspNetCore.App 11.0.0-preview.7.26381.103**. The SDK includes these;
 a .NET runtime-only installation without ASP.NET Core is not sufficient. The CLI
@@ -30,15 +30,15 @@ does not depend on run.ps1's development-time Server copy or a user's Bun cache.
 The script disables OpenAPI app execution, then validates the nupkg statically.
 
 The default project PackageVersion is `0.0.0-local`; `-Version` overrides it without
-changing native service/assembly identities. The parent-owned CI workflow provides
+changing native service/assembly identities. The CI workflow provides
 timestamped versions such as `0.1.0-ci.20260905120000.12345.1` and handles trusted
 publishing/OIDC separately. pack.ps1 does not log in, publish, push, install, or run
 anything except the pinned SDK build/pack and static archive inspection.
 
 ## Optional installation from that feed
 
-The following are **user installation instructions, not verification performed by
-the packaging worker**. Use the pinned host, and retain its runtime location for
+The following are **user installation instructions, not executed verification**.
+Use the pinned host, and retain its runtime location for
 tool shims and managed Server child launches:
 
 ```powershell
@@ -62,9 +62,10 @@ dotnet opencode stats --all
 dotnet opencode tui --standalone
 ```
 
-The private repository is Hona/dotnet-opencode. No public NuGet availability is
-asserted by these local instructions; publication is performed only by the
-authorized parent-owned workflow. No tool installation or invocation was used to
+The private repository is Hona/dotnet-opencode; its default-branch workflow publishes
+public development prereleases to NuGet.org using trusted publishing. For published
+versions, omit `--add-source $feed` and use `--prerelease` instead of
+`--version 0.0.0-local`. No tool installation or invocation was used to
 validate the package. See [packaging/README.md](packaging/README.md) for archive
 layout, inspection and remaining license/runtime limitations.
 

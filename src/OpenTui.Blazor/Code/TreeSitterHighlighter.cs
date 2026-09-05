@@ -69,13 +69,14 @@ public sealed class TreeSitterHighlighter : ICodeHighlighter, IAsyncDisposable
                 var groups = new Dictionary<string, List<TreeSitterQuery.Capture>>(StringComparer.Ordinal);
                 foreach (var capture in parser.Injections.Captures(tree, content, cancellation))
                 {
+                    cancellation.ThrowIfCancellationRequested();
                     if (!capture.Name.Contains("injection", StringComparison.Ordinal)) continue;
                     var type = capture.Node.Type(_host, tree, parser.Language);
                     var registration = _snapshot.Registrations.GetValueOrDefault(language);
                     var target = registration is null
                         ? (type is "inline" or "pipe_table_cell" ? "markdown_inline" : null)
                         : registration.InjectionNodeTypes?.GetValueOrDefault(type);
-                    if (target is null && type == "code_fence_content")
+                    if (string.IsNullOrEmpty(target) && type == "code_fence_content")
                     {
                         var parent = capture.Node.Parent(_host, tree);
                         var info = parent.Id == 0 ? default : parent.ChildOfType(_host, tree, parser.Language, "info_string");
@@ -84,12 +85,18 @@ public sealed class TreeSitterHighlighter : ICodeHighlighter, IAsyncDisposable
                         {
                             node.Write(_host);
                             target = content[node.Start.._host.Call("ts_node_end_index_wasm", tree)];
-                            target = registration?.InjectionInfoStrings?.GetValueOrDefault(target) ?? target;
+                            var mapped = registration?.InjectionInfoStrings?.GetValueOrDefault(target);
+                            if (!string.IsNullOrEmpty(mapped)) target = mapped;
+                            if (registration is null) target = target switch
+                            {
+                                "js" => "javascript", "jsx" => "javascriptreact",
+                                "ts" => "typescript", "tsx" => "typescriptreact", "md" => "markdown", _ => target,
+                            };
                         }
                     }
                     // This matches OpenTUI's node-type/info-string injection routing, not
                     // a generic Neovim directive interpreter or recursive injection engine.
-                    if (target is null) continue;
+                    if (string.IsNullOrEmpty(target)) continue;
                     if (!groups.TryGetValue(target, out var group)) groups.Add(target, group = []);
                     group.Add(capture);
                 }
@@ -102,19 +109,32 @@ public sealed class TreeSitterHighlighter : ICodeHighlighter, IAsyncDisposable
                         warnings.Add($"No registered parser for injection language '{group.Key}'.");
                         continue;
                     }
-                    var injected = await GetParser(target, cancellation).ConfigureAwait(false);
+                    Parser injected;
+                    try { injected = await GetParser(target, cancellation).ConfigureAwait(false); }
+                    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+                    catch (Exception exception)
+                    {
+                        warnings.Add($"Injection parser '{group.Key}' could not load: {exception.Message}");
+                        continue;
+                    }
                     foreach (var capture in group.Value)
                     {
-                        var text = content[capture.Node.Start..capture.End];
-                        var injectedTree = Parse(injected, text, cancellation);
+                        cancellation.ThrowIfCancellationRequested();
+                        var injectedTree = 0;
                         try
                         {
-                            cancellation.ThrowIfCancellationRequested();
+                            // The worker registers the container before parsing,
+                            // including when that particular injection later fails.
                             ranges.Add((capture.Node.Start, capture.End, group.Key));
+                            var text = content[capture.Node.Start..capture.End];
+                            injectedTree = Parse(injected, text, cancellation);
+                            cancellation.ThrowIfCancellationRequested();
                             captures.AddRange(injected.Highlights.Captures(injectedTree, text, cancellation)
-                                .Select(item => Convert(item, capture.Node.Start)));
+                                .Select(item => Convert(item, capture.Node.Start, injected: true)));
                         }
-                        finally { _host.Call("ts_tree_delete", injectedTree); }
+                        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { throw; }
+                        catch (Exception exception) { warnings.Add($"Injection '{group.Key}' could not be highlighted: {exception.Message}"); }
+                        finally { if (injectedTree != 0) _host.Call("ts_tree_delete", injectedTree); }
                     }
                 }
             }
@@ -132,16 +152,18 @@ public sealed class TreeSitterHighlighter : ICodeHighlighter, IAsyncDisposable
                 return capture;
             }).OrderBy(capture => capture.Start).ToArray();
             cancellation.ThrowIfCancellationRequested();
-            return new(true, result, warnings.Count == 0 ? null : string.Join(" ", warnings.Distinct()));
+            return new(true, result, warnings.Count == 0 ? null : string.Join(" ", warnings.Distinct())) { IsPartial = warnings.Count != 0 };
         }
         finally { _host.Call("ts_tree_delete", tree); }
     }
 
-    private static CodeCapture Convert(TreeSitterQuery.Capture capture, int offset) => new(
+    private static CodeCapture Convert(TreeSitterQuery.Capture capture, int offset, bool injected = false) => new(
         checked(capture.Node.Start + offset), checked(capture.End + offset), capture.Name,
-        new(HasConceal: capture.Pattern.Properties.ContainsKey("conceal"),
+        new(HasConceal: capture.Pattern.Properties.TryGetValue("conceal", out var conceal) && (!injected || conceal is not null),
             Conceal: capture.Pattern.Properties.GetValueOrDefault("conceal"),
-            ConcealLines: capture.Pattern.Properties.ContainsKey("conceal_lines")));
+            // Offset captures carry _injectedQuery but not setProperties in the
+            // source. Its nullish fallback drops null injected property values.
+            ConcealLines: capture.Pattern.Properties.TryGetValue("conceal_lines", out var lines) && (!injected || lines is not null)));
 
     private int Parse(Parser parser, string content, CancellationToken cancellation)
     {

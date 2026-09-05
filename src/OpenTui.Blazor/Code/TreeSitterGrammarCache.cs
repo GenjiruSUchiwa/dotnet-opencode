@@ -111,7 +111,18 @@ public sealed class TreeSitterGrammarCache : IAsyncDisposable
         // Body reads remain caller-cancelled under ResponseHeadersRead semantics.
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(100), _clock);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, timeout.Token);
-        return await _http.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
+        try { return await _http.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException error)
+        {
+            // HttpClient sees our linked token as its caller. Restore the actual
+            // caller token, and retain its timeout-vs-cancellation exception shape.
+            if (cancellation.IsCancellationRequested)
+                throw new TaskCanceledException(error.Message, error, cancellation);
+            if (timeout.IsCancellationRequested && !cancellation.IsCancellationRequested)
+                throw new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.",
+                    new TimeoutException(error.Message, error), error.CancellationToken);
+            throw;
+        }
     }
 
     private static async Task<byte[]> ReadLocal(string path, int limit, CancellationToken cancellation)

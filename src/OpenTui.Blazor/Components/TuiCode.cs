@@ -24,6 +24,8 @@ public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
     private SharedTreeSitter.Lease? _defaultHighlighter;
     internal CodeDocument Document => _state.Visible ? _state.Document : CodeDocument.Plain("");
     public bool HasParser => _state.HasParser;
+    public bool Highlighting => _state.Highlighting;
+    public bool IsPartial => _state.IsPartial;
     public string? Diagnostic => _state.Diagnostic;
     public Task HighlightingDone => _state.HighlightingDone;
 

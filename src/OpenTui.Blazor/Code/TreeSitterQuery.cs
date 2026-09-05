@@ -6,7 +6,9 @@ using System.Text.RegularExpressions;
 internal sealed class TreeSitterQuery : IDisposable
 {
     internal sealed record Step(bool Capture, string Value);
-    internal sealed record Pattern(IReadOnlyList<Step[]> Predicates, IReadOnlyDictionary<string, string?> Properties);
+    internal sealed record Pattern(IReadOnlyList<Step[]> Predicates, IReadOnlyDictionary<string, string?> Properties,
+        IReadOnlyDictionary<string, string?> AssertedProperties, IReadOnlyDictionary<string, string?> RefutedProperties,
+        IReadOnlyList<Step[]> Directives);
     internal sealed record Capture(string Name, WasmNode Node, int End, Pattern Pattern);
     private readonly TreeSitterWasm _host;
     private readonly int _query;
@@ -31,6 +33,9 @@ internal sealed class TreeSitterQuery : IDisposable
                 var count = host.Memory.ReadInt32(host.Transfer);
                 var predicates = new List<Step[]>();
                 var properties = new Dictionary<string, string?>();
+                var asserted = new Dictionary<string, string?>();
+                var refuted = new Dictionary<string, string?>();
+                var directives = new List<Step[]>();
                 var steps = new List<Step>();
                 for (var offset = 0; offset < count; offset++)
                 {
@@ -43,15 +48,17 @@ internal sealed class TreeSitterQuery : IDisposable
                     }
                     if (steps.Count == 0) continue;
                     if (steps[0].Capture) throw new InvalidDataException("Query predicate operator must be a literal.");
-                    if (steps[0].Value == "set!")
+                    Validate(steps);
+                    if (steps[0].Value is "set!" or "is?" or "is-not?")
                     {
-                        if (steps.Count is < 2 or > 3 || steps.Any(step => step.Capture)) throw new InvalidDataException("Invalid #set! query directive.");
-                        properties[steps[1].Value] = steps.Count == 3 ? steps[2].Value : null;
+                        var target = steps[0].Value == "set!" ? properties : steps[0].Value == "is?" ? asserted : refuted;
+                        target[steps[1].Value] = steps.Count == 3 ? steps[2].Value : null;
                     }
-                    else predicates.Add(steps.ToArray());
+                    else if (IsTextPredicate(steps[0].Value)) predicates.Add(steps.ToArray());
+                    else directives.Add(steps.ToArray());
                     steps.Clear();
                 }
-                return new Pattern(predicates, properties);
+                return new Pattern(predicates, properties, asserted, refuted, directives);
             }).ToArray();
         }
         catch { host.Call("ts_query_delete", _query); throw; }
@@ -62,6 +69,34 @@ internal sealed class TreeSitterQuery : IDisposable
         var address = _host.Call(nameFunction, _query, index, _host.Transfer);
         return _host.Memory.ReadString(address, _host.Memory.ReadInt32(_host.Transfer));
     }).ToArray();
+
+    private static bool IsTextPredicate(string op) => op is "eq?" or "not-eq?" or "any-eq?" or "any-not-eq?"
+        or "match?" or "not-match?" or "any-match?" or "any-not-match?" or "any-of?" or "not-any-of?";
+
+    private void Validate(IReadOnlyList<Step> steps)
+    {
+        var op = steps[0].Value;
+        if (op is "set!" or "is?" or "is-not?")
+        {
+            if (steps.Count is < 2 or > 3 || steps.Any(step => step.Capture))
+                throw new InvalidDataException($"#{op} requires one or two literal arguments.");
+            return;
+        }
+        if (!IsTextPredicate(op)) return;
+        var membership = op is "any-of?" or "not-any-of?";
+        if (steps.Count < 2 || !steps[1].Capture || (!membership && steps.Count != 3))
+            throw new InvalidDataException($"Invalid #{op} predicate arguments.");
+        if (membership)
+        {
+            if (steps.Skip(2).Any(step => step.Capture)) throw new InvalidDataException($"#{op} requires literal membership values.");
+            return;
+        }
+        if (op is not ("match?" or "not-match?" or "any-match?" or "any-not-match?")) return;
+        if (steps[2].Capture) throw new InvalidDataException($"#{op} requires a literal regular expression.");
+        // The source compiles regexes while constructing queries, even for
+        // patterns that never match a node in the current document.
+        if (!_regex.ContainsKey(steps[2].Value)) _regex.Add(steps[2].Value, TreeSitterPredicateRegex.Compile(steps[2].Value));
+    }
 
     internal IReadOnlyList<Capture> Captures(int tree, string content, CancellationToken cancellation)
     {
@@ -126,11 +161,7 @@ internal sealed class TreeSitterQuery : IDisposable
         {
             if (steps[2].Capture) throw new InvalidDataException("#match? requires a literal pattern.");
             if (values.Length == 0) return !isPositive;
-            if (!_regex.TryGetValue(steps[2].Value, out var regex))
-            {
-                regex = new Regex(steps[2].Value, RegexOptions.ECMAScript | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
-                _regex.Add(steps[2].Value, regex);
-            }
+            var regex = _regex[steps[2].Value];
             return all ? values.All(value => regex.IsMatch(value) == isPositive) : values.Any(value => regex.IsMatch(value) == isPositive);
         }
         var compared = steps[2].Capture

@@ -7,7 +7,11 @@ public sealed record CodeCapture(int Start, int End, string Scope, CodeCaptureMe
 public sealed record CodeCaptureMetadata(bool IsInjection = false, string? InjectionLanguage = null,
     bool ContainsInjection = false, bool HasConceal = false, string? Conceal = null, bool ConcealLines = false);
 public sealed record CodeHighlightRequest(string Content, string Filetype, long Revision);
-public sealed record CodeHighlightResult(bool HasParser, IReadOnlyList<CodeCapture> Captures, string? Warning = null);
+public sealed record CodeHighlightResult(bool HasParser, IReadOnlyList<CodeCapture> Captures, string? Warning = null)
+{
+    /// <summary>The base parser succeeded, but one or more requested injections could not be highlighted.</summary>
+    public bool IsPartial { get; init; }
+}
 
 /// <summary>Caller-supplied real parser. The renderer has no built-in heuristic lexer or JS runtime.</summary>
 public interface ICodeHighlighter

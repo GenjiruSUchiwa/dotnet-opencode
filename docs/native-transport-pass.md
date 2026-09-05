@@ -133,3 +133,157 @@ Command (repository SDK 11.0.100-preview.7.26381.103):
 Elapsed: 1:07.59. Build output was inspected for diagnostics in OpenTui.Blazor,
 OpenTui.Native, Transport.Pipelines and Runtime.Time; none were reported.
 No tests were added, edited, or run. No further source changes after this build.
+
+## Pass 2 — managed query semantics, injections, scheduling, and HTTP cancellation
+
+This pass resumes after the parent committed the first pass and its application
+clock caller. Those changes are preserved. All implementation changes are in
+OpenTui.Blazor C#; no application/package/asset/native ABI changes are included.
+
+### Source evidence
+
+- Installed `web-tree-sitter@0.25.10/tree-sitter.js`, lines 1235–1408:
+  equality, matching, membership, property and custom-directive construction.
+  Validation and regex construction happen during Query construction, not on
+  the first matching node. Empty captures differ deliberately between equality,
+  matching and membership. `not-any-of?` negates all-membership, not each member.
+- Installed OpenTUI 0.5.9 `parser.worker.js`, lines 4025–4115: injection grouping,
+  mapping precedence, node info strings, per-language load failure and per-node
+  parse/query failure handling, container registration before parsing, and offset
+  captures. Lines 4244–4292: nullish property fallback, first containing/contained
+  range metadata, and stable start-index sorting.
+- Installed `chunk-bun-jxfx3h5k.js`, lines 3211–3225, 3359–3380 and 3383–3488:
+  content visibility during streaming, initial-content bookkeeping, no-capture
+  plain-text behavior, stale snapshots, and separate loop/highlighting flags.
+- dotnet/runtime v10.0.0 `System.Net.Http/HttpClient.cs`, HandleFailure,
+  lines 577–614: caller-token attribution and timeout represented by
+  TaskCanceledException with an inner TimeoutException. This source inspection
+  did not make an HTTP request through the application or execute a parser.
+
+### Implemented predicate/directive behavior
+
+Query construction now eagerly validates arity and operand types for all source
+text predicates: eq?, not-eq?, any-eq?, any-not-eq?, match?, not-match?,
+any-match?, any-not-match?, any-of?, and not-any-of?. It compiles match patterns
+even when the current document has no matching nodes. Invalid predicates can no
+longer be hidden by an empty capture set or short-circuited previous predicate.
+
+Set, asserted, and refuted properties are validated and stored separately.
+Unrecognized directives retain their operator/operand arrays separately from
+text predicates. The worker does not apply asserted/refuted properties as local
+scope filters, nor execute custom directives such as lua-match?, offset!,
+set-lang-from-info-string!, or arbitrary Neovim predicates. This implementation
+does not invent such behavior. Source equality/membership quantifiers and their
+empty-capture behavior remain in the evaluator.
+
+### Explicit flagless-JavaScript regex subset
+
+`TreeSitterPredicateRegex` translates actual query regexes; it is not a token
+lexer or JS engine. Supported forms include literals, ordinary/noncapturing
+groups, alternation, standard quantifiers, ordinary character ranges, escaped
+punctuation, fixed x/u hexadecimal escapes, common control escapes, and positive
+digit/word/whitespace classes. Outside classes, complemented digit/word/space
+classes are also supported.
+
+Concrete differences corrected:
+
+- Flagless JavaScript `$` requires end of input; .NET's default `$` also matches
+  before a final LF. It is translated to strict `\z`.
+- JavaScript dot excludes CR, LF, U+2028 and U+2029; the translated class excludes
+  all four rather than only LF.
+- `\s`/`\S` use the ECMAScript whitespace and line-terminator set, including
+  NBSP/BOM and Unicode spaces. `\w` and `\d` use explicit ASCII sets.
+- `\xHH` consumes exactly two digits, rather than accepting .NET's longer
+  hexadecimal escape. Matching remains UTF-16, like source RegExp without u/v.
+
+Lookaround, named groups, backreferences/octal escapes, word-boundary assertions,
+inline flags, non-fixed Unicode escapes, nested/empty character classes,
+complement shorthands inside classes, shorthand range endpoints, and other
+unimplemented escape forms fail with an explicit unsupported-construct diagnostic.
+They are not silently evaluated with approximate semantics. These are deliberate
+limitations versus universal JS RegExp. The unchanged one-second .NET regex
+execution cap is still framework-internal and not TimeProvider-injectable.
+No pattern or sample was executed to verify these translations.
+
+### Injection results and lifetime
+
+The managed highlighter now matches the worker's recovery boundaries: failure to
+load one injected language or parse/query one injected node does not erase valid
+base/sibling captures. Caller cancellation is rethrown, not turned into partial
+success. Each created injection tree is freed in finally, including query errors.
+Container ranges are recorded before parsing, as in the source. Built-in info
+aliases retain source metadata (`js` → javascript; `jsx` → javascriptreact;
+`ts` → typescript; `tsx` → typescriptreact; `md` → markdown). Empty mapping values
+follow source truthiness/fallback rules.
+
+Injected null-valued conceal properties now follow the worker's nullish fallback:
+offset captures carry the query reference but not the original setProperties,
+so null injected properties disappear while explicit empty-string properties
+remain. Base-capture null properties retain the source's different behavior.
+
+Partial output is **explicit**, not a full-success claim:
+`CodeHighlightResult.IsPartial`, `CodeHighlightState.IsPartial`, and
+`TuiCode.IsPartial` expose incomplete injection coverage with Warning/Diagnostic.
+HasParser means the base parser loaded; it does not assert every injection worked.
+The new init property preserves the existing three-argument constructor and
+deconstruction shape. No parent caller change is required to forward results.
+Parent UI may surface IsPartial/Diagnostic if desired; no parent markup was edited.
+
+### Streaming/scheduling corrections
+
+Initial streaming content is marked when parsing actually starts, not merely
+when an update is queued. Subsequent streaming updates with DrawUnstyledText=true
+publish the new plain content while work is pending; false retains the preceding
+rendered document. The loop-active flag is separate from the public Highlighting
+flag, so completion notifications observe highlighting=false unless a rerun is
+pending. Cancellation/stale-revision checks remain serialized through the same
+owned component lifecycle. Empty capture results without BaseHighlight now render
+plain text as the source does, rather than applying a synthetic default style.
+
+The component still does not expose source onHighlight/onChunks/initialStyledText
+hooks. Recursive injection-query execution, automatic inheritance of Neovim query
+files, and locals processing are not added; the inspected worker does not do
+those in this path. No missing grammar/license file was created or substituted.
+
+### HTTP deadline exception semantics
+
+The prior TimeProvider deadline made HttpClient see our linked token as its caller.
+It consequently returned linked-token cancellation without the original timeout
+classification. GetHeadersAsync now attributes observable caller cancellation to
+the actual caller token and wraps deadline expiry as TaskCanceledException with
+an inner TimeoutException, preserving the framework distinction. Unrelated
+cancellation is propagated unchanged. Caller cancellation takes priority when
+observed; the timeout branch checks it again as the framework does. Exact localized
+framework message text is not a compatibility promise.
+
+The parent's clock argument remains effective. Deadline scope remains 100 seconds
+per headers request, including each redirect; body reads remain caller-cancelled.
+Offline mode still performs no network work. No transport/package/ABI change was
+needed, and no application HTTP calls were used for verification.
+
+### Pass 2 build checkpoint
+
+Final build and freeze recorded after the last source change below. Verification
+remains source/dependency inspection and the pinned repository SDK build only.
+
+**Pass 2 FROZEN.** Final assigned-library dependency rebuild succeeded with
+**0 warnings and 0 errors**, covering OpenTui.Blazor, OpenTui.Native,
+Transport.Pipelines, and Runtime.Time (4.55 seconds).
+
+```powershell
+.\.dotnet\dotnet.exe build src\OpenTui.Blazor\OpenTui.Blazor.csproj -t:Rebuild `
+  --artifacts-path C:\tmp\opencode\native-pass2-87036c36-5883-4f04-9c23-453d15029b3d `
+  -p:OpenApiGenerateDocuments=false -v minimal
+```
+
+Full CLI build was also attempted after the last source edits. It is blocked by
+outside-ownership CS0101/CS8863 in `OpenCode.Schema/SessionEvent.cs:58` (duplicate
+`SessionIdleEventData`). An earlier full CLI pass succeeded with three external
+Schema warnings, but it predates the final scheduling changes and is not claimed
+as validation of the final full CLI state. Parent must resolve the duplicate and
+repeat that build; no Schema source was edited here.
+
+Logs: `C:\tmp\opencode\native-pass2-build-final.log` and
+`C:\tmp\opencode\native-pass2-libraries-final.log`. No further C# source changes
+after the successful owned-library rebuild. No tests, parser samples, WASM,
+native, HTTP transport, or application execution occurred.

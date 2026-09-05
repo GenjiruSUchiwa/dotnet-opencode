@@ -6,7 +6,7 @@ using OpenTui.Blazor.Nodes;
 using OpenTui.Native;
 using OpenTui.Blazor.TextMarks;
 
-public sealed class TuiLayoutEngine
+public sealed partial class TuiLayoutEngine
 {
     public TerminalRenderColors Colors { get; set; } = TerminalRenderColors.Default;
     public TerminalImageContext ImageContext { get; set; } = new(null, 0, 0);
@@ -65,25 +65,7 @@ public sealed class TuiLayoutEngine
         var method = OpenTuiNative.GetBufferWidthMethod(buffer);
         if (method != _widthMethod) _widths.Clear();
         _widthMethod = method;
-        Layout(root, 0, 0, width, height);
-        _modals.Clear();
-        FindModals(root);
-        var ordered = _modals.OrderBy(modal => modal.ZIndex).ToArray();
-        _modals.Clear();
-        _modals.AddRange(ordered);
-        foreach (var modal in _modals)
-        {
-            modal.X = modal.Y = 0;
-            modal.LayoutWidth = width;
-            modal.LayoutHeight = height;
-            foreach (var panel in modal.FlowChildren)
-            {
-                var panelWidth = Math.Clamp(panel.Width ?? 60, 0, Math.Max(0, width - 2));
-                var desiredHeight = NaturalHeight(panel, Math.Max(1, panelWidth));
-                var top = modal.Center ? Math.Max(0, (height - desiredHeight) / 2) : height / 4;
-                Layout(panel, Math.Max(0, (width - panelWidth) / 2), top, panelWidth, Math.Min(desiredHeight, Math.Max(0, height - top - 1)));
-            }
-        }
+        LayoutWithYoga(root, width, height);
     }
 
     private static bool FocusedTerminal(TuiNode node) => node.Focused && node.EmbeddedTerminal is not null || node.LayoutChildren.Any(FocusedTerminal);
@@ -92,157 +74,6 @@ public sealed class TuiLayoutEngine
     {
         if (node.TagName == "modal") _modals.Add(node);
             foreach (var child in node.LayoutChildren) FindModals(child);
-    }
-
-    private int NaturalWidth(TuiNode node) => node.Width ?? (node.TagName is "text" or "#text"
-        ? IntrinsicTextWidth(node)
-        : node.TagName == "input" ? node.Content.Split('\n').Select(CellWidth).DefaultIfEmpty(0).Max()
-        : Cells((node.Direction == TuiFlexDirection.Row
-            ? node.FlowChildren.Sum(child => (long)NaturalWidth(child)) + (long)Math.Max(0, node.FlowChildren.Count - 1) * node.Gap
-            : node.FlowChildren.Select(child => (long)NaturalWidth(child)).DefaultIfEmpty(0).Max())
-          + node.PaddingLeft + node.PaddingRight + node.BorderLeft + node.BorderRight));
-
-    private int NaturalHeight(TuiNode node, int width)
-    {
-        if (node.Height is int height) return Math.Max(0, height);
-        if (node.TagName == "input") return Math.Min(node.MaxHeight, InputLayout(node, Math.Max(1, width)).Lines.Count);
-        if (node.TagName is "text" or "#text") return Math.Min(node.TextMaxHeight ?? int.MaxValue,
-            Math.Max(1, checked((int)TextView(node).Measure(Math.Max(1, width)).LineCount)));
-        var inset = node.BorderTop + node.BorderBottom;
-        var inner = Math.Max(1, Cells((long)width - node.PaddingLeft - node.PaddingRight - node.BorderLeft - node.BorderRight));
-        var content = node.Direction == TuiFlexDirection.Column
-            ? node.FlowChildren.Sum(child => child.Grow > 0 ? 0L : NaturalHeight(child, Math.Min(child.Width ?? inner, inner))) + (long)Math.Max(0, node.FlowChildren.Count - 1) * node.Gap
-            : AllocateAxis(node, inner, inner, true).Select((childWidth, index) => (long)NaturalHeight(node.FlowChildren[index], childWidth)).DefaultIfEmpty(0).Max();
-        return Cells((long)node.PaddingTop + node.PaddingBottom + inset + content);
-    }
-
-    private int[] AllocateAxis(TuiNode node, int available, int contentWidth, bool row)
-    {
-        if (row && SharedColumnWidths(node, available) is { } tracks) return tracks;
-        var sizes = node.FlowChildren.Select(child => child.Grow > 0 ? 0
-            : row ? NaturalWidth(child) : NaturalHeight(child, Math.Min(child.Width ?? contentWidth, contentWidth))).ToArray();
-        var requested = sizes.Sum(size => (long)size) + (long)Math.Max(0, sizes.Length - 1) * node.Gap;
-        var remaining = Math.Max(0L, available - requested);
-        var deficit = Math.Max(0L, requested - available);
-        var shrinkWeight = sizes.Select((size, index) => (decimal)size * node.FlowChildren[index].Shrink).Sum();
-        var weight = node.FlowChildren.Sum(child => (long)child.Grow);
-        long position = 0;
-        for (var i = 0; i < sizes.Length; i++)
-        {
-            var child = node.FlowChildren[i];
-            var size = child.Grow > 0 && weight > 0 ? remaining * child.Grow / weight : sizes[i];
-            if (child.Shrink > 0 && child.Grow == 0 && shrinkWeight > 0)
-            {
-                var share = (decimal)size * child.Shrink;
-                var reduction = (long)Math.Min(size, Math.Ceiling(deficit * (share / shrinkWeight)));
-                shrinkWeight -= share;
-                deficit -= reduction;
-                size -= reduction;
-            }
-            if (child.Grow > 0) { remaining -= size; weight -= child.Grow; }
-            sizes[i] = Cells(Math.Clamp(size, 0, Math.Max(0, available - position)));
-            position += (long)sizes[i] + node.Gap;
-        }
-        return sizes;
-    }
-
-    // Rows in a shared-column container use the same measured tracks during
-    // both height measurement and placement, including after terminal resize.
-    private int[]? SharedColumnWidths(TuiNode row, int available)
-    {
-        var parent = row.Parent;
-        while (parent?.TagName == "#component") parent = parent.Parent;
-        if (parent?.SharedColumns != true) return null;
-        var columns = parent.FlowChildren.Select(item => item.FlowChildren.Count).DefaultIfEmpty(0).Max();
-        if (columns == 0) return [];
-        var widths = Enumerable.Range(0, columns).Select(column => parent.FlowChildren
-            .Where(item => item.FlowChildren.Count > column)
-            .Select(item => NaturalWidth(item.FlowChildren[column])).DefaultIfEmpty(1).Max()).ToArray();
-        var budget = Math.Max(0L, available - (long)Math.Max(0, columns - 1) * row.Gap);
-        var total = widths.Sum(width => (long)width);
-        if (total > budget)
-        {
-            // Keep short columns readable; long cells wrap instead of taking
-            // nearly the entire pane under proportional shrinking.
-            var order = Enumerable.Range(0, columns).OrderBy(column => widths[column]).ToArray();
-            for (var index = 0; index < order.Length; index++)
-            {
-                var column = order[index];
-                widths[column] = Cells(Math.Min(widths[column], budget / (columns - index)));
-                budget -= widths[column];
-            }
-            return widths.Take(row.FlowChildren.Count).ToArray();
-        }
-        var extra = Math.Max(0, budget - total);
-        for (var column = 0; column < widths.Length; column++)
-        {
-            var share = extra / (columns - column);
-            widths[column] = Cells(widths[column] + share);
-            extra -= share;
-        }
-        return widths.Take(row.FlowChildren.Count).ToArray();
-    }
-
-    private void Layout(TuiNode node, int x, int y, int width, int height, bool growWidth = false, bool growHeight = false)
-    {
-        node.X = x;
-        node.Y = y;
-        node.LayoutWidth = growWidth ? width : Math.Max(0, Math.Min(node.Width ?? width, width));
-        node.LayoutHeight = growHeight ? height : Math.Max(0, Math.Min(node.Height ?? height, height));
-        if (node.ScrollState is { } scroll)
-        {
-            var rows = new List<TerminalScrollState.Row>(node.FlowChildren.Count);
-            long total = 0;
-            foreach (var child in node.FlowChildren)
-            {
-                var childHeight = NaturalHeight(child, Math.Min(child.Width ?? node.LayoutWidth, node.LayoutWidth));
-                rows.Add(new(child, Cells(total), childHeight));
-                total += childHeight;
-            }
-            scroll.Update(rows, Cells(total), node.LayoutHeight);
-            foreach (var entry in rows)
-                Layout(entry.Node, x, Coordinate((long)y + entry.Start - scroll.Offset), node.LayoutWidth, entry.Height);
-            LayoutAbsoluteChildren(node, x, y, node.LayoutWidth, node.LayoutHeight);
-            return;
-        }
-        var innerX = Coordinate((long)x + Math.Min(node.LayoutWidth, (long)node.BorderLeft + node.PaddingLeft));
-        var innerY = Coordinate((long)y + Math.Min(node.LayoutHeight, (long)node.BorderTop + node.PaddingTop));
-        var innerWidth = Cells((long)node.LayoutWidth - node.BorderLeft - node.BorderRight - node.PaddingLeft - node.PaddingRight);
-        var innerHeight = Cells((long)node.LayoutHeight - node.BorderTop - node.BorderBottom - node.PaddingTop - node.PaddingBottom);
-        var row = node.Direction == TuiFlexDirection.Row;
-        var available = row ? innerWidth : innerHeight;
-        var sizes = AllocateAxis(node, available, innerWidth, row);
-        long position = 0;
-        for (var index = 0; index < node.FlowChildren.Count; index++)
-        {
-            var child = node.FlowChildren[index];
-            var size = sizes[index];
-            var cross = row ? Math.Min(child.Height ?? innerHeight, innerHeight) : Math.Min(child.Width ?? innerWidth, innerWidth);
-            if (node.CrossAlignment != TuiCrossAlignment.Stretch)
-                cross = Math.Min(cross, row ? NaturalHeight(child, size) : NaturalWidth(child));
-            var freeCross = Math.Max(0, (row ? innerHeight : innerWidth) - cross);
-            var offset = node.CrossAlignment == TuiCrossAlignment.End ? freeCross
-                : node.Center || node.CrossAlignment == TuiCrossAlignment.Center ? freeCross / 2 : 0;
-            Layout(child, Coordinate((long)innerX + (row ? Math.Min(position, available) : offset)),
-                Coordinate((long)innerY + (row ? offset : Math.Min(position, available))), row ? Cells(size) : cross, row ? cross : Cells(size),
-                growWidth: row && child.Grow > 0, growHeight: !row && child.Grow > 0);
-            position += (long)size + node.Gap;
-        }
-        LayoutAbsoluteChildren(node, innerX, innerY, innerWidth, innerHeight);
-    }
-
-    private void LayoutAbsoluteChildren(TuiNode parent, int x, int y, int width, int height)
-    {
-        foreach (var child in parent.LayoutChildren.Where(child => child.Position == TuiPosition.Absolute && child.TagName != "modal"))
-        {
-            var availableWidth = Cells((long)width - (child.Left ?? 0) - (child.Right ?? 0));
-            var childWidth = Math.Min(availableWidth, child.Width ?? (child.Left.HasValue && child.Right.HasValue ? availableWidth : NaturalWidth(child)));
-            var availableHeight = Cells((long)height - (child.Top ?? 0) - (child.Bottom ?? 0));
-            var childHeight = Math.Min(availableHeight, child.Height ?? (child.Top.HasValue && child.Bottom.HasValue ? availableHeight : NaturalHeight(child, childWidth)));
-            var left = child.Left ?? (child.Right.HasValue ? Math.Max(0, width - child.Right.Value - childWidth) : 0);
-            var top = child.Top ?? (child.Bottom.HasValue ? Math.Max(0, height - child.Bottom.Value - childHeight) : 0);
-            Layout(child, Coordinate((long)x + left), Coordinate((long)y + top), childWidth, childHeight);
-        }
     }
 
     /// <summary>Returns the topmost cell hit within the supplied focus scope, using paint order and ancestor clipping.</summary>
@@ -307,12 +138,6 @@ public sealed class TuiLayoutEngine
             // background handling, not an opaque prefill followed by glyph text.
             if (borderSides == TuiBorderSides.None && node.ShouldFill && node.Bg.HasValue)
                 OpenTuiNative.FillRect(buffer, left, top, right - left, bottom - top, bg);
-            void Draw(int x, int y, ReadOnlySpan<char> text, uint? attributes = null, NativeRgba? foreground = null, NativeRgba? background = null)
-            {
-                var style = attributes ?? ((node.Bold ? 1u : 0) | (node.Dim ? 2u : 0));
-                if (text.Contains('\t')) OpenTuiNative.DrawText(buffer, text.ToString().Replace("\t", "  "), (uint)x, (uint)y, foreground ?? fg, background ?? bg, style);
-                else OpenTuiNative.DrawText(buffer, text, (uint)x, (uint)y, foreground ?? fg, background ?? bg, style);
-            }
             var selectionFg = node.SelectionForeground ?? Colors.SelectionForeground;
             var selectionBg = node.SelectionBackground ?? Colors.SelectionBackground;
             // The ancestor canvas is already painted. OpenTUI text/textarea
@@ -395,16 +220,6 @@ public sealed class TuiLayoutEngine
             }
             else if (node.TagName is "text" or "#text" && (node.Content.Length > 0 || !node.TextRuns.IsDefaultOrEmpty))
             {
-                // Literal one-row controls have no wrapping viewport. Draw their exact
-                // cells into the native buffer; parent fill/scissors own the remainder.
-                if (node.Height == 1 && node.TextRuns.IsDefault && !node.Tail && node.Scroll == 0 && !node.Selectable)
-                {
-                    var line = node.Content.AsSpan();
-                    var newline = line.IndexOfAny('\r', '\n');
-                    if (newline >= 0) line = line[..newline];
-                    Draw(node.X, node.Y, line);
-                    return;
-                }
                 var view = SelectionView(node);
                 var attributes = (node.Bold ? 1u : 0) | (node.Dim ? 2u : 0);
                 if (!Nullable.Equals(node.NativeForeground, fg) || !Nullable.Equals(node.NativeBackground, textBackground) || node.NativeAttributes != attributes)
@@ -435,30 +250,6 @@ public sealed class TuiLayoutEngine
 
     public int CellWidth(string text) => CellWidth(text.AsSpan());
 
-    private int IntrinsicTextWidth(TuiNode node)
-    {
-        if (node.IntrinsicWidth is { } cached && node.IntrinsicWidthMethod == _widthMethod
-            && node.IntrinsicText == node.Content && node.IntrinsicRuns == node.TextRuns) return cached;
-        var text = node.TextRuns.IsDefault ? node.Content : string.Concat(node.TextRuns.Select(run => Encoding.UTF8.GetString(run.Text.Span)));
-        var width = 0;
-        foreach (var line in text.AsSpan().EnumerateLines())
-        {
-            var remaining = line;
-            var columns = 0;
-            while (remaining.IndexOf('\t') is var tab && tab >= 0)
-            {
-                columns = checked(columns + CellWidth(remaining[..tab]) + 2);
-                remaining = remaining[(tab + 1)..];
-            }
-            width = Math.Max(width, checked(columns + CellWidth(remaining)));
-        }
-        node.IntrinsicText = node.Content;
-        node.IntrinsicRuns = node.TextRuns;
-        node.IntrinsicWidthMethod = _widthMethod;
-        node.IntrinsicWidth = width;
-        return width;
-    }
-
     private NativeTextView TextView(TuiNode node)
     {
         if (node.TextView is not null && node.TextView.WidthMethod != _widthMethod) node.ReleaseNativeText();
@@ -470,6 +261,12 @@ public sealed class TuiLayoutEngine
         {
             node.TextView.SetWrapMode(node.WrapMode);
             node.NativeWrapMode = node.WrapMode;
+            node.NativeViewportWidth = node.NativeViewportHeight = 0;
+        }
+        if (node.NativeTruncate != node.Truncate)
+        {
+            node.TextView.SetTruncate(node.Truncate);
+            node.NativeTruncate = node.Truncate;
             node.NativeViewportWidth = node.NativeViewportHeight = 0;
         }
         if (node.CodeDocument is { } document)

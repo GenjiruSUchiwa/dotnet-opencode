@@ -10,7 +10,9 @@ using Microsoft.AspNetCore.Components;
 public enum TuiFlexDirection
 {
     Row,
-    Column
+    Column,
+    RowReverse,
+    ColumnReverse
 }
 
 public enum TuiCrossAlignment { Stretch, Start, Center, End }
@@ -92,7 +94,16 @@ public sealed class TuiNode
     public int PaddingBottom { get; internal set; }
     public int Gap { get; internal set; }
     public int Grow { get; internal set; }
-    public int Shrink { get; internal set; }
+    public int? Shrink { get; internal set; }
+    internal TuiLength? WidthValue, HeightValue, MinWidth, MinHeight, MaxWidth, MaxHeightValue, FlexBasis;
+    internal float? FlexGrow, FlexShrink;
+    internal TuiJustify JustifyContent;
+    internal TuiAlign? AlignItems;
+    internal TuiAlign AlignSelf = TuiAlign.Auto;
+    internal TuiAlign AlignContent = TuiAlign.Start;
+    internal TuiFlexWrap FlexWrap;
+    internal bool Truncate;
+    internal bool? NativeTruncate;
     public bool Center { get; internal set; }
     public TuiPosition Position { get; internal set; }
     public TuiOverflow Overflow { get; internal set; } = TuiOverflow.Visible;
@@ -111,7 +122,7 @@ public sealed class TuiNode
     internal ulong WheelHandlerId;
     public bool SharedColumns { get; internal set; }
     public TuiCrossAlignment CrossAlignment { get; internal set; }
-    public NativeTextWrapMode WrapMode { get; internal set; } = NativeTextWrapMode.Character;
+    public NativeTextWrapMode WrapMode { get; internal set; } = NativeTextWrapMode.Word;
     public bool Selectable { get; internal set; }
     internal NativeTextSelectionRange? SelectionRange;
     internal NativeRgba? NativeSelectionForeground;
@@ -137,10 +148,6 @@ public sealed class TuiNode
     public int Scroll { get; internal set; }
     public int? Cursor { get; internal set; }
     public int? SelectionAnchor { get; internal set; }
-    internal string? IntrinsicText;
-    internal ImmutableArray<NativeTextRun> IntrinsicRuns;
-    internal byte IntrinsicWidthMethod;
-    internal int? IntrinsicWidth;
     public int MaxHeight { get; internal set; } = 1;
     internal int? TextMaxHeight;
     public string? FocusKey { get; internal set; }
@@ -178,6 +185,7 @@ public sealed class TuiNode
         NativeCodeDocument = null;
         NativeText = null;
         NativeWrapMode = null;
+        NativeTruncate = null;
         NativeSelectionColorsSet = false;
         NativeRuns = default;
         NativeForeground = NativeBackground = null;

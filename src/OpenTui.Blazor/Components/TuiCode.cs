@@ -6,7 +6,7 @@ using OpenTui.Blazor.Code;
 using OpenTui.Native;
 
 /// <summary>Native code view. Syntax is supplied by a real ICodeHighlighter, never inferred by the renderer.</summary>
-public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
+public sealed class TuiCode : LayoutComponentBase, IAsyncDisposable
 {
     [Parameter] public string Content { get; set; } = "";
     [Parameter] public string? Filetype { get; set; }
@@ -19,7 +19,8 @@ public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
     [Parameter] public IReadOnlyList<CodeChunk>? InitialStyledText { get; set; }
     [Parameter] public CodeHighlightTransform? OnHighlight { get; set; }
     [Parameter] public CodeChunkTransform? OnChunks { get; set; }
-    [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Character;
+    [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Word;
+    [Parameter] public bool Truncate { get; set; }
     [Parameter] public string? Fg { get; set; }
     [Parameter] public string? Bg { get; set; }
     [Parameter] public bool Selectable { get; set; } = true;
@@ -45,6 +46,8 @@ public sealed class TuiCode : PointerComponentBase, IAsyncDisposable
         builder.AddAttribute(2, "bg", Bg);
         builder.AddAttribute(3, "wrap-mode", WrapMode.ToString());
         builder.AddAttribute(4, "selectable", Selectable);
+        builder.AddAttribute(5, "truncate", Truncate);
+        AddLayoutAttributes(builder);
         AddPointerAttributes(builder);
         builder.AddContent(108, Document.Text);
         builder.CloseElement();

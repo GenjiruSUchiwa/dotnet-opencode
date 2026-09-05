@@ -436,11 +436,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
         switch (name)
         {
             case "direction":
-                node.Direction = value is null ? TuiFlexDirection.Column
-                    : value is TuiFlexDirection direction && Enum.IsDefined(direction) ? direction
-                    : string.Equals(value as string, "row", StringComparison.OrdinalIgnoreCase) ? TuiFlexDirection.Row
-                    : string.Equals(value as string, "column", StringComparison.OrdinalIgnoreCase) ? TuiFlexDirection.Column
-                    : throw InvalidAttribute(node, name, value, "row or column");
+                node.Direction = LayoutEnum(node, name, value, TuiFlexDirection.Column);
                 break;
             case "border":
                 node.BorderStyle = value is null or "none" ? null : value is "single" or "double" or "left" or "rounded" or "heavy"
@@ -461,7 +457,22 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
             case "width": node.Width = Number(node, name, value); break;
             case "height": node.Height = Number(node, name, value); break;
             case "grow": node.Grow = Number(node, name, value) ?? 0; break;
-            case "shrink": node.Shrink = Number(node, name, value) ?? 0; break;
+            case "shrink": node.Shrink = Number(node, name, value); break;
+            case "width-value": node.WidthValue = LayoutLength(node, name, value, true); break;
+            case "height-value": node.HeightValue = LayoutLength(node, name, value, true); break;
+            case "min-width": node.MinWidth = LayoutLength(node, name, value); break;
+            case "min-height": node.MinHeight = LayoutLength(node, name, value); break;
+            case "max-width": node.MaxWidth = LayoutLength(node, name, value); break;
+            case "max-height-value": node.MaxHeightValue = LayoutLength(node, name, value); break;
+            case "flex-basis": node.FlexBasis = LayoutLength(node, name, value, true); break;
+            case "flex-grow": node.FlexGrow = LayoutFloat(node, name, value); break;
+            case "flex-shrink": node.FlexShrink = LayoutFloat(node, name, value); break;
+            case "justify-content": node.JustifyContent = LayoutEnum(node, name, value, TuiJustify.Start); break;
+            case "align-items": node.AlignItems = value is null ? null : LayoutEnum(node, name, value, TuiAlign.Stretch); break;
+            case "align-self": node.AlignSelf = LayoutEnum(node, name, value, TuiAlign.Auto); break;
+            case "align-content": node.AlignContent = LayoutEnum(node, name, value, TuiAlign.Start); break;
+            case "flex-wrap": node.FlexWrap = LayoutEnum(node, name, value, TuiFlexWrap.None); break;
+            case "truncate": node.Truncate = Boolean(node, name, value); break;
             case "gap": node.Gap = Number(node, name, value) ?? 0; break;
             case "center": node.Center = Boolean(node, name, value); break;
             case "position":
@@ -490,7 +501,7 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
                         ? alignment : throw InvalidAttribute(node, name, value, "stretch, start, center, or end");
                 break;
             case "wrap-mode":
-                node.WrapMode = value is null ? NativeTextWrapMode.Character
+                node.WrapMode = value is null ? NativeTextWrapMode.Word
                     : Enum.TryParse<NativeTextWrapMode>(value.ToString(), true, out var wrap) && Enum.IsDefined(wrap)
                         ? wrap : throw InvalidAttribute(node, name, value, "none, character, or word");
                 break;
@@ -547,6 +558,22 @@ public sealed partial class TuiRenderer(IServiceProvider services, ILoggerFactor
         if (number < minimum) throw InvalidAttribute(node, name, value, $"an integer in [{minimum}, {int.MaxValue}]");
         return number;
     }
+
+    private static T LayoutEnum<T>(TuiNode node, string name, object? value, T fallback) where T : struct, Enum =>
+        value is null ? fallback : Enum.TryParse<T>(value.ToString()?.Replace("-", ""), true, out var result) && Enum.IsDefined(result)
+            ? result : throw InvalidAttribute(node, name, value, $"a {typeof(T).Name} value");
+
+    private static TuiLength? LayoutLength(TuiNode node, string name, object? value, bool auto = false)
+    {
+        if (value is null) return null;
+        var result = TuiLength.Parse(value.ToString()!);
+        if (!auto && result.Unit == NativeYogaUnit.Auto) throw InvalidAttribute(node, name, value, "cells or percent, not auto");
+        return result;
+    }
+
+    private static float? LayoutFloat(TuiNode node, string name, object? value) => value is null ? null :
+        float.TryParse(value.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var result) &&
+        float.IsFinite(result) && result >= 0 ? result : throw InvalidAttribute(node, name, value, "a nonnegative finite flex weight");
 
     private static bool Boolean(TuiNode node, string name, object? value) => value switch
     {

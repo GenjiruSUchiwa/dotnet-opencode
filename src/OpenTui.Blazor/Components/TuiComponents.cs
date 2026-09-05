@@ -8,7 +8,7 @@ using OpenTui.Native;
 using OpenTui.Blazor.TextMarks;
 using OpenTui.Blazor.Rendering;
 
-public class Box : PointerComponentBase
+public class Box : LayoutComponentBase
 {
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public TuiFlexDirection Direction { get; set; } = TuiFlexDirection.Column;
@@ -25,7 +25,11 @@ public class Box : PointerComponentBase
     [Parameter] public int? Height { get; set; }
     [Parameter] public int Gap { get; set; }
     [Parameter] public int Grow { get; set; }
-    [Parameter] public int Shrink { get; set; }
+    [Parameter] public int? Shrink { get; set; }
+    [Parameter] public TuiJustify JustifyContent { get; set; } = TuiJustify.Start;
+    [Parameter] public TuiAlign? AlignItems { get; set; }
+    [Parameter] public TuiAlign AlignContent { get; set; } = TuiAlign.Start;
+    [Parameter] public TuiFlexWrap FlexWrap { get; set; }
     [Parameter] public bool Center { get; set; }
     [Parameter] public bool SharedColumns { get; set; }
     [Parameter] public TuiCrossAlignment CrossAlignment { get; set; }
@@ -86,13 +90,18 @@ public class Box : PointerComponentBase
         // Keep false explicit because the source/default fill policy is true.
         builder.AddAttribute(29, "should-fill", ShouldFill.ToString());
         builder.AddAttribute(30, "overflow", Overflow.ToString());
+        builder.AddAttribute(31, "justify-content", JustifyContent.ToString());
+        builder.AddAttribute(32, "align-items", AlignItems?.ToString());
+        builder.AddAttribute(33, "align-content", AlignContent.ToString());
+        builder.AddAttribute(34, "flex-wrap", FlexWrap.ToString());
+        AddLayoutAttributes(builder);
         AddPointerAttributes(builder);
         builder.AddContent(108, ChildContent);
         builder.CloseElement();
     }
 }
 
-public class Input : PointerComponentBase
+public class Input : LayoutComponentBase
 {
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public int Cursor { get; set; }
@@ -139,6 +148,10 @@ public class Input : PointerComponentBase
         builder.AddAttribute(12, "selection-fg", Color(SelectionForeground));
         builder.AddAttribute(13, "selection-bg", Color(SelectionBackground));
         builder.AddAttribute(14, "ontextinput", OnTextInput);
+        // This controlled legacy editor retains its current caret/selection map
+        // until the authoritative native editor owner is delivered in E6.
+        builder.AddAttribute(15, "wrap-mode", NativeTextWrapMode.Character.ToString());
+        AddLayoutAttributes(builder);
         AddPointerAttributes(builder);
         builder.AddContent(108, Value);
         builder.CloseElement();
@@ -147,7 +160,7 @@ public class Input : PointerComponentBase
     private static string? Color(NativeRgba? value) => value is { } color ? $"#{(byte)color.R:X2}{(byte)color.G:X2}{(byte)color.B:X2}{(byte)color.A:X2}" : null;
 }
 
-public class TuiText : PointerComponentBase
+public class TuiText : LayoutComponentBase
 {
     [Parameter] public string? Value { get; set; }
     /// <summary>Immutable styled UTF-8 runs. Replace the array to update content; do not mutate its backing memory.</summary>
@@ -163,7 +176,8 @@ public class TuiText : PointerComponentBase
     [Parameter] public int Grow { get; set; }
     [Parameter] public bool Tail { get; set; }
     [Parameter] public int Scroll { get; set; }
-    [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Character;
+    [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Word;
+    [Parameter] public bool Truncate { get; set; }
     [Parameter] public bool Selectable { get; set; } = true;
 
     protected override void OnParametersSet()
@@ -189,6 +203,8 @@ public class TuiText : PointerComponentBase
         builder.AddAttribute(11, "wrap-mode", WrapMode.ToString());
         builder.AddAttribute(12, "selectable", Selectable);
         builder.AddAttribute(13, "text-max-height", MaxHeight);
+        builder.AddAttribute(14, "truncate", Truncate);
+        AddLayoutAttributes(builder);
         // Runs remain typed component state. Element attributes would stringify them.
         AddPointerAttributes(builder);
         if (Runs.IsDefault) builder.AddContent(108, Value);

@@ -36,6 +36,7 @@ public sealed class NativeTextView : IDisposable
 
     /// <summary>Immutable native width method: 0=wcwidth, 1=unicode, 3=unicode-wide.</summary>
     public byte WidthMethod { get; }
+    internal uint ViewHandle { get { Guard(); return _view; } }
 
     public NativeTextView(byte widthMethod = 1)
     {
@@ -110,6 +111,8 @@ public sealed class NativeTextView : IDisposable
             throw new ArgumentOutOfRangeException(nameof(mode));
         OpenTuiNative.TextBufferViewSetWrapMode(_view, (byte)mode);
     }
+
+    public void SetTruncate(bool enabled) { Guard(); OpenTuiNative.SetTextViewTruncate(_view, enabled); }
 
     /// <summary>Sets a wrap budget in display columns; null or zero removes the budget.</summary>
     public void SetWrapWidth(int? width)

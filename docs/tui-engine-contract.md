@@ -114,3 +114,144 @@ Artifacts: `C:\tmp\opencode\native-pass3-99bb7c24-6732-4b19-8b25-57b17414ae01`.
 Log: `C:\tmp\opencode\tui-engine-contract-build-final.log`.
 No source edits after this successful build. Application translation remains
 gated by E2/E5/E6 and runtime verification remains unauthorized.
+
+## E2 continuation — native Yoga is now the active allocator
+
+This section supersedes the earlier E2-blocked status above. It is an
+independently reviewable engine boundary, not a declaration that E6 is finished.
+No application Razor, package, asset, binary or native ABI was changed.
+
+### Implemented native path
+
+`TuiLayoutEngine.UpdateLayout` now calls `LayoutWithYoga`. The former
+NaturalWidth/NaturalHeight/AllocateAxis/Layout/absolute-placement helpers and their
+intrinsic-width cache were removed. There is no fallback generic flex allocator.
+
+Call chain:
+
+1. Flattened, frame-preserving TuiNode tree → one NativeYogaTree transaction.
+2. Yoga config uses source `useWebDefaults=false` and point scale 1.
+3. Styles map to existing yogaNodeStyleSetEnum/Float/Value/Border exports.
+4. Text/code leaves attach the existing native renderable measurement target to
+   their live TextBufferView. Yoga → native renderable → native view measurement
+   stays native, rather than guessing Unicode widths or duplicating wrapping.
+5. yogaNodeCalculateLayout → six-f32 computed layouts → scene coordinates.
+6. Measurement owners detach, all child links are removed, nodes are freed, then
+   config is freed before UpdateLayout returns. Native text views remain owned
+   by the existing scene nodes for painting and selection.
+
+The per-transaction tree intentionally trades retained Yoga caching for simple,
+explicit removal/reparenting lifetime: no pointer from an old render batch remains
+in the next layout. Performance has not been measured. Node/config values are
+pointer-sized nint; native renderable/text-view values are uint handles. Computed
+layout is a 24-byte output struct. All imports are source-generated LibraryImport.
+
+For managed measurement, the existing C callback signature is
+`(node pointer, f32 width, u32 widthMode, f32 height, u32 heightMode) -> void`,
+with yogaStoreMeasureResult supplying two f32 results through native TLS. One
+UnmanagedCallersOnly Cdecl trampoline is installed only during synchronous
+calculation, under a shared calculation gate, and cleared on exit. Per-tree
+delegates remain strongly rooted. Exceptions are captured and rethrown after
+native calculation, never across the C frame; mutation, disposal and recursive
+calculation from a measure callback are rejected. Pointer membership, parentage,
+cycles, insertion indices and measured-leaf restrictions are checked before
+calling Yoga. Views must remain dispatcher-owned/live through the transaction.
+
+ABI evidence: pinned native yoga.zig enums 11–82, layouts/callbacks 84–111,
+configuration 175–185, setters 419–569 and callbacks 592–650; installed zig.d.ts
+385–436 and nativeRenderable exports 722–725. Existing native-renderable measure
+targets distinguish TextBufferView (1) and EditorView (2); this transaction uses
+the former for actual text/code leaves. No new exported function was invented.
+
+### Generic property contract
+
+Existing integer Width/Height/Grow callers remain valid. The common
+LayoutComponentBase on Box, TuiText, TuiCode and legacy Input adds:
+
+- WidthValue/HeightValue: TuiLength cells, percent, auto or undefined; these take
+  precedence over legacy integer dimensions.
+- MinWidth/MinHeight/MaxWidth/MaxHeightValue and FlexBasis (typed TuiLength).
+- FlexGrow/FlexShrink (fractional weights) and AlignSelf.
+
+Box additionally exposes distinct JustifyContent, AlignItems, AlignContent and
+FlexWrap. Row/column reverse directions are supported. CrossAlignment and Center
+remain compatibility shorthands, overridden by explicit AlignItems. Existing
+Box.Shrink assignments still work; omitted Shrink is now nullable and resolves
+to source shrink=0 for numeric Width/Height, otherwise 1. Explicit shrink wins.
+Source intrinsic growing children are measured by Yoga; Grow no longer forces
+their intrinsic basis to zero. Integer padding/gaps/borders/absolute edges are
+passed through to Yoga, not apportioned by another layout loop.
+
+### Root, scroll, modal and table integration
+
+- Terminal root supplies its actual width/height to Yoga. E1 formatting filtering
+  and E3/E4 native border/overflow behavior remain intact.
+- ScrollBox has a constrained viewport and a synthetic auto-height, non-shrinking
+  Yoga content node. Yoga supplies row starts/heights and content extent;
+  TerminalScrollState supplies only retained-anchor/bottom-follow translation.
+  Absolute children stay attached to the viewport. This is not a second row-height
+  allocator; horizontal-scroll UI remains outside the existing scroll-state API.
+- Modal portals calculate independent Yoga roots. Existing default width cap,
+  quarter-screen/center placement policy remains explicit overlay policy, while
+  Yoga determines panel size and child layout. It is not claimed to be the full
+  source dialog component API.
+- SharedColumns remains an explicit table extension, not a hidden flex branch.
+  Cell intrinsic widths come from Yoga probes with native text measurement. The
+  pinned TextTable proportional fitter/expansion policy (index.bun.js
+  10595–10669, 11198–11215) produces shared widths; Yoga then recalculates actual
+  cells, rows and containers. Parent tables precede nested ones. The old fair-share
+  custom allocator was removed. This does not turn the existing Razor table tree
+  into every feature of source TextTable.
+
+### E5 boundary delivered; E6 remains required
+
+TuiText and TuiCode now default to native Word wrapping, expose native Truncate,
+and accept min-width/shrink/size constraints. NativeTextView.SetTruncate binds the
+existing textBufferViewSetTruncate export. The nonselectable one-row direct-text
+paint bypass was removed: word-wrap, truncation, styled runs and selection now
+share the same measured native view rather than clipping a separately drawn line.
+Value/Runs remain supported; a JSX-like arbitrary inline ChildContent/span tree
+is not yet a public TuiText API.
+
+**E6 is not complete.** Input remains the controlled editor with existing app
+word/selection/undo ownership. Its Yoga measure callback uses native intrinsic
+width but retains the existing single caret/character-wrap map for row height,
+including the full-width end-of-line caret row. Removing that row or switching
+Input to Word wrapping before replacing the editor owner would make layout and
+pointer/caret positions disagree. This legacy adapter is explicit, not advertised
+as source Textarea or a second general layout algorithm.
+
+Next independently scoped E6 work must bind the already-exported EditBuffer /
+EditorView into one dispatcher-owned textarea state, attach native measure target
+kind 2, expose content/cursor/change/focus/edit operations, and route native word
+movement/selection/undo exactly once. Then retire Input's manual caret map and
+the app's duplicate editor operations through a coordinated adapter handoff.
+Preserve user key aliases and typed marks/attachments; no app changes were made
+prematurely here. E7 independent prevention/propagation and editor notifications
+remain coupled to that delivery. Nearly literal P0–P4 translation is still gated
+by this ownership boundary and authorized visual/runtime verification.
+
+### Verification
+
+Source inspection and pinned compiler builds only. No Yoga/native/WASM, parser,
+TUI/application, tests/samples, PTY, clipboard, database or provider execution.
+Config/struct/callback signatures were checked statically; their actual loading,
+float/grid rounding, font-specific rendering and teardown behavior remain
+unverified. Final compilation/freeze result follows below.
+
+**Native Yoga checkpoint frozen:** after the interrupted build was rerun, the
+full CLI dependency build succeeded with **0 warnings and 0 errors** (11.55
+seconds). Repository SDK: 11.0.100-preview.7.26381.103. Command:
+
+```powershell
+.\.dotnet\dotnet.exe build src\OpenCode.Cli\OpenCode.Cli.csproj `
+  --artifacts-path C:\tmp\opencode\native-yoga-e2 `
+  -p:OpenApiGenerateDocuments=false -v minimal
+```
+
+Log: `C:\tmp\opencode\native-yoga-e2-build-final.log`. The removal audit found
+no remaining NaturalWidth/NaturalHeight/AllocateAxis/SharedColumnWidths/
+LayoutAbsoluteChildren/IntrinsicTextWidth helpers. No C# source changes followed
+the successful final build. This checkpoint supplies the active Yoga allocator
+and E5 native text properties; E6 and the explicitly listed API/runtime gaps
+remain required before claiming the complete Prompt translation is ready.

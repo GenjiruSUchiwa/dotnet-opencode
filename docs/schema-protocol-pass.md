@@ -209,3 +209,137 @@ Documentation: `docs/schema-protocol-pass.md`.
 
 The parent owns integration, Git operations, any follow-up coordination, and
 publication. This worker is frozen after this checkpoint.
+
+## Pass 2 — usage notification and stateless generation
+
+Status: source/build checkpoint complete; frozen again for parent integration.
+The parent resumed this handwritten-contract scope after integrating pass 1.
+All ID factory, generation-direction, and validation changes remain on hold.
+No Vogen wrapper, generated artifact, canonical asset, project configuration,
+`OpenCodeChannel.cs`, caller, runtime publisher, or endpoint handler was changed.
+
+### Persistence publisher handoff
+
+Added the exact ephemeral contract from `packages/schema/src/session-event.ts`
+(`UsageUpdated`, lines 147–155; inventory membership at line 628):
+
+```csharp
+// namespace OpenCode.Schema
+SessionUsageUpdatedEventData(SessionId SessionId, Money Cost, TokenUsageInfo Tokens)
+SessionEventDefinitions.UsageUpdated
+// EphemeralEventDefinition<SessionUsageUpdatedEventData>
+OpenCodeJsonContext.Default.SessionUsageUpdatedEventData
+```
+
+Payload JSON contains required `sessionID`, `cost`, and `tokens`, with their
+existing canonical scalar and token codecs. There is no source, message ID,
+timestamp, or durable envelope added to the payload. Existing event factories
+still supply the event-level ID/time/location/metadata.
+
+`UsageUpdated` is placed after `Created` among the currently implemented Session
+definitions, preserving source-relative order. The existing manifest composition
+includes it in public/shared definitions. The durable inventory filters it out;
+`UsageRecorded` remains a separate durable fact and is unchanged. No publication
+or projection behavior was implemented in Schema.
+
+### Core/Server stateless generation handoff
+
+Source: `packages/protocol/src/groups/generate.ts` and `packages/core/src/generate.ts`.
+
+```csharp
+// namespace OpenCode.Schema
+GenerateTextInput(string Prompt, ModelRef? Model = null)
+GenerateTextResult(string Text)
+
+// namespace OpenCode.Protocol.Groups
+GenerateTextResponse(GenerateTextResult Data)
+GenerateEndpoints.Text              // "/api/generate"
+GenerateEndpoints.Operation         // "generate.text"
+GenerateEndpoints.OpenApiOperation  // "v2.generate.text"
+GenerateProtocolJsonContext.Default.GenerateTextInput
+GenerateProtocolJsonContext.Default.GenerateTextResult
+GenerateProtocolJsonContext.Default.GenerateTextResponse
+```
+
+Request JSON is `{ "prompt": "...", "model": { ... } }`, with model optional.
+Success JSON is `{ "data": { "text": "..." } }`. Prompt/text must be strings;
+empty strings remain valid. Explicit-null model is rejected, omitted model is
+preserved, and no default model is manufactured by the contract. Existing
+`ModelRef` owns model parsing. Core resolves the base-configuration model.
+
+Server must mount **POST** at the route above and declare only the source's
+`OpenCode.Protocol.Errors.InvalidRequestError` (400) and
+`ServiceUnavailableError` (503). The new context registers these existing types
+and their shared `SessionQueryError` base for tagged serialization; that broad
+base registration is not a declaration of additional endpoint error variants.
+Serialize through base metadata when the `_tag` discriminator is required.
+There is no invented generation-specific error hierarchy or fake success shape.
+
+These contracts do not reference `SessionGenerate`, `SessionGeneration`, Session
+IDs, Location, persistence, tools, or Session history. The Core owner can consume
+`GenerateTextInput` from `Core/Generate`; Server owns mapping runtime failures to
+the declared protocol errors. This worker did not edit those packages.
+
+### Additional codec fixes
+
+- `PluginInfoJsonConverter` selects the active/failed branch before reading
+  branch-specific fields. Active plugins ignore even malformed excess `error`
+  fields and omit error during encoding; failed plugins require string error.
+  Required source/tui, conditional ID, optional-ID null rejection, and exact
+  status literals remain enforced. Existing constructors and ID domains are
+  unchanged. This supersedes the PluginInfo excess-error limit listed in pass 1.
+- `QuestionOption`/`QuestionPrompt` require their source string/list fields;
+  options reject null elements, and optional `multiple` omits null and rejects
+  explicit-null input. Source description text about label/header length is not
+  promoted into an invented validation constraint. Empty arrays remain valid.
+- `SkillInfo` requires name/location/content and applies omission-versus-null
+  rules to description/slash/autoinvoke. `SkillId` is untouched.
+- `WorkspaceDestroyResult` requires the boolean `destroyed`; missing JSON no
+  longer silently becomes false. Both true and false remain valid. `WorkspaceId`
+  is untouched.
+
+The Server/network owner needs an exporter mapping for the new
+`PluginInfoJsonConverter`: union of active (required id/source/status/tui) and
+failed (required source/status/error/tui, optional id). The two status values are
+literal discriminants. The custom converter now owns branch normalization, so
+normal-record inference is insufficient. Earlier toast/callback exporter work
+remains with that owner; no Server source was changed here.
+
+### Pass 2 changed files
+
+```text
+src/OpenCode.Schema/Generate.cs                                  (new)
+src/OpenCode.Schema/Plugin.cs
+src/OpenCode.Schema/Question.cs
+src/OpenCode.Schema/SessionEvent.cs
+src/OpenCode.Schema/SessionEventDefinitions.cs
+src/OpenCode.Schema/Skill.cs
+src/OpenCode.Schema/Workspace.cs
+src/OpenCode.Schema/Serialization/OpenCodeJsonContext.cs
+src/OpenCode.Schema/Serialization/PluginInfoJsonConverter.cs      (new)
+src/OpenCode.Protocol/Groups/GenerateProtocol.cs                  (new)
+docs/schema-protocol-pass.md                                    (append)
+```
+
+### Pass 2 verification and limits
+
+- Initial Schema/Protocol build: **0 warnings, 0 errors**.
+  Log: `C:\tmp\opencode\contracts-pass2-20260905-01.log`.
+- Final full CLI dependency build, including all pass 2 contract changes:
+  **0 errors, 2 warnings**, both outside this worker's ownership:
+  `OpenTui.Blazor/Code/CodeChunks.cs:33–34`, MA0015 (expression does not match a
+  parameter). Schema and Protocol produced no warnings. Those warnings were
+  reported to the parent and left untouched.
+  Log: `C:\tmp\opencode\contracts-pass2-20260905-final.log`.
+- Pinned repository SDK: `11.0.100-preview.7.26381.103`.
+  Builds used isolated artifact directories under `C:\tmp\opencode`,
+  `OpenApiGenerateDocuments=false`, and `NuGetAudit=false`.
+- No tests, application/serializer/codec execution, DI/EF/database operations,
+  native/provider/terminal execution, global installation, or publication.
+  No Git, staging, commit, push, or subdelegation actions.
+- Endpoint mounting, runtime model selection/failure mapping, usage publication,
+  actual JSON round trips, native schema export, and compatibility with stored
+  data remain unverified by this build-only checkpoint. Inventory completeness
+  flags and all pass 1 ID/native-representation holds remain unchanged.
+
+Pass 2 is frozen for parent integration.

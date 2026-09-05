@@ -33,10 +33,13 @@ public sealed class SkillIdJsonConverter() : ScalarJsonConverter<SkillId, string
 /// </summary>
 public sealed record SkillInfo(
     [property: JsonPropertyName("id"), JsonRequired] SkillId Id,
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("location")] string Location,
-    [property: JsonPropertyName("content")] string Content,
-    [property: JsonPropertyName("description")] string? Description = null,
-    [property: JsonPropertyName("slash")] bool? Slash = null,
-    [property: JsonPropertyName("autoinvoke")] bool? Autoinvoke = null
-);
+    [property: JsonPropertyName("name"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Name,
+    [property: JsonPropertyName("location"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Location,
+    [property: JsonPropertyName("content"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string Content,
+    [property: JsonPropertyName("description"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(NonNullPromptJsonConverter<string>))] string? Description = null,
+    [property: JsonPropertyName("slash"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<bool>))] bool? Slash = null,
+    [property: JsonPropertyName("autoinvoke"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull), JsonConverter(typeof(OptionalValueJsonConverter<bool>))] bool? Autoinvoke = null
+) : IJsonOnSerializing
+{
+    void IJsonOnSerializing.OnSerializing() => SourceObjectContract.Required(Name, Location, Content);
+}

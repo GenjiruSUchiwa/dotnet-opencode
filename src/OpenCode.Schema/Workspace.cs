@@ -35,5 +35,5 @@ public sealed class WorkspaceIdJsonConverter() : ScalarJsonConverter<WorkspaceId
 /// 1:1 port of Workspace from packages/schema/src/workspace.ts
 /// </summary>
 public sealed record WorkspaceDestroyResult(
-    [property: JsonPropertyName("destroyed")] bool Destroyed
+    [property: JsonPropertyName("destroyed"), JsonRequired] bool Destroyed
 );

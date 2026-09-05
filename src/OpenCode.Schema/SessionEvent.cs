@@ -267,6 +267,19 @@ public sealed record SessionUsageRecordedEventData(
     void IJsonOnDeserialized.OnDeserialized() => SessionEventValidation.Session(SessionId);
 }
 
+/// <summary>Projected usage totals; an ephemeral notification, not a durable usage fact.</summary>
+public sealed record SessionUsageUpdatedEventData(
+    [property: JsonPropertyName("sessionID"), JsonRequired] SessionId SessionId,
+    [property: JsonPropertyName("cost"), JsonRequired] Money Cost,
+    TokenUsageInfo Tokens
+) : IJsonOnSerializing, IJsonOnDeserialized
+{
+    [JsonPropertyName("tokens"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<TokenUsageInfo>))]
+    public TokenUsageInfo Tokens { get; init => field = PromptValidation.Required(value); } = PromptValidation.Required(Tokens);
+    void IJsonOnSerializing.OnSerializing() => SessionEventValidation.Session(SessionId);
+    void IJsonOnDeserialized.OnDeserialized() => SessionEventValidation.Session(SessionId);
+}
+
 internal static class SessionEventValidation
 {
     internal static void Session(SessionId id)

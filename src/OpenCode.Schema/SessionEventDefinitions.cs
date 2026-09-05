@@ -69,6 +69,8 @@ public static class SessionEventDefinitions
         "session.message.content.updated", 1, "sessionID", OpenCodeJsonContext.Default.SessionMessageContentUpdatedEventData);
     public static readonly DurableEventDefinition<SessionUsageRecordedEventData> UsageRecorded = new(
         "session.usage.recorded", 1, "sessionID", OpenCodeJsonContext.Default.SessionUsageRecordedEventData);
+    public static readonly EphemeralEventDefinition<SessionUsageUpdatedEventData> UsageUpdated = new(
+        "session.usage.updated", OpenCodeJsonContext.Default.SessionUsageUpdatedEventData);
 
     public static class Compaction
     {
@@ -83,7 +85,7 @@ public static class SessionEventDefinitions
     }
 
     public static IReadOnlyList<EventDefinition> ImplementedDefinitions { get; } = EventDefinitions.Inventory(
-        Created, InboxDelivered, InboxEnqueued, Step.Started, Step.Streamed, Step.Ended, Step.Failed,
+        Created, UsageUpdated, InboxDelivered, InboxEnqueued, Step.Started, Step.Streamed, Step.Ended, Step.Failed,
         Text.Started, Text.Delta, Text.Ended, Reasoning.Started, Reasoning.Delta, Reasoning.Ended,
         Tool.Input.Started, Tool.Input.Delta, Tool.Input.Ended, Tool.Called, Tool.Progress, Tool.Success, Tool.Failed,
         RetryScheduled, Compaction.Started, Compaction.Delta, Compaction.Ended, Compaction.Failed, MessageContentUpdated);

@@ -56,6 +56,7 @@ public sealed record PluginSourceSdk : PluginSource;
 /// <summary>
 /// 1:1 port of Plugin.Info from packages/schema/src/plugin.ts
 /// </summary>
+[JsonConverter(typeof(PluginInfoJsonConverter))]
 public sealed record PluginInfo(
     [property: JsonPropertyName("source"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<PluginSource>))] PluginSource Source,
     [property: JsonPropertyName("status"), JsonRequired] string Status,

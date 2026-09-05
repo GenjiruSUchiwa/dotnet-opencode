@@ -131,3 +131,35 @@ with isolated artifacts under `C:\tmp\opencode\persistence-parity-20260905-f914-
 `OpenApiGenerateDocuments=false`, and `OpenCodePackagePersistentPty=false`.
 The final handoff reports exact build diagnostics. Compilation does not establish
 runtime query translation, path behavior, event ordering, or database parity.
+
+## Next pass: usage publication and embedded WebSearch
+
+The upstream usage subscription is explicit in `session/projector.ts:758–767`:
+Step.Ended, Step.Failed with both cost and tokens, and UsageRecorded trigger a read
+of current usage through `publishSessionUsage` (`:75–103`). It is not a generic
+reaction to every write of a usage column. Archive restoration and fork/creation
+therefore must not acquire new usage notifications merely because they write totals.
+Silent replay and duplicate replay likewise must not publish a follow-up.
+
+The publication integration waits for the Schema owner's exact public contract.
+It must read after native commit, use the ephemeral definition, retain primary-event
+notification order, and isolate post-commit notification failures from the already
+committed operation. It must not add durable history or run from an EF interceptor.
+
+The embedded SDK now calls the existing public `AddNativeWebSearch` registration.
+Its `LocalToolOptions` consumes the registered `INativePluginSource` definitions,
+publishes typed plugin-added/plugin-updated events to the host's existing feed, and
+binds `WebSearchPluginSource.ReadyAsync` directly. The authoritative tool factory
+activates provider plugins before invoking this readiness callback and refreshes
+the binding before model snapshots.
+
+This does not allocate a second WebSearch runtime, provider registry, HTTP transport,
+or Location map. WebSearch's own update events use the same `IEventFeedService` via
+the shared source. The callback deliberately does not call
+`CommandHostService.AcquireAsync` or `IWebSearchLocationSource.AcquireAsync`: either
+would reenter the Location whose tool factory is currently establishing readiness.
+
+The SDK's custom lifetime is unchanged. This wiring adds no WebApplication,
+ConsoleLifetime, listener, election, managed-daemon connection, or startup recovery.
+Detached managed servers remain independent of embedded SDK disposal. ServerHost
+remains outside this slot and is not edited.

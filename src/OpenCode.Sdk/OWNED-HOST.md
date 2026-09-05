@@ -19,7 +19,7 @@ are not disposed by OpenCodeClient.
 ## Shared composition
 
 The SDK references Server in the permitted direction and reuses its public
-`AddLocalToolLocations`, `AddIntegrationServices`, `AddShellServices`,
+`AddLocalToolLocations`, `AddIntegrationServices`, `AddShellServices`, `AddNativeWebSearch`,
 `FormLocationServices`, `PermissionLocationServices`, and execution/event services.
 Core has no Server dependency. No WebApplication, HTTP listener, service-registration
 file, background daemon, or managed-service election is created.
@@ -36,6 +36,14 @@ Ripgrep resolves from explicit options/environment, PATH, or the existing OpenCo
 binary cache. Missing executables fail clearly; no downloads, dependency symlinks,
 shell substitutes, or silently omitted tools are used. Existing native shell,
 filesystem, formatter, plugin and JavaScript-subset limitations still apply.
+
+Native WebSearch providers come from the shared host registration and the actual
+Location plugin scopes. The SDK supplies those registered definitions and a direct
+`WebSearchPluginSource.ReadyAsync` callback to `LocalToolOptions`; it does not create
+a parallel runtime or reacquire `CommandHostService` from inside tool readiness.
+The same binding refreshes before model snapshots, so unavailable or disabled
+providers do not become a silently advertised fallback tool. Plugin-added,
+plugin-updated, and WebSearch update events use the SDK's existing event feed.
 
 ## User decisions and observation
 

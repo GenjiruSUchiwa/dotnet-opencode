@@ -11,6 +11,7 @@ using OpenCode.Core.Jobs;
 using OpenCode.Core.Llm;
 using OpenCode.Core.Locations;
 using OpenCode.Core.Permissions;
+using OpenCode.Core.Plugins;
 using OpenCode.Core.Pty;
 using OpenCode.Core.Session;
 using OpenCode.Core.Session.Archive;
@@ -130,6 +131,7 @@ internal sealed class OwnedSdkHost : IAsyncDisposable
         services.AddSingleton<FormLocationServices>();
         services.AddHostedService<FormLocationServices>(provider => provider.GetRequiredService<FormLocationServices>());
         services.AddIntegrationServices();
+        services.AddNativeWebSearch();
         services.AddShellServices(new ShellHostOptions(
             (location, ct) => { ct.ThrowIfCancellationRequested(); return Task.FromResult(PtyShellSelection.Resolve(location)); },
             async (location, ct) =>
@@ -287,7 +289,20 @@ internal sealed class OwnedSdkHost : IAsyncDisposable
             McpOAuth: services.GetRequiredService<IntegrationHostService>().OAuth,
             Subagents: () => services.GetRequiredService<SessionSubagents>(),
             ShellRuntime: () => services.GetRequiredService<ShellLocationServices>().ForLocation(location),
-            ShellJobs: () => services.GetRequiredService<ShellToolJobs>());
+            ShellJobs: () => services.GetRequiredService<ShellToolJobs>(),
+            Plugins: services.GetServices<INativePluginSource>().SelectMany(source => source.Definitions(location)).ToArray(),
+            PluginChanged: id =>
+            {
+                var reference = new LocationRef(location.Directory, location.WorkspaceId);
+                var created = options.Clock.GetUtcNow().ToUnixTimeMilliseconds();
+                services.GetRequiredService<IEventFeedService>().Publish(id is { } plugin
+                    ? PluginEventDefinitions.Added.Create(EventId.Create(), created, new PluginAddedEventData(plugin), reference)
+                    : PluginEventDefinitions.Updated.Create(EventId.Create(), created, new EmptyEventData(), reference));
+            },
+            // ToolLocationFactory invokes this after provider plugin activation.
+            // CommandHostService/IWebSearchLocationSource acquisition here would
+            // reenter the same Location factory and its readiness path.
+            WebSearchReady: ct => services.GetRequiredService<WebSearchPluginSource>().ReadyAsync(location, ct));
     }
 
     private static string Ripgrep(string? supplied, string bin)

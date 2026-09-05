@@ -23,7 +23,7 @@ public static class SessionStatsEndpoints
                     null or "summary" => SessionStatsToolMode.Summary,
                     "none" => SessionStatsToolMode.None,
                     "detail" => SessionStatsToolMode.Detail,
-                    _ => throw new ArgumentException("tools must be none, summary, or detail.")
+                    _ => throw new RequestArgumentException("tools must be none, summary, or detail.", nameof(request))
                 };
                 var data = await statistics.GetAsync(new(Number(request, "from"), Number(request, "to"),
                     project is null ? null : ProjectId.FromExisting(project), RequestLocation.QueryValue(request, "timezone"), tools), ct);
@@ -43,7 +43,7 @@ public static class SessionStatsEndpoints
         var value = RequestLocation.QueryValue(request, name);
         if (value is null) return null;
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !double.IsFinite(number))
-            throw new ArgumentException($"{name} must be a finite number.");
+            throw new RequestArgumentException($"{name} must be a finite number.", nameof(request));
         return number;
     }
 }

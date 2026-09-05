@@ -164,7 +164,7 @@ public static class OpenApiDocument
     }
 
     private static readonly HashSet<string> Methods = new(StringComparer.Ordinal) { "get", "post", "put", "patch", "delete", "head", "options" };
-    private static string Shape(string path) => Regex.Replace(path, @"\{[^}]+\}|\*", "{}").TrimEnd('/');
+    private static string Shape(string path) => Regex.Replace(path, @"\{[^}]+\}|\*", "{}", RegexOptions.NonBacktracking).TrimEnd('/');
     private static JsonObject Issue(string method, string path, string reason, string? id = null) => new()
         { ["method"] = method, ["path"] = path, ["operationId"] = id, ["reason"] = reason };
     private static JsonObject Content(string media, JsonNode schema) => new() { [media] = new JsonObject { ["schema"] = schema } };

@@ -34,8 +34,8 @@ public sealed class PtyConnection : IDisposable
     {
         ArgumentNullException.ThrowIfNull(text);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
-        await _sending.WaitAsync(cancellation.Token);
-        try { await _socket.SendAsync(Encoding.UTF8.GetBytes(text).AsMemory(), WebSocketMessageType.Text, true, cancellation.Token); }
+        await _sending.WaitAsync(cancellation.Token).ConfigureAwait(false);
+        try { await _socket.SendAsync(Encoding.UTF8.GetBytes(text).AsMemory(), WebSocketMessageType.Text, true, cancellation.Token).ConfigureAwait(false); }
         finally { _sending.Release(); }
     }
 
@@ -47,11 +47,11 @@ public sealed class PtyConnection : IDisposable
         var utf8 = new UTF8Encoding(false, true);
         while (true)
         {
-            var result = await messages.ReadAsync(cancellation.Token);
+            var result = await messages.ReadAsync(cancellation.Token).ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close)
             {
-                await _sending.WaitAsync(cancellation.Token);
-                try { await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, cancellation.Token); }
+                await _sending.WaitAsync(cancellation.Token).ConfigureAwait(false);
+                try { await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, cancellation.Token).ConfigureAwait(false); }
                 finally { _sending.Release(); }
                 yield return new PtyClosedEvent((int?)_socket.CloseStatus, _socket.CloseStatusDescription);
                 yield break;

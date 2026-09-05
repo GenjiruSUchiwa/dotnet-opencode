@@ -210,7 +210,8 @@ public sealed partial class SessionHttpClient : IDisposable
         var media = response.Content.Headers.ContentType?.MediaType;
         if (media is null || (!media.Equals("application/json", StringComparison.OrdinalIgnoreCase) && !media.EndsWith("+json", StringComparison.OrdinalIgnoreCase)))
             throw new SessionProtocolException(SessionProtocolFailure.UnsupportedContentType, path, "Expected a JSON response.");
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellation.Token).ConfigureAwait(false);
+        var stream = await response.Content.ReadAsStreamAsync(cancellation.Token).ConfigureAwait(false);
+        await using var streamLifetime = stream.ConfigureAwait(false);
         try
         {
             return await JsonSerializer.DeserializeAsync(stream, type, cancellation.Token).ConfigureAwait(false)

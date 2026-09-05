@@ -13,7 +13,7 @@ public sealed partial class SessionHttpClient
     {
         ArgumentNullException.ThrowIfNull(boundary);
         if (boundary is ForkRequestBoundaryBefore before)
-            ArgumentException.ThrowIfNullOrEmpty(before.MessageId.Value);
+            ArgumentException.ThrowIfNullOrEmpty(before.MessageId.Value, nameof(boundary));
         return RequestAsync(HttpMethod.Post, SessionPath(sessionId) + "/fork",
             SessionProtocolJsonContext.Default.SessionResult, ct,
             JsonContent.Create(new SessionForkInput(boundary), SessionForkProtocolJsonContext.Default.SessionForkInput));

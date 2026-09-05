@@ -85,8 +85,9 @@ internal static class ServiceStartupDiagnostics
         ServiceStartupDiagnostic? report = null;
         try
         {
-            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
                 4096, FileOptions.Asynchronous);
+            await using var streamLifetime = stream.ConfigureAwait(false);
             if (stream.Length <= 32 * 1024)
                 report = await JsonSerializer.DeserializeAsync(stream, ServiceStartupJsonContext.Default.ServiceStartupDiagnostic, ct).ConfigureAwait(false);
         }

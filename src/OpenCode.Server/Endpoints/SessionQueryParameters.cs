@@ -109,8 +109,8 @@ internal static class SessionQueryParameters
         // Session cursors use Effect's strict URL alphabet. Message cursors use
         // Node Buffer's permissive base64url decoding, including standard base64.
         var encoded = strict ? cursor.Replace("\r", "").Replace("\n", "")
-            : Regex.Replace(cursor.Split('=')[0], "[^A-Za-z0-9+/_-]", "");
-        if (strict && (encoded.Length % 4 == 1 || !Regex.IsMatch(encoded, "\\A[-_A-Za-z0-9]*={0,2}\\z")))
+            : Regex.Replace(cursor.Split('=')[0], "[^A-Za-z0-9+/_-]", "", RegexOptions.NonBacktracking);
+        if (strict && (encoded.Length % 4 == 1 || !Regex.IsMatch(encoded, "\\A[-_A-Za-z0-9]*={0,2}\\z", RegexOptions.NonBacktracking)))
             throw new FormatException("Invalid base64url cursor.");
         if (!strict && encoded.Length % 4 == 1) encoded = encoded[..^1];
         encoded = encoded.Replace('-', '+').Replace('_', '/');
@@ -162,9 +162,9 @@ internal static class SessionQueryParameters
         var invalid = new SessionQueryParameterException($"Limit must be a positive integer no greater than {maximum}.", "limit");
         value = value.Trim();
         // Effect NumberFromString uses Number(), including unsigned radix prefixes.
-        var radix = Regex.IsMatch(value, "\\A0[xX][0-9a-fA-F]+\\z") ? 16
-            : Regex.IsMatch(value, "\\A0[bB][01]+\\z") ? 2
-            : Regex.IsMatch(value, "\\A0[oO][0-7]+\\z") ? 8 : 0;
+        var radix = Regex.IsMatch(value, "\\A0[xX][0-9a-fA-F]+\\z", RegexOptions.NonBacktracking) ? 16
+            : Regex.IsMatch(value, "\\A0[bB][01]+\\z", RegexOptions.NonBacktracking) ? 2
+            : Regex.IsMatch(value, "\\A0[oO][0-7]+\\z", RegexOptions.NonBacktracking) ? 8 : 0;
         double number;
         if (radix != 0)
         {

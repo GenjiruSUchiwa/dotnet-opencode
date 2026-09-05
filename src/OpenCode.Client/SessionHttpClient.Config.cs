@@ -10,7 +10,7 @@ public sealed partial class SessionHttpClient
     public async Task<IReadOnlyList<ConfigEntry>> GetConfigAsync(string? directory = null, string? workspace = null, CancellationToken ct = default)
     {
         var entries = await RequestAsync(HttpMethod.Get, "/api/config" + Query(
-            ("location[directory]", directory), ("location[workspace]", workspace)), ConfigHttpJsonContext.Default.ConfigEntries, ct);
+            ("location[directory]", directory), ("location[workspace]", workspace)), ConfigHttpJsonContext.Default.ConfigEntries, ct).ConfigureAwait(false);
         if (entries.Any(entry => entry is null)) throw Malformed("config.get", "Configuration source entries cannot contain null.");
         return entries;
     }

@@ -64,7 +64,7 @@ public static class PermissionEndpoints
         {
             foreach (var pair in request.Query)
                 if (pair.Key != "auth_token" && (pair.Key is not ("location[directory]" or "location[workspace]") || pair.Value.Count != 1))
-                    throw new ArgumentException("Use a single location[directory] and optional location[workspace].");
+                    throw new RequestArgumentException("Use a single location[directory] and optional location[workspace].", nameof(request));
             await using var location = await Locations(services).AcquireAsync(
                 request.Query.TryGetValue("location[directory]", out var directory) ? directory[0] : null,
                 request.Query.TryGetValue("location[workspace]", out var workspace) ? workspace[0] : null, ct);
@@ -103,7 +103,7 @@ public static class PermissionEndpoints
                 "once" => PermissionReply.Once,
                 "always" => PermissionReply.Always,
                 "reject" => PermissionReply.Reject,
-                _ => throw new ArgumentException("Reply must be once, always, or reject.")
+                _ => throw new RequestArgumentException("Reply must be once, always, or reject.", nameof(input))
             };
             await using var location = await Locations(services).AcquireAsync(session.Location, ct);
             var pending = await location.Permissions.GetAsync(id, ct);
@@ -157,7 +157,7 @@ public static class PermissionEndpoints
         await store.GetSessionAsync(SessionId.FromExisting(id), ct) ?? throw new SessionNotFoundException(id);
 
     private static PermissionId RequestId(string id) => id.StartsWith("per", StringComparison.Ordinal)
-        ? PermissionId.FromExisting(id) : throw new ArgumentException("Permission ID must start with per.");
+        ? PermissionId.FromExisting(id) : throw new RequestArgumentException("Permission ID must start with per.", nameof(id));
 
     private static IResult Missing(PermissionId id) => Results.Json(new
     {

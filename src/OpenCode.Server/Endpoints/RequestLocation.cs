@@ -38,7 +38,7 @@ public static class RequestLocation
         foreach (var pair in new QueryStringEnumerable(request.QueryString.Value))
         {
             if (!pair.DecodeName().Span.SequenceEqual(name)) continue;
-            if (result is not null) throw new ArgumentException($"{name} must occur once.");
+            if (result is not null) throw new RequestArgumentException($"{name} must occur once.", nameof(request));
             result = pair.DecodeValue().ToString();
             if (!single) return result;
         }
@@ -58,12 +58,12 @@ public static class RequestLocation
             while (index < value.Length && value[index] == '%')
             {
                 if (index + 2 >= value.Length || !char.IsAsciiHexDigit(value[index + 1]) || !char.IsAsciiHexDigit(value[index + 2]))
-                    return strict ? throw new ArgumentException("Malformed percent encoding in file path.") : value;
+                    return strict ? throw new RequestArgumentException("Malformed percent encoding in file path.", nameof(value)) : value;
                 bytes[count++] = Convert.ToByte(value.Substring(index + 1, 2), 16);
                 index += 3;
             }
             try { output.Append(new UTF8Encoding(false, true).GetString(bytes, 0, count)); }
-            catch (DecoderFallbackException) { return strict ? throw new ArgumentException("Malformed UTF-8 in file path.") : value; }
+            catch (DecoderFallbackException) { return strict ? throw new RequestArgumentException("Malformed UTF-8 in file path.", nameof(value)) : value; }
         }
         return output.ToString();
     }

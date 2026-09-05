@@ -43,7 +43,7 @@ public sealed partial class SessionHttpClient
         string? workspace = null, CancellationToken ct = default)
     {
         if (cursor is < -1 or > 9007199254740991) throw new ArgumentOutOfRangeException(nameof(cursor));
-        var ticket = await IssuePtyConnectTokenAsync(id, directory, workspace, ct);
+        var ticket = await IssuePtyConnectTokenAsync(id, directory, workspace, ct).ConfigureAwait(false);
         var path = "/api/pty/" + Uri.EscapeDataString(id.Value) + "/connect" + Query(
             ("location[directory]", ticket.Location.Directory), ("location[workspace]", ticket.Location.WorkspaceId?.Value),
             ("ticket", ticket.Data.Ticket), ("cursor", cursor?.ToString(CultureInfo.InvariantCulture)));
@@ -52,7 +52,7 @@ public sealed partial class SessionHttpClient
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         try
         {
-            await socket.ConnectAsync(url.Uri, cancellation.Token);
+            await socket.ConnectAsync(url.Uri, cancellation.Token).ConfigureAwait(false);
             return new PtyConnection(socket, _lifetime.Token);
         }
         catch { socket.Dispose(); throw; }
@@ -60,7 +60,7 @@ public sealed partial class SessionHttpClient
 
     private static string PtyPath(PtyId? id, string? operation, string? directory, string? workspace)
     {
-        if (id is { } value) ArgumentException.ThrowIfNullOrEmpty(value.Value);
+        if (id is { } value) ArgumentException.ThrowIfNullOrEmpty(value.Value, nameof(id));
         return "/api/pty" + (id is { } terminal ? "/" + Uri.EscapeDataString(terminal.Value) : "") + operation
             + Query(("location[directory]", directory), ("location[workspace]", workspace));
     }

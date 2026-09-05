@@ -14,7 +14,7 @@ public sealed partial class SessionHttpClient
     public Task ActivateSkillAsync(SessionId sessionId, SkillId skill, MessageId? id = null, bool? resume = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(skill.Value);
-        if (id is { } supplied) ArgumentNullException.ThrowIfNull(supplied.Value);
+        if (id is { } supplied) ArgumentNullException.ThrowIfNull(supplied.Value, nameof(id));
         return NoContentAsync(HttpMethod.Post, SessionPath(sessionId) + "/skill", ct,
             JsonContent.Create(new SessionSkillActivationInput(skill, id, resume), SkillHttpJsonContext.Default.SessionSkillActivationInput));
     }

@@ -487,8 +487,8 @@ public static class SessionEndpoints
         {
             // Like Session.mutatePending, mutation and its advisory wake are not
             // abandoned when the submitting HTTP client disconnects.
-            if (delivery is null) await store.CancelInboxAsync(sessionId, messageId);
-            else await store.ChangeInboxDeliveryAsync(sessionId, messageId, delivery.Value);
+            if (delivery is null) await store.CancelInboxAsync(sessionId, messageId, CancellationToken.None);
+            else await store.ChangeInboxDeliveryAsync(sessionId, messageId, delivery.Value, CancellationToken.None);
         }
         catch (InboxLifecycleConflictException)
         {

@@ -62,7 +62,7 @@ public sealed class EventFeedService : IEventFeedService, IDisposable
     private readonly ILogger<EventFeedService> _logger;
     private bool _disposed;
 
-    public EventFeedService() : this(NullLogger<EventFeedService>.Instance) { }
+    public EventFeedService() : this(NullLogger<EventFeedService>.Instance, TimeProvider.System) { }
 
     public EventFeedService(ILogger<EventFeedService> logger, TimeProvider? clock = null)
     {

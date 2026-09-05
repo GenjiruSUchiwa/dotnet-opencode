@@ -21,7 +21,7 @@ public sealed class PtyHostServices(PtyLocationMap locations, PtyTickets tickets
     public async ValueTask<PtyLocationScope> ResolveAsync(HttpRequest request, CancellationToken ct)
     {
         if (request.Query["location[directory]"].Count > 1 || request.Query["location[workspace]"].Count > 1)
-            throw new ArgumentException("Location query parameters must occur only once.");
+            throw new RequestArgumentException("Location query parameters must occur only once.", nameof(request));
         var reference = RequestLocation.Reference(request);
         var location = await options.ResolveLocation(reference.Directory, reference.WorkspaceId?.Value, ct);
         return await locations.GetAsync(location, ct);

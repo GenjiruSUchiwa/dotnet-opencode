@@ -77,7 +77,7 @@ public sealed class ShellLocationServices(ShellHostOptions options, ToolLocation
     public async ValueTask InvalidateAsync(LocationRef location)
     {
         // Do not let retention lose the active-file protection between map removal and process stop.
-        await _maintenance.WaitAsync();
+        await _maintenance.WaitAsync(CancellationToken.None);
         try
         {
             ShellRuntime? shell;
@@ -150,7 +150,7 @@ public sealed class ShellLocationServices(ShellHostOptions options, ToolLocation
         await _cleanupStop.CancelAsync();
         _cleanupRequests.Writer.TryComplete();
         await Task.WhenAll(_cleanup ?? Task.CompletedTask, _schedule ?? Task.CompletedTask);
-        await _maintenance.WaitAsync();
+        await _maintenance.WaitAsync(CancellationToken.None);
         try
         {
             ShellRuntime[] shells;

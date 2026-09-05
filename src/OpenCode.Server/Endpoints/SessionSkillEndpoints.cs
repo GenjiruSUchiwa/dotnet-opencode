@@ -27,9 +27,9 @@ public static class SessionSkillEndpoints
             SessionExecutionService execution, IServiceProvider services, CancellationToken ct) =>
         {
             if (request.Query.Keys.Any(key => key != "auth_token"))
-                throw new ArgumentException("session.skill derives placement from the stored Session and has no Location/model/delivery query.");
+                throw new RequestArgumentException("session.skill derives placement from the stored Session and has no Location/model/delivery query.", nameof(request));
             var input = await request.ReadFromJsonAsync(SessionSkillJsonContext.Default.SessionSkillRequest, ct)
-                ?? throw new ArgumentException("A skill activation payload is required.");
+                ?? throw new RequestArgumentException("A skill activation payload is required.", nameof(request));
             var id = SessionId.FromExisting(sessionID);
             _ = await sessions.GetSessionAsync(id, ct) ?? throw new SessionMutationNotFoundException(id);
             // Recording must work even for resume:false or an unavailable model. Do not turn this

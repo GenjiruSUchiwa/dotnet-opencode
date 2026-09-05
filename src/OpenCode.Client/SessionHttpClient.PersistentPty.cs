@@ -59,14 +59,14 @@ public sealed partial class SessionHttpClient
     {
         ArgumentNullException.ThrowIfNull(attachmentId);
         if (cursor is < 0 or > 9007199254740991) throw new ArgumentOutOfRangeException(nameof(cursor));
-        var ticket = await IssuePersistentPtyConnectTokenAsync(id, ct);
+        var ticket = await IssuePersistentPtyConnectTokenAsync(id, ct).ConfigureAwait(false);
         var path = PersistentPath(id) + "/connect" + Query(("ticket", ticket.Data.Ticket), ("attachment_id", attachmentId),
             ("cursor", cursor.ToString(CultureInfo.InvariantCulture)), ("role", observer ? "observer" : "controller"),
             ("takeover", takeover ? "true" : "false"), ("input_protocol", framedInput ? "1" : "0"));
         var uri = new UriBuilder(new Uri(_origin, path)) { Scheme = _origin.Scheme == "https" ? "wss" : "ws" };
         var socket = new ClientWebSocket();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
-        try { await socket.ConnectAsync(uri.Uri, cancellation.Token); return socket; }
+        try { await socket.ConnectAsync(uri.Uri, cancellation.Token).ConfigureAwait(false); return socket; }
         catch { socket.Dispose(); throw; }
     }
 

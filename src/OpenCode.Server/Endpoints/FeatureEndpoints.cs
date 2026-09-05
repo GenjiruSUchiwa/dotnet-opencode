@@ -71,7 +71,7 @@ public static class FeatureEndpoints
     {
         foreach (var pair in request.Query)
             if (pair.Key != "auth_token" && (pair.Key is not ("location[directory]" or "location[workspace]") || pair.Value.Count != 1))
-                throw new ArgumentException("Use a single location[directory] and optional location[workspace].");
+                throw new RequestArgumentException("Use a single location[directory] and optional location[workspace].", nameof(request));
         return RequestLocation.ResolveAsync(request, database, ct);
     }
 

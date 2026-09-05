@@ -38,12 +38,12 @@ public sealed partial class PtyRequestPolicy(Func<HttpRequest, bool> authorized,
             || OpenCodeOrigin().IsMatch(origin)
             || (cors?.Contains(origin, StringComparer.Ordinal) ?? false);
 
-    [GeneratedRegex(@"^/api/pty/[^/]+/connect$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^/api/pty/[^/]+/connect$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex ConnectPath();
 
-    [GeneratedRegex(@"^/api/experimental/persistent-pty/[^/]+/connect$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^/api/experimental/persistent-pty/[^/]+/connect$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking)]
     private static partial Regex PersistentConnectPath();
 
-    [GeneratedRegex(@"^https://([a-z0-9-]+\.)*opencode\.ai$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^https://([a-z0-9-]+\.)*opencode\.ai$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | RegexOptions.ExplicitCapture)]
     private static partial Regex OpenCodeOrigin();
 }

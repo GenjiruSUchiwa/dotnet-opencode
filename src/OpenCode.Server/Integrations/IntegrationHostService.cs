@@ -34,6 +34,7 @@ public sealed class IntegrationHostService : IHostedService, IAsyncDisposable
     private readonly IEventFeedService _feed;
     private readonly ILogger<IntegrationHostService> _log;
     private readonly IReadOnlyList<IIntegrationCommandSource> _commandSources;
+    private readonly WebSearchPluginSource? _webSearch;
     private Task? _worker;
     private bool _closed;
 
@@ -48,12 +49,13 @@ public sealed class IntegrationHostService : IHostedService, IAsyncDisposable
 
     public IntegrationHostService(CredentialStore credentials, ConsoleIntegrationService console, OpenAiOAuthService openAi,
         IIntegrationCallbackFactory callbacks, IEventFeedService feed, ILogger<IntegrationHostService> log,
-        IEnumerable<IIntegrationCommandSource>? commandSources = null)
+        IEnumerable<IIntegrationCommandSource>? commandSources = null, WebSearchPluginSource? webSearch = null)
     {
         _credentials = credentials;
         _feed = feed;
         _log = log;
         _commandSources = commandSources?.ToArray() ?? [];
+        _webSearch = webSearch;
         OAuth = new McpOAuthService(new McpOAuthCredentialStore(credentials, PublishCommittedAsync), credentials.Clock);
         _providers = new IntegrationProviders(credentials, console, openAi, callbacks, PublishCommittedAsync);
     }
@@ -147,6 +149,8 @@ public sealed class IntegrationHostService : IHostedService, IAsyncDisposable
         try
         {
             var definitions = (await _providers.DefinitionsAsync(entry.Mcp, ct)).ToDictionary(item => item.Reference.Id.Value, StringComparer.Ordinal);
+            foreach (var definition in _webSearch?.Integrations(entry.Location) ?? [])
+                definitions[definition.Reference.Id.Value] = definition;
             foreach (var registration in _commandSources.SelectMany(source => source.Methods(entry.Location)))
             {
                 var id = registration.Integration.Id.Value;
@@ -230,6 +234,7 @@ public static class IntegrationHostComposition
     /// <summary>Requires existing CredentialStore, HttpClient, event feed, and the shared tool Location graph.</summary>
     public static IServiceCollection AddIntegrationServices(this IServiceCollection services)
     {
+        OpenCode.Server.Endpoints.WellknownEndpoints.AddWellknownDiscovery(services);
         services.TryAddSingleton<ConsoleIntegrationService>();
         services.TryAddSingleton<OpenAiOAuthService>();
         services.TryAddSingleton<IIntegrationCallbackFactory, IntegrationCallbackFactory>();

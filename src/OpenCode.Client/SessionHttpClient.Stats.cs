@@ -17,7 +17,7 @@ public sealed partial class SessionHttpClient
             SessionStatsToolMode.None => "none",
             SessionStatsToolMode.Summary => "summary",
             SessionStatsToolMode.Detail => "detail",
-            _ => throw new ArgumentException("Unknown stats tools mode.")
+            _ => throw new ArgumentException("Unknown stats tools mode.", nameof(query))
         };
         return RequestAsync(HttpMethod.Get, "/api/session/stats" + Query(
             ("from", query.From?.ToString("R", CultureInfo.InvariantCulture)),

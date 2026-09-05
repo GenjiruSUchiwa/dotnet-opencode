@@ -18,7 +18,7 @@ internal static class SchemaReferences
             {
                 var part = encoded.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal);
                 if (node is JsonObject obj && obj.TryGetPropertyValue(part, out var next)) { node = next; continue; }
-                if (node is JsonArray array && int.TryParse(part, out var index) && index >= 0 && index < array.Count) { node = array[index]; continue; }
+                if (node is JsonArray array && int.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index) && index >= 0 && index < array.Count) { node = array[index]; continue; }
                 errors.Add("Unresolved schema reference: " + reference); return;
             }
             Visit(node);

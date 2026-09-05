@@ -47,6 +47,8 @@ internal sealed class NativeSchemaExporter(JsonObject components)
         [nameof(IntegrationInfo)] = "Integration.Info", [nameof(IntegrationAttempt)] = "Integration.AttemptEncoded",
         [nameof(IntegrationAttemptStatus)] = "Integration.AttemptStatus", [nameof(SessionTransferData)] = "SessionTransfer.Data",
         [nameof(SessionStatsInfo)] = "SessionStats.Info",
+        [nameof(WebSearchProvider)] = "WebSearch.Provider", [nameof(WebSearchInput)] = "WebSearch.Input",
+        [nameof(WebSearchResult)] = "WebSearch.Result", [nameof(WebSearchResponse)] = "WebSearch.Response",
         [nameof(LocationProjectInfo)] = "Project.Current", [nameof(ProjectInfo)] = "Project", [nameof(ProjectIcon)] = "Project.Icon",
         [nameof(ProjectCommands)] = "Project.Commands", [nameof(ProjectTime)] = "Project.Time", [nameof(WorktreeInfo)] = "Worktree.Info",
         [nameof(WorktreeDirectory)] = "Worktree.Directory", [nameof(CommandInfo)] = "Command.Info", [nameof(SkillInfo)] = "Skill.Info",
@@ -232,6 +234,8 @@ internal sealed class NativeSchemaExporter(JsonObject components)
         if (type == typeof(ConfigReferenceEntry)) return Any(String(), Reference(typeof(ConfigGitReference)), Reference(typeof(ConfigLocalReference)));
         if (type == typeof(ConfigModelCosts)) return Any(Reference(typeof(ConfigModelCost)), Array(Reference(typeof(ConfigModelCost))));
         if (type == typeof(ConfigWebSearchSelection)) return Any(new JsonObject { ["const"] = false }, Reference(typeof(ConfigWebSearchInfo)));
+        if (type == typeof(WebSearchInput) || type == typeof(WebSearchResult) || type == typeof(WebSearchResultTime))
+            return RecordMetadata(type);
         if (type == typeof(ConfigWarming)) return Any(new JsonObject { ["type"] = "boolean" }, Reference(typeof(ConfigWarmingInfo)));
         if (type.GetCustomAttribute<JsonPolymorphicAttribute>() is { } polymorphic)
             return Union(polymorphic.TypeDiscriminatorPropertyName ?? "$type", type.GetCustomAttributes<JsonDerivedTypeAttribute>().Select(derived => derived.DerivedType).ToArray());
@@ -336,7 +340,7 @@ internal sealed class NativeSchemaExporter(JsonObject components)
     }
 
     private static string Name(Type type) => type.Namespace == "OpenCode.Schema" && Stable.TryGetValue(type.Name, out var name) ? name
-        : "Native." + Regex.Replace(type.IsGenericType ? type.GetGenericTypeDefinition().FullName!.Split('`')[0] + "." + string.Join(".", type.GetGenericArguments().Select(Name)) : type.FullName!, "[^a-zA-Z0-9._-]", "_");
+        : "Native." + Regex.Replace(type.IsGenericType ? type.GetGenericTypeDefinition().FullName!.Split('`')[0] + "." + string.Join(".", type.GetGenericArguments().Select(Name)) : type.FullName!, "[^a-zA-Z0-9._-]", "_", RegexOptions.NonBacktracking);
     private static JsonObject Ref(string name) => new() { ["$ref"] = "#/components/schemas/" + name };
     private static JsonObject String(string? pattern = null) => pattern is null ? new() { ["type"] = "string" } : new() { ["type"] = "string", ["pattern"] = pattern };
     private static JsonObject Strings(params string[] values) => new() { ["type"] = "string", ["enum"] = new JsonArray(values.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()) };

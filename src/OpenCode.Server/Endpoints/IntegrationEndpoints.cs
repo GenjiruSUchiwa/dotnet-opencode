@@ -110,7 +110,13 @@ public static class IntegrationEndpoints
                 await runtime.CancelCommandAsync(integrationID, IntegrationAttemptId.FromExisting(attemptID));
                 return Results.NoContent();
             }, ct));
-        app.MapPost("/api/experimental/integration/wellknown", () => Unavailable("Wellknown integration discovery is not implemented."));
+        app.MapWellknownEndpoints(async (location, ct) =>
+        {
+            var services = app.ServiceProvider;
+            await using var lease = await services.GetRequiredService<IntegrationHostService>().AcquireAsync(
+                new(location.Directory, location.WorkspaceId), services.GetRequiredService<ToolLocationFactory>(),
+                services.GetRequiredService<PermissionLocationMap>(), observe: true, ct);
+        });
     }
 
     private static async Task<IResult> UseAsync(HttpRequest request, bool observe,

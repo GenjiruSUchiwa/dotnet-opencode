@@ -200,7 +200,7 @@ public sealed class SessionExecutionService(
             {
                 // Wake acknowledges registration. Core still owns the drain and
                 // its bounded settlement, including any coalesced successor.
-                await engine.AwaitIdleAsync(sessionId);
+                await engine.AwaitIdleAsync(sessionId, CancellationToken.None);
                 lock (_gate) _running.Remove(running!);
             }
         }
@@ -228,7 +228,7 @@ public sealed class SessionExecutionService(
             catch (Exception error) { logger.LogError(error, "Session startup recovery failed"); }
             // Recovery schedules Core-owned drains outside Schedule(). Keep the bridge
             // alive through their shutdown settlement, including partial recovery failure.
-            await Task.WhenAll(engine.ActiveSessionIds.Select(id => engine.AwaitIdleAsync(id)));
+            await Task.WhenAll(engine.ActiveSessionIds.Select(id => engine.AwaitIdleAsync(id, CancellationToken.None)));
         }
         // Settlement is Core-owned and bounded independently of work cancellation.
         // Do not abandon it when the host's shutdown deadline expires.

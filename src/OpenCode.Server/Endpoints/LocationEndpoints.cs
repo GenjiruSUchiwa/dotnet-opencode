@@ -62,13 +62,13 @@ public static class LocationEndpoints
         });
         routes.MapGet("/fs/find", async (HttpRequest request, IDatabase database, CancellationToken ct) =>
         {
-            var query = RequestLocation.QueryValue(request, "query", single: true) ?? throw new ArgumentException("Query is required.");
+            var query = RequestLocation.QueryValue(request, "query", single: true) ?? throw new RequestArgumentException("Query is required.", nameof(request));
             var type = RequestLocation.QueryValue(request, "type", single: true) switch
             {
                 null => (FileSystemEntryType?)null,
                 "file" => FileSystemEntryType.File,
                 "directory" => FileSystemEntryType.Directory,
-                _ => throw new ArgumentException("Type must be file or directory.")
+                _ => throw new RequestArgumentException("Type must be file or directory.", nameof(request))
             };
             var limit = Limit(RequestLocation.QueryValue(request, "limit", single: true));
             var location = await RequestLocation.ResolveAsync(request, database, ct);
@@ -81,7 +81,7 @@ public static class LocationEndpoints
             var raw = context.Features.Get<IHttpRequestFeature>()?.RawTarget
                 ?? throw new NotSupportedException("The HTTP server did not supply the raw file request path.");
             var path = raw.Split('?', 2)[0];
-            if (!path.StartsWith("/api/fs/read/", StringComparison.Ordinal)) throw new ArgumentException("Invalid file request path.");
+            if (!path.StartsWith("/api/fs/read/", StringComparison.Ordinal)) throw new RequestArgumentException("Invalid file request path.", nameof(context));
             var location = await RequestLocation.ResolveAsync(context.Request, database, ct);
             var file = new LocalFileSystem(location).Read(RequestLocation.DecodeDirectory(path[13..], strict: true));
             return Results.Stream(file.Content, file.Mime, enableRangeProcessing: false);
@@ -97,10 +97,10 @@ public static class LocationEndpoints
             || value.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
         {
             try { number = Convert.ToUInt64(value[2..], char.ToLowerInvariant(value[1]) is 'x' ? 16 : char.ToLowerInvariant(value[1]) is 'o' ? 8 : 2); }
-            catch (Exception error) when (error is FormatException or OverflowException or ArgumentException) { throw new ArgumentException("Limit must be a positive integer."); }
+            catch (Exception error) when (error is FormatException or OverflowException or ArgumentException) { throw new RequestArgumentException("Limit must be a positive integer.", nameof(value)); }
         }
-        else if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)) throw new ArgumentException("Limit must be a positive integer.");
-        if (!double.IsFinite(number) || number < 1 || Math.Truncate(number) != number) throw new ArgumentException("Limit must be a positive integer.");
+        else if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out number)) throw new RequestArgumentException("Limit must be a positive integer.", nameof(value));
+        if (!double.IsFinite(number) || number < 1 || Math.Truncate(number) != number) throw new RequestArgumentException("Limit must be a positive integer.", nameof(value));
         if (number > int.MaxValue) throw new NotSupportedException("Native filesystem search limits above Int32.MaxValue are not implemented.");
         return (int)number;
     }

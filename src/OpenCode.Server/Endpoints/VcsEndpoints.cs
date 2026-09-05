@@ -54,7 +54,7 @@ public static class VcsEndpoints
         routes.MapGet("/branches", async (HttpRequest request, IDatabase database, CancellationToken ct) =>
         {
             var limit = RequestLocation.QueryValue(request, "limit", single: true);
-            var parsed = limit is null ? 50 : PtyWebSocket.ParseNumber(limit, 1, 9007199254740991) ?? throw new ArgumentException("Branch limit must be a positive integer.");
+            var parsed = limit is null ? 50 : PtyWebSocket.ParseNumber(limit, 1, 9007199254740991) ?? throw new RequestArgumentException("Branch limit must be a positive integer.", nameof(request));
             var location = await RequestLocation.ResolveAsync(request, database, ct);
             var vcs = await LocalVcs.OpenAsync(location, ct: ct);
             return Results.Json(new LocationResponse<IReadOnlyList<string>>(location,
@@ -63,10 +63,10 @@ public static class VcsEndpoints
         routes.MapGet("/diff", async (HttpRequest request, IDatabase database, CancellationToken ct) =>
         {
             var mode = RequestLocation.QueryValue(request, "mode", single: true);
-            if (mode is not ("working" or "branch" or "committed")) throw new ArgumentException("VCS mode must be working, branch, or committed.");
+            if (mode is not ("working" or "branch" or "committed")) throw new RequestArgumentException("VCS mode must be working, branch, or committed.", nameof(request));
             var raw = RequestLocation.QueryValue(request, "context", single: true);
             var context = raw is null ? LocalVcs.PatchContext : PtyWebSocket.ParseNumber(raw, 0, int.MaxValue)
-                ?? throw new ArgumentException("Patch context must be a supported nonnegative integer.");
+                ?? throw new RequestArgumentException("Patch context must be a supported nonnegative integer.", nameof(request));
             var location = await RequestLocation.ResolveAsync(request, database, ct);
             await FlushAsync(location, request, ct);
             var vcs = await LocalVcs.OpenAsync(location, ct: ct);

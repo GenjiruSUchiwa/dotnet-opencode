@@ -38,7 +38,7 @@ public static class ShellEndpoints
         routes.MapPost("", (HttpRequest request, CancellationToken ct) => UseAsync(request, false, async (runtime, location, token) =>
         {
             var input = await request.ReadFromJsonAsync(ShellEndpointJsonContext.Default.ShellCreateInput, token)
-                ?? throw new ArgumentException("A shell command payload is required.");
+                ?? throw new RequestArgumentException("A shell command payload is required.", nameof(request));
             return Results.Json(new LocationResponse<ShellInfo>(location, await runtime.CreateAsync(input, token)), ShellEndpointJsonContext.Default.InfoResult);
         }, ct));
 
@@ -48,7 +48,7 @@ public static class ShellEndpoints
         routes.MapPatch("/{id}/timeout", (string id, HttpRequest request, CancellationToken ct) => UseAsync(request, false, async (runtime, location, token) =>
         {
             var input = await request.ReadFromJsonAsync(ShellEndpointJsonContext.Default.ShellTimeoutInput, token)
-                ?? throw new ArgumentException("A shell timeout payload is required.");
+                ?? throw new RequestArgumentException("A shell timeout payload is required.", nameof(request));
             return Results.Json(new LocationResponse<ShellInfo>(location, await runtime.TimeoutAsync(ShellId.FromExisting(id), input.Timeout, token)), ShellEndpointJsonContext.Default.InfoResult);
         }, ct));
 
@@ -64,9 +64,9 @@ public static class ShellEndpoints
 
         app.MapPost("/api/session/{sessionID}/shell", async (string sessionID, HttpRequest request, SessionShellHostService host, CancellationToken ct) =>
         {
-            if (request.Query.Keys.Any(key => key != "auth_token")) throw new ArgumentException("session.shell derives its Location from the Session.");
+            if (request.Query.Keys.Any(key => key != "auth_token")) throw new RequestArgumentException("session.shell derives its Location from the Session.", nameof(request));
             var input = await request.ReadFromJsonAsync(ShellEndpointJsonContext.Default.SessionShellPayload, ct)
-                ?? throw new ArgumentException("A session shell payload is required.");
+                ?? throw new RequestArgumentException("A session shell payload is required.", nameof(request));
             await host.RunAsync(SessionId.FromExisting(sessionID), input.Command, input.Id, ct);
             return Results.NoContent();
         }).AddEndpointFilter(FilterAsync);
@@ -95,7 +95,7 @@ public static class ShellEndpoints
         {
             if (pair.Key == "auth_token") continue;
             if (pair.Value.Count != 1 || pair.Key is not ("location[directory]" or "location[workspace]") && !(output && pair.Key is ("cursor" or "limit")))
-                throw new ArgumentException("Invalid shell query.");
+                throw new RequestArgumentException("Invalid shell query.", nameof(request));
         }
         var services = request.HttpContext.RequestServices;
         var info = await CatalogLocation.ResolveAsync(services.GetRequiredService<IDatabase>(),
@@ -109,7 +109,7 @@ public static class ShellEndpoints
     {
         if (!request.Query.TryGetValue(name, out var value)) return null;
         return double.TryParse(value[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
-            && double.IsFinite(number) && number >= 0 && Math.Truncate(number) == number ? number : throw new ArgumentException("Expected a nonnegative integer shell cursor/limit.");
+            && double.IsFinite(number) && number >= 0 && Math.Truncate(number) == number ? number : throw new RequestArgumentException("Expected a nonnegative integer shell cursor/limit.", nameof(request));
     }
     private static IResult Unavailable(string message) => Results.Json(new { _tag = "ServiceUnavailableError", service = "shell", message }, statusCode: 503);
 }

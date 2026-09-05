@@ -32,14 +32,14 @@ internal sealed class StartupDiagnostics : ILoggerProvider
         {
             if (args[index] is not ("--startup-id" or "--startup-report")) continue;
             var name = args[index];
-            if (++index == args.Length) throw new ArgumentException("Missing startup diagnostic argument.");
+            if (++index == args.Length) throw new ArgumentException("Missing startup diagnostic argument.", nameof(args));
             if (name == "--startup-id") nonce = args[index];
             if (name == "--startup-report") suppliedPath = args[index];
         }
-        if ((nonce is null) != (suppliedPath is null)) throw new ArgumentException("Startup ID and report must be supplied together.");
+        if ((nonce is null) != (suppliedPath is null)) throw new ArgumentException("Startup ID and report must be supplied together.", nameof(args));
         nonce ??= Guid.NewGuid().ToString("N");
         if (!Guid.TryParseExact(nonce, "N", out var parsed) || parsed.ToString("N") != nonce)
-            throw new ArgumentException("Startup nonce must be a lowercase canonical GUID.");
+            throw new ArgumentException("Startup nonce must be a lowercase canonical GUID.", nameof(args));
         var state = Environment.GetEnvironmentVariable("XDG_STATE_HOME") is { Length: > 0 } root
             ? root : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "state");
         var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(state, "opencode", "service-" + OpenCodeChannel.Name + "-startup", nonce + ".json"));
@@ -48,7 +48,7 @@ internal sealed class StartupDiagnostics : ILoggerProvider
             || path.StartsWith(AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar, comparison)
             || path.Split(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar)
                 .Any(part => part.Equals("bin", StringComparison.OrdinalIgnoreCase) || part.Equals("obj", StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("Startup diagnostics must use the private channel state directory, outside deployment and build output.");
+            throw new ArgumentException("Startup diagnostics must use the private channel state directory, outside deployment and build output.", nameof(args));
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         if (suppliedPath is not null && !File.Exists(path))
             throw new InvalidDataException("The caller-owned pending startup report is missing.");
@@ -135,8 +135,8 @@ internal sealed class StartupDiagnostics : ILoggerProvider
             {
                 // Extract only compiled type identifiers from known DI diagnostics, never arbitrary quoted values.
                 var types = Regex.Matches(item.Message[..Math.Min(item.Message.Length, 4096)],
-                    "'((?:OpenCode|Microsoft|System)\\.[A-Za-z0-9_.+`\\[\\], ]+)'", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1))
-                    .Select(match => match.Groups[1].Value).Distinct().Take(3).ToArray();
+                    "'(?<type>(?:OpenCode|Microsoft|System)\\.[A-Za-z0-9_.+`\\[\\], ]+)'", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1))
+                    .Select(match => match.Groups["type"].Value).Distinct().Take(3).ToArray();
                 return ("dependency-injection", types.Length == 0 ? "Host dependency construction failed; see the sanitized call sites."
                         : "Host dependency construction failed: " + string.Join(", ", types) + ".",
                     "Register the actual dependency or correct constructor selection. Do not bypass execution capability checks.");

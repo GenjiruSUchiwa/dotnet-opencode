@@ -19,7 +19,7 @@ public static class SessionArchiveEndpoints
             try
             {
                 var sanitize = RequestLocation.QueryValue(request, "sanitize");
-                if (sanitize is not (null or "true" or "false")) throw new ArgumentException("sanitize must be true or false.");
+                if (sanitize is not (null or "true" or "false")) throw new RequestArgumentException("sanitize must be true or false.", nameof(request));
                 var data = await archive.ExportAsync(SessionId.FromExisting(sessionID), sanitize == "true", ct);
                 return Results.Json(new ApiResult<SessionTransferData>(data), SessionArchiveProtocolJsonContext.Default.ArchiveResult);
             }

@@ -68,7 +68,7 @@ public static class PtyEndpoints
         {
             var host = Host(context);
             var input = await context.Request.ReadFromJsonAsync(OpenCodeJsonContext.Default.PtyCreateInput, context.RequestAborted)
-                ?? throw new ArgumentException("PTY create input is required.");
+                ?? throw new RequestArgumentException("PTY create input is required.", nameof(context));
             var scope = await host.ResolveAsync(context.Request, context.RequestAborted);
             return Results.Json(new PtyResponse(scope.Location, await host.Integration(scope).CreateAsync(context, input)), PtyEndpointJsonContext.Default.PtyResponse);
         });
@@ -80,7 +80,7 @@ public static class PtyEndpoints
         routes.MapPut("/{ptyID}", async (HttpContext context, string ptyID) =>
         {
             var input = await context.Request.ReadFromJsonAsync(OpenCodeJsonContext.Default.PtyUpdateInput, context.RequestAborted)
-                ?? throw new ArgumentException("PTY update input is required.");
+                ?? throw new RequestArgumentException("PTY update input is required.", nameof(context));
             var scope = await Host(context).ResolveAsync(context.Request, context.RequestAborted);
             return Results.Json(new PtyResponse(scope.Location, scope.Pty.Update(PtyId.FromExisting(ptyID), input)), PtyEndpointJsonContext.Default.PtyResponse);
         });

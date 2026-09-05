@@ -40,7 +40,7 @@ public static class WebSearchEndpoints
         group.MapPost("", async (HttpRequest request, IDatabase database, IServiceProvider services, CancellationToken ct) =>
         {
             var input = await request.ReadFromJsonAsync(WebSearchJsonContext.Default.WebSearchInput, ct)
-                ?? throw new ArgumentException("Web search payload is required.");
+                ?? throw new RequestArgumentException("Web search payload is required.", nameof(request));
             await using var lease = await AcquireAsync(request, database, services, ct);
             var result = await lease.Runtime.QueryAsync(input, ct);
             return Results.Json(new LocationResponse<WebSearchResponse>(lease.Location, result), WebSearchEndpointJsonContext.Default.QueryResponse);

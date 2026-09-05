@@ -11,7 +11,7 @@ public sealed partial class SessionHttpClient
         string? workspace = null, CancellationToken ct = default)
     {
         var result = await RequestAsync(HttpMethod.Get, "/api/form/request" + Query(("location[directory]", directory), ("location[workspace]", workspace)),
-            FormProtocolJsonContext.Default.LocationFormsResult, ct);
+            FormProtocolJsonContext.Default.LocationFormsResult, ct).ConfigureAwait(false);
         if (result.Data.Any(form => form is null)) throw Malformed("form.request.list", "The form catalog contains a null form.");
         return result;
     }
@@ -19,7 +19,7 @@ public sealed partial class SessionHttpClient
     public async Task<ApiResult<IReadOnlyList<FormInfo>>> ListFormsAsync(string owner, string? directory = null,
         string? workspace = null, CancellationToken ct = default)
     {
-        var result = await RequestAsync(HttpMethod.Get, FormPath(owner, null, null, directory, workspace), FormProtocolJsonContext.Default.FormsResult, ct);
+        var result = await RequestAsync(HttpMethod.Get, FormPath(owner, null, null, directory, workspace), FormProtocolJsonContext.Default.FormsResult, ct).ConfigureAwait(false);
         if (result.Data.Any(form => form is null || form.SessionId != owner))
             throw Malformed("session.form.list", "The form catalog contains a null form or a different owner.");
         return result;
@@ -30,7 +30,7 @@ public sealed partial class SessionHttpClient
     {
         ArgumentNullException.ThrowIfNull(input);
         var result = await RequestAsync(HttpMethod.Post, FormPath(owner, null, null, directory, workspace),
-            FormProtocolJsonContext.Default.FormResult, ct, JsonContent.Create(input, FormProtocolJsonContext.Default.FormCreatePayload));
+            FormProtocolJsonContext.Default.FormResult, ct, JsonContent.Create(input, FormProtocolJsonContext.Default.FormCreatePayload)).ConfigureAwait(false);
         if (result.Data.SessionId != owner || (input.Id is { } id && result.Data.Id != id))
             throw Malformed("session.form.create", "The form response does not match the submitted owner/identity.");
         return result;
@@ -39,7 +39,7 @@ public sealed partial class SessionHttpClient
     public async Task<ApiResult<FormInfo>> GetFormAsync(string owner, FormId id, string? directory = null,
         string? workspace = null, CancellationToken ct = default)
     {
-        var result = await RequestAsync(HttpMethod.Get, FormPath(owner, id, null, directory, workspace), FormProtocolJsonContext.Default.FormResult, ct);
+        var result = await RequestAsync(HttpMethod.Get, FormPath(owner, id, null, directory, workspace), FormProtocolJsonContext.Default.FormResult, ct).ConfigureAwait(false);
         if (result.Data.SessionId != owner || result.Data.Id != id)
             throw Malformed("session.form.get", "The form response does not match the requested owner/identity.");
         return result;
@@ -64,7 +64,7 @@ public sealed partial class SessionHttpClient
     private static string FormPath(string owner, FormId? id, string? operation, string? directory, string? workspace)
     {
         ArgumentException.ThrowIfNullOrEmpty(owner);
-        if (id is { } formId) ArgumentException.ThrowIfNullOrEmpty(formId.Value);
+        if (id is { } formId) ArgumentException.ThrowIfNullOrEmpty(formId.Value, nameof(id));
         return "/api/session/" + Uri.EscapeDataString(owner) + "/form" + (id is { } value ? "/" + Uri.EscapeDataString(value.Value) : "")
             + operation + Query(("location[directory]", directory), ("location[workspace]", workspace));
     }

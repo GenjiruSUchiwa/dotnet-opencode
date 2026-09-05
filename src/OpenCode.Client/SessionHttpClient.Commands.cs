@@ -12,7 +12,7 @@ public sealed partial class SessionHttpClient
         string? workspace = null, CancellationToken ct = default)
     {
         var result = await RequestAsync(HttpMethod.Get, "/api/command" + Query(
-            ("location[directory]", directory), ("location[workspace]", workspace)), CommandHttpJsonContext.Default.CommandsResult, ct);
+            ("location[directory]", directory), ("location[workspace]", workspace)), CommandHttpJsonContext.Default.CommandsResult, ct).ConfigureAwait(false);
         if (result.Data.Any(command => command is null || command.Name is null))
             throw Malformed("command.list", "The command catalog contains a missing command identity.");
         return result;

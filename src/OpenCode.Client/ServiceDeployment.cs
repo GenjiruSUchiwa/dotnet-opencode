@@ -98,7 +98,7 @@ internal static class ServiceDeployment
 
     private static List<DeploymentFile> ReadManifest(string directory)
     {
-        if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0)
+        if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint))
             throw new IOException("Service runtime directories cannot be symbolic links or junctions.");
         var files = new List<DeploymentFile>();
         var pending = new Stack<string>();
@@ -108,9 +108,9 @@ internal static class ServiceDeployment
             foreach (var entry in Directory.EnumerateFileSystemEntries(current))
             {
                 var attributes = File.GetAttributes(entry);
-                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                if (attributes.HasFlag(FileAttributes.ReparsePoint))
                     throw new IOException("Service runtime assets cannot be symbolic links or junctions; publish regular files before deployment.");
-                if ((attributes & FileAttributes.Directory) != 0)
+                if (attributes.HasFlag(FileAttributes.Directory))
                 {
                     pending.Push(entry);
                     continue;

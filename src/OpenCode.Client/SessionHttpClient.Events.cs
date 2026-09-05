@@ -20,12 +20,14 @@ public sealed partial class SessionHttpClient
         await RequireSuccessAsync(response, "event.subscribe", cancellation.Token).ConfigureAwait(false);
         if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase))
             throw new SessionProtocolException(SessionProtocolFailure.UnsupportedContentType, "event.subscribe", "Expected text/event-stream.");
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellation.Token).ConfigureAwait(false);
+        var stream = await response.Content.ReadAsStreamAsync(cancellation.Token).ConfigureAwait(false);
+        await using var streamLifetime = stream.ConfigureAwait(false);
         var frameCharacters = 0;
-        await using var lines = PipelineText.LinesAsync(stream, new UTF8Encoding(false, true), detectBom: false,
+        var lines = PipelineText.LinesAsync(stream, new UTF8Encoding(false, true), detectBom: false,
             stripInitialBom: true, maximumCharacters: MaxSseEventCharacters,
             tooLarge: EventTooLarge, remainingCharacters: () => MaxSseEventCharacters - frameCharacters,
             cancellationToken: cancellation.Token).GetAsyncEnumerator(cancellation.Token);
+        await using var linesLifetime = lines.ConfigureAwait(false);
         var data = new List<string>();
         while (await ReadEventLineAsync(lines).ConfigureAwait(false))
         {

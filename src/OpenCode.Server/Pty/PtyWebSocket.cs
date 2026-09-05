@@ -24,7 +24,7 @@ public static class PtyWebSocket
     internal static long? ParseNumber(string value, long minimum, long maximum)
     {
         const string space = @"\u0009-\u000D\u0020\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF";
-        value = Regex.Replace(value, @"\A[" + space + @"]+|[" + space + @"]+\z", "");
+        value = Regex.Replace(value, @"\A[" + space + @"]+|[" + space + @"]+\z", "", RegexOptions.NonBacktracking);
         var radix = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? 16
             : value.StartsWith("0b", StringComparison.OrdinalIgnoreCase) ? 2 : value.StartsWith("0o", StringComparison.OrdinalIgnoreCase) ? 8 : 0;
         double number;
@@ -81,7 +81,7 @@ public static class PtyWebSocket
             catch (Exception error) when (error is OperationCanceledException or WebSocketException or IOException) { }
             finally
             {
-                cancellation.Cancel();
+                await cancellation.CancelAsync();
                 outbox.Writer.TryComplete();
                 // Observe both tasks before disposing the socket or attachment.
                 await Task.WhenAll(drain, receive).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);

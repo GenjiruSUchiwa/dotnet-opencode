@@ -52,7 +52,7 @@ internal sealed class FilesystemLocations : IAsyncDisposable
 
     private static bool Executable(string path) => File.Exists(path) && (OperatingSystem.IsWindows()
         ? Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase)
-        : (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0);
+        : (File.GetUnixFileMode(path) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != UnixFileMode.None);
 
     public async ValueTask DisposeAsync()
     {

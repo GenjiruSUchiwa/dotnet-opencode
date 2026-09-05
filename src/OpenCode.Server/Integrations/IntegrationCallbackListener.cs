@@ -38,7 +38,7 @@ public sealed class IntegrationCallbackFactory(TimeProvider? clock = null) : IIn
                 ?? throw new InvalidOperationException("The OAuth callback listener did not report a bound address.");
             var bound = new Uri(addresses.Addresses.Single());
             if (redirect is not null && redirect.Port != bound.Port)
-                throw new ArgumentException("The callback listener's bound port does not match redirect_uri.");
+                throw new ArgumentException("The callback listener's bound port does not match redirect_uri.", nameof(options));
             listener.SetRedirect(redirect ?? new UriBuilder("http", options.Host, bound.Port, options.Path).Uri);
             return listener;
         }
@@ -112,7 +112,7 @@ internal sealed class IntegrationCallbackListener(WebApplication app, string pat
 
     private async Task CloseAsync()
     {
-        _callback.TrySetCanceled();
+        _callback.TrySetCanceled(CancellationToken.None);
         // Observe a rejected callback even when setup failed before the completion worker started.
         if (_callback.Task.IsFaulted) _ = _callback.Task.Exception;
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(5), clock);

@@ -31,6 +31,11 @@ internal static class ContractCatalog
         Add("v2.integration.command.connect", typeof(LocationResponse<IntegrationCommandAttempt>), typeof(IntegrationCommandConnectPayload));
         Add("v2.integration.command.status", typeof(LocationResponse<IntegrationCommandAttemptStatus>));
         Empty("v2.integration.command.cancel");
+        Add("v2.experimental.integration.wellknown.add", null, typeof(IntegrationWellknownAddPayload), 204,
+            note: "Discovers and persists source metadata, then reloads compatible native integrations. Does not execute manifest auth commands or load external plugins/configuration.");
+        Add("v2.websearch.providers", typeof(LocationResponse<IReadOnlyList<WebSearchProvider>>));
+        Add("v2.websearch.query", typeof(LocationResponse<WebSearchResponse>), typeof(WebSearchInput),
+            note: "Uses registered native backend implementations and exact-integration credentials; keyless fallback remains unsupported.");
         Add("v2.project.list", typeof(IReadOnlyList<ProjectInfo>));
         Add("v2.project.current", typeof(LocationProjectInfo));
         Add("v2.project.update", typeof(ProjectInfo), typeof(ProjectUpdateApiRequest));
@@ -120,8 +125,6 @@ internal static class ContractCatalog
         Empty("v2.shell.remove"); Empty("v2.session.shell", typeof(SessionShellPayload));
         Add("v2.event.subscribe", typeof(OpenCodeEvent), content: "text/event-stream", note: "Initial server.connected frame has no created/durable fields; heartbeat comments occur every 15 seconds.");
         Empty("v2.credential.update", typeof(CredentialLabelPayload)); Empty("v2.credential.remove"); Empty("v2.credential.activate");
-        foreach (var id in new[] { "v2.experimental.integration.wellknown.add" })
-            contracts.Add(id, new(null, null, 503, "This registered native handler currently returns ServiceUnavailableError; it does not provide the source success operation."));
         return contracts;
     }
 }

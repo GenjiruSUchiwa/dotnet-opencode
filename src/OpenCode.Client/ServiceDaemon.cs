@@ -55,22 +55,22 @@ public static class ServiceDaemon
 
     public static async Task<ServiceEndpoint?> DiscoverAsync(string? registrationFile = null, CancellationToken ct = default, TimeProvider? clock = null)
     {
-        return await DiscoverWithOptionsAsync(new ServiceDiscoveryOptions { RegistrationFile = registrationFile, Clock = clock ?? TimeProvider.System }, ct);
+        return await DiscoverWithOptionsAsync(new ServiceDiscoveryOptions { RegistrationFile = registrationFile, Clock = clock ?? TimeProvider.System }, ct).ConfigureAwait(false);
     }
 
     public static async Task<ServiceEndpoint?> DiscoverWithOptionsAsync(ServiceDiscoveryOptions options, CancellationToken ct = default)
     {
-        var service = await InspectAsync(options, ct);
+        var service = await InspectAsync(options, ct).ConfigureAwait(false);
         return service is { State: ServiceState.Ready, Compatible: true } ? service.Endpoint : null;
     }
 
     /// <summary>Read-only identity/state inspection. Explicit servers never consult local registration.</summary>
     public static async Task<ServiceStatus?> InspectAsync(ServiceDiscoveryOptions options, CancellationToken ct = default)
     {
-        var info = options.Server is null ? await ReadAsync(GetRegistrationFile(options.RegistrationFile), ct) : null;
+        var info = options.Server is null ? await ReadAsync(GetRegistrationFile(options.RegistrationFile), ct).ConfigureAwait(false) : null;
         var endpoint = options.Server ?? (info is null ? null : new ServiceEndpoint(info.Url, info.Password));
         if (endpoint is null) return null;
-        var result = await ProbeAsync(endpoint, info, options, ct);
+        var result = await ProbeAsync(endpoint, info, options, ct).ConfigureAwait(false);
         if (options.Server is not null && result.Error is not null) throw result.Error;
         return result.Status;
     }
@@ -85,8 +85,8 @@ public static class ServiceDaemon
         ArgumentNullException.ThrowIfNull(options.Clock);
         if (options.Port is int port)
         {
-            ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
-            ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
+            ArgumentOutOfRangeException.ThrowIfLessThan(port, 1, nameof(options));
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535, nameof(options));
         }
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.StartupTimeout, TimeSpan.Zero);
         var file = options.Server is null ? GetRegistrationFile(options.RegistrationFile) : null;
@@ -105,9 +105,9 @@ public static class ServiceDaemon
             while (options.Clock.GetElapsedTime(started) < options.StartupTimeout)
             {
                 ct.ThrowIfCancellationRequested();
-                var info = file is null ? null : await ReadAsync(file, ct);
+                var info = file is null ? null : await ReadAsync(file, ct).ConfigureAwait(false);
                 var endpoint = options.Server ?? (info is null ? null : new ServiceEndpoint(info.Url, info.Password));
-                var result = endpoint is null ? new ProbeResult(null, null) : await ProbeAsync(endpoint, info, options, ct);
+                var result = endpoint is null ? new ProbeResult(null, null) : await ProbeAsync(endpoint, info, options, ct).ConfigureAwait(false);
                 if (result.Error?.Code != ServiceFailure.ProbeTimeout || info is null)
                 {
                     timedOutInfo = null;
@@ -128,9 +128,9 @@ public static class ServiceDaemon
                             || !(options.VersionPredicate?.Invoke(DefaultVersion) ?? (options.Version is null || options.Version == DefaultVersion)))
                             throw mismatch;
                         ServiceProcess.ValidateBuild(options.Command, expectedBuild);
-                        if (!await IsIdleAsync(info, ct)) throw mismatch;
-                        ptyHandoff = await PreparePtyHandoffAsync(info, ct);
-                        await StopRegisteredAsync(file!, info, ct, options.Clock);
+                        if (!await IsIdleAsync(info, ct).ConfigureAwait(false)) throw mismatch;
+                        ptyHandoff = await PreparePtyHandoffAsync(info, ct).ConfigureAwait(false);
+                        await StopRegisteredAsync(file!, info, ct, options.Clock).ConfigureAwait(false);
                         replaced = true;
                         lastSpawn = null;
                         spawnDelay = ServiceTiming.SpawnDelay;
@@ -142,7 +142,7 @@ public static class ServiceDaemon
                     if (service.State == ServiceState.Failed)
                     {
                         if (info?.StartupId is string nonce && ServiceStartupDiagnostics.IsCanonicalNonce(nonce))
-                            throw await ServiceStartupDiagnostics.FailureAsync(nonce, info.Pid, ServiceFailure.StartupFailed, ct);
+                            throw await ServiceStartupDiagnostics.FailureAsync(nonce, info.Pid, ServiceFailure.StartupFailed, ct).ConfigureAwait(false);
                         throw new ServiceLifecycleException(ServiceFailure.StartupFailed, "The authenticated server reports startup failure.",
                             "Inspect the server diagnostics and resolve the startup error. Explicitly stop the verified instance before restarting it.");
                     }
@@ -173,7 +173,7 @@ public static class ServiceDaemon
                 foreach (var child in finished)
                 {
                     if (child.ExitStatus is not { ExitCode: 0, Canceled: false, Signal: null })
-                        failure ??= await ServiceStartupDiagnostics.FailureAsync(child.Nonce, child.Process.ProcessId, ServiceFailure.ContenderFailed, ct);
+                        failure ??= await ServiceStartupDiagnostics.FailureAsync(child.Nonce, child.Process.ProcessId, ServiceFailure.ContenderFailed, ct).ConfigureAwait(false);
                     children.Remove(child);
                     child.Dispose();
                 }
@@ -194,7 +194,7 @@ public static class ServiceDaemon
                         lastSpawn = options.Clock.GetElapsedTime(started);
                     }
                 }
-                await Task.Delay(ServiceTiming.PollInterval, options.Clock, ct);
+                await Task.Delay(ServiceTiming.PollInterval, options.Clock, ct).ConfigureAwait(false);
             }
             throw new ServiceLifecycleException(ServiceFailure.StartupTimeout, "Timed out waiting for a ready compatible service.",
                 "Inspect the server's starting/stopping state and startup diagnostics. No process was terminated or registration removed.");
@@ -209,25 +209,25 @@ public static class ServiceDaemon
     public static async Task StopAsync(string? registrationFile = null, CancellationToken ct = default, TimeProvider? clock = null)
     {
         var file = GetRegistrationFile(registrationFile);
-        var info = await ReadAsync(file, ct);
+        var info = await ReadAsync(file, ct).ConfigureAwait(false);
         if (info is null) return;
-        var result = await ProbeAsync(new ServiceEndpoint(info.Url, info.Password), info, new ServiceDiscoveryOptions { Version = null }, ct);
+        var result = await ProbeAsync(new ServiceEndpoint(info.Url, info.Password), info, new ServiceDiscoveryOptions { Version = null }, ct).ConfigureAwait(false);
         if (result.Error is not null) throw result.Error;
         if (result.Status is null)
             throw new ServiceLifecycleException(ServiceFailure.InvalidIdentity, "Cannot authenticate the registered .NET instance.", "Verify its identity before attempting shutdown. Registration was left untouched.");
-        await StopRegisteredAsync(file, info, ct, clock ?? TimeProvider.System);
+        await StopRegisteredAsync(file, info, ct, clock ?? TimeProvider.System).ConfigureAwait(false);
     }
 
     private static async Task StopRegisteredAsync(string file, ServiceInfo info, CancellationToken ct, TimeProvider clock)
     {
-        if (await ReadAsync(file, ct) != info)
+        if (await ReadAsync(file, ct).ConfigureAwait(false) != info)
             throw new ServiceLifecycleException(ServiceFailure.InvalidIdentity, "Registration changed before cooperative shutdown.", "Rediscover the service. No replacement was attempted.");
 
         using var http = CreateHttpClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(info.Url), "/api/service/stop"));
         new ServiceEndpoint(info.Url, info.Password).ApplyAuth(request);
         request.Headers.Add("X-OpenCode-Service-ID", info.Id);
-        using var response = await http.SendAsync(request, ct);
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
             throw new ServiceLifecycleException(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                     ? ServiceFailure.Unauthorized : ServiceFailure.InvalidIdentity,
@@ -236,7 +236,7 @@ public static class ServiceDaemon
         var started = clock.GetTimestamp();
         while (clock.GetElapsedTime(started) < ServiceTiming.StopTimeout)
         {
-            var current = await ReadAsync(file, ct);
+            var current = await ReadAsync(file, ct).ConfigureAwait(false);
             // A concurrent contender may already have acquired the released lease
             // and published its own registration. Never wait on or stop that owner here.
             if (current is not null && current != info) return;
@@ -244,12 +244,13 @@ public static class ServiceDaemon
             {
                 try
                 {
-                    using var lease = new FileStream(file + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    var lease = new FileStream(file + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                    await using var leaseLifetime = lease.ConfigureAwait(false);
                     return;
                 }
                 catch (IOException error) when ((error.HResult & 0xffff) is 11 or 32 or 33) { }
             }
-            await Task.Delay(ServiceTiming.StopPollInterval, clock, ct);
+            await Task.Delay(ServiceTiming.StopPollInterval, clock, ct).ConfigureAwait(false);
         }
         throw new ServiceLifecycleException(ServiceFailure.ShutdownTimeout, "The service did not finish cooperative shutdown within five seconds.",
             "Inspect outstanding requests and server diagnostics. Forced termination is unsupported; no process was killed.");
@@ -260,14 +261,15 @@ public static class ServiceDaemon
         using var http = CreateHttpClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(new Uri(info.Url), "/api/experimental/persistent-pty/handoff"));
         new ServiceEndpoint(info.Url, info.Password).ApplyAuth(request);
-        using var response = await http.SendAsync(request, ct);
+        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
         // Builds predating the native persistent-PTY backend have no handoff route.
         if (response.StatusCode == HttpStatusCode.NotFound) return null;
         if (response.StatusCode != HttpStatusCode.OK)
             throw new ServiceLifecycleException(ServiceFailure.RecoveryUnsupported, "The existing server could not prepare persistent terminal handoff.",
                 "Resolve the persistent terminal error before replacing this server. It was not stopped.");
-        await using var body = await response.Content.ReadAsStreamAsync(ct);
-        var result = await JsonSerializer.DeserializeAsync(body, PersistentPtyHttpJsonContext.Default.PersistentPtyHandoffResponse, ct)
+        var body = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        await using var bodyLifetime = body.ConfigureAwait(false);
+        var result = await JsonSerializer.DeserializeAsync(body, PersistentPtyHttpJsonContext.Default.PersistentPtyHandoffResponse, ct).ConfigureAwait(false)
             ?? throw new ServiceLifecycleException(ServiceFailure.InvalidIdentity, "The persistent terminal handoff response was invalid.", "The current server was not stopped.");
         return result.Handoff;
     }
@@ -279,9 +281,9 @@ public static class ServiceDaemon
         new ServiceEndpoint(info.Url, info.Password).ApplyAuth(request);
         try
         {
-            using var response = await http.SendAsync(request, ct);
+            using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.OK) return false;
-            var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct).ConfigureAwait(false);
             return body.ValueKind == JsonValueKind.Object && body.TryGetProperty("data", out var data)
                 && data.ValueKind == JsonValueKind.Object && !data.EnumerateObject().Any();
         }
@@ -301,7 +303,7 @@ public static class ServiceDaemon
         ct.ThrowIfCancellationRequested();
         try
         {
-            var info = JsonSerializer.Deserialize<ServiceInfo>(await File.ReadAllTextAsync(file, ct));
+            var info = JsonSerializer.Deserialize<ServiceInfo>(await File.ReadAllTextAsync(file, ct).ConfigureAwait(false));
             if (info is null || string.IsNullOrWhiteSpace(info.Id) || string.IsNullOrWhiteSpace(info.Version)
                 || string.IsNullOrEmpty(info.Password) || info.Pid <= 0
                 || !Uri.TryCreate(info.Url, UriKind.Absolute, out var uri)
@@ -326,10 +328,10 @@ public static class ServiceDaemon
         endpoint.ApplyAuth(request);
         try
         {
-            using var response = await http.SendAsync(request, ct);
+            using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
                 return new(null, new ServiceLifecycleException(ServiceFailure.Unauthorized, "The server rejected the supplied service credentials.", "Verify the endpoint and its credentials. Do not delete registration to force replacement."));
-            var health = await response.Content.ReadFromJsonAsync<ServiceIdentityHealth>(ct);
+            var health = await response.Content.ReadFromJsonAsync<ServiceIdentityHealth>(ct).ConfigureAwait(false);
             if (health is not { Healthy: true, Pid: >= 0 } || string.IsNullOrWhiteSpace(health.Version)
                 || (health.BuildId is not null && !IsBuildId(health.BuildId))
                 || (info is not null && (health.Application != Application || health.Channel != OpenCodeChannel.Name

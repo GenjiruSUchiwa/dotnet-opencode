@@ -17,20 +17,19 @@ internal sealed class StandaloneLifetime(string password, StartupDiagnostics dia
 
     public Task StartingAsync(CancellationToken ct) { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; }
     public Task StartAsync(CancellationToken ct) { ct.ThrowIfCancellationRequested(); return Task.CompletedTask; }
-    public Task StartedAsync(CancellationToken ct)
+    public async Task StartedAsync(CancellationToken ct)
     {
         try
         {
             ct.ThrowIfCancellationRequested();
             diagnostics.Phase("storage");
-            using var connection = Application.Services.GetRequiredService<IDatabase>().CreateConnection();
+            await using var connection = Application.Services.GetRequiredService<IDatabase>().CreateConnection();
             Url = Application.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses.SingleOrDefault()
                 ?? throw new InvalidOperationException("The standalone listener has no unique bound address.");
             if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) || uri.Scheme != "http" || uri.Host != "127.0.0.1" || uri.Port <= 0)
                 throw new InvalidOperationException("The standalone listener must bind an actual IPv4 loopback port.");
             Volatile.Write(ref _state, "ready");
             diagnostics.Complete("ready");
-            return Task.CompletedTask;
         }
         catch (Exception error) { Volatile.Write(ref _state, "failed"); diagnostics.Fail(error); throw; }
     }

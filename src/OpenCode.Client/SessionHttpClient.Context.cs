@@ -12,7 +12,7 @@ public sealed partial class SessionHttpClient
     {
         ArgumentException.ThrowIfNullOrEmpty(messageId.Value);
         var result = await RequestAsync(HttpMethod.Get, SessionPath(sessionId) + "/message/" + Uri.EscapeDataString(messageId.Value),
-            SessionContextHttpJsonContext.Default.MessageResult, ct);
+            SessionContextHttpJsonContext.Default.MessageResult, ct).ConfigureAwait(false);
         if (result.Data.Id != messageId) throw Malformed("session.message", "The returned message does not match the requested identity.");
         return result;
     }

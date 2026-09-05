@@ -35,7 +35,7 @@ public static class CredentialEndpoints
             MutateAsync(request, credentialID, async (runtime, id, token) =>
             {
                 var input = await request.ReadFromJsonAsync(CredentialEndpointJsonContext.Default.CredentialLabelPayload, token)
-                    ?? throw new ArgumentException("A label payload is required.");
+                    ?? throw new RequestArgumentException("A label payload is required.", nameof(request));
                 await runtime.UpdateCredentialAsync(id, input.Label, token);
             }, ct));
         routes.MapPost("/{credentialID}/activate", (string credentialID, HttpRequest request, CancellationToken ct) =>

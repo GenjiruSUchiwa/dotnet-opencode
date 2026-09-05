@@ -21,7 +21,7 @@ public sealed class ApiHttpClient : IDisposable
         ArgumentNullException.ThrowIfNull(endpoint);
         if (!Uri.TryCreate(endpoint.Url, UriKind.Absolute, out var origin) || origin.Scheme is not ("http" or "https")
             || origin.UserInfo.Length != 0 || origin.AbsolutePath != "/" || origin.Query.Length != 0 || origin.Fragment.Length != 0)
-            throw new ArgumentException("API endpoint must be an HTTP(S) origin without credentials, path, query or fragment.");
+            throw new ArgumentException("API endpoint must be an HTTP(S) origin without credentials, path, query or fragment.", nameof(endpoint));
         _origin = origin;
         _endpoint = endpoint;
     }
@@ -29,12 +29,12 @@ public sealed class ApiHttpClient : IDisposable
     public async Task<HttpResponseMessage> SendAsync(string method, string path, string? body = null,
         IReadOnlyDictionary<string, string>? headers = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(path) || !path.StartsWith('/')) throw new ArgumentException("API request path must start with '/'.");
+        if (string.IsNullOrEmpty(path) || !path.StartsWith('/')) throw new ArgumentException("API request path must start with '/'.", nameof(path));
         var address = Selected(new Uri(_origin, path));
         var verb = method.ToUpperInvariant();
         if (verb is not ("DELETE" or "GET" or "HEAD" or "OPTIONS" or "PATCH" or "POST" or "PUT"))
-            throw new ArgumentException("Unsupported API request method.");
-        if (body is not null && verb is "GET" or "HEAD") throw new ArgumentException("Request with GET/HEAD method cannot have body.");
+            throw new ArgumentException("Unsupported API request method.", nameof(method));
+        if (body is not null && verb is "GET" or "HEAD") throw new ArgumentException("Request with GET/HEAD method cannot have body.", nameof(body));
         var supplied = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (headers is not null)
             foreach (var pair in headers)
@@ -46,7 +46,7 @@ public sealed class ApiHttpClient : IDisposable
                 {
                     if (!Uri.TryCreate(_origin.Scheme + "://" + pair.Value, UriKind.Absolute, out var host)
                         || host.AbsolutePath != "/" || host.Query.Length != 0 || host.Fragment.Length != 0)
-                        throw new ArgumentException("Host must match the selected server origin.");
+                        throw new ArgumentException("Host must match the selected server origin.", nameof(headers));
                     Selected(host);
                 }
                 supplied[pair.Key] = pair.Value;
@@ -68,7 +68,7 @@ public sealed class ApiHttpClient : IDisposable
                 request.Content ??= new ByteArrayContent([]);
                 request.Content.Headers.Remove(pair.Key);
                 if (!request.Content.Headers.TryAddWithoutValidation(pair.Key, pair.Value))
-                    throw new ArgumentException($"Unsupported request header: {pair.Key}");
+                    throw new ArgumentException($"Unsupported request header: {pair.Key}", nameof(headers));
             }
             var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             if (response.StatusCode is not (HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther
@@ -95,7 +95,7 @@ public sealed class ApiHttpClient : IDisposable
     {
         if (address.Scheme != _origin.Scheme || !address.IdnHost.Equals(_origin.IdnHost, StringComparison.OrdinalIgnoreCase)
             || address.Port != _origin.Port || address.UserInfo.Length != 0)
-            throw new ArgumentException("API targets and redirects must stay on the selected server origin.");
+            throw new ArgumentException("API targets and redirects must stay on the selected server origin.", nameof(address));
         return address;
     }
     public static void ValidateHeader(string name, string value)
@@ -104,7 +104,7 @@ public sealed class ApiHttpClient : IDisposable
         ArgumentNullException.ThrowIfNull(value);
         if (name.Length == 0 || name.Any(character => !(char.IsAsciiLetterOrDigit(character) || "!#$%&'*+-.^_`|~".Contains(character)))
             || value.Any(character => character is '\r' or '\n' or '\0' || character > 255))
-            throw new ArgumentException($"Invalid request header name or value: {name}");
+            throw new ArgumentException($"Invalid request header name or value: {name}", nameof(name));
     }
     public void Dispose() => _http.Dispose();
 }

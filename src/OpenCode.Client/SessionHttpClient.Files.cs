@@ -36,7 +36,10 @@ public sealed partial class SessionHttpClient
     {
         ArgumentNullException.ThrowIfNull(path);
         if (path is "." or "..") throw new ArgumentException("A file path is required.", nameof(path));
-        var route = FsEndpoints.Read.Replace("{*path}", Uri.EscapeDataString(path.Replace('\\', '/')), StringComparison.Ordinal)
+        // Match generated encodePath: preserve remote path separators and encode
+        // each segment. A backslash can be a literal Unix filename character;
+        // the client's OS must not silently rewrite the server's path.
+        var route = FsEndpoints.Read.Replace("{*path}", string.Join('/', path.Split('/').Select(Uri.EscapeDataString)), StringComparison.Ordinal)
             + Query(("location[directory]", directory), ("location[workspace]", workspace));
         using var request = CreateRequest(HttpMethod.Get, route, "*/*");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);

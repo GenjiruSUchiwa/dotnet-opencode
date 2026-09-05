@@ -234,3 +234,128 @@ startup, DB/SQL/migration, auth command, provider/MCP/PTY/native code, network p
 or documentation endpoint was executed. No production data/credentials were read.
 No Git operations, commits, publishing, installs, or delegation. Parent owns merge,
 CI, push, and release. Owned source is frozen for integration.
+
+## Pass 2 — frozen shared-tool glue and contract-preserving fixes
+
+This section supersedes the earlier mounting/tool-binding handoff status. Parent
+integrated pass 1 (`9c7bbc6`) and mounted `AddNativeWebSearch()` and
+`MapWebSearchEndpoints()` in `ServerHost.cs` (`2080d27`). Source inspection confirms
+both registrations are present. This is a registration claim, not runtime verification.
+Wellknown is still mapped exactly once by `IntegrationEndpoints`; no second mapping
+was added in ServerHost.
+
+### Completed WebSearch tool handoff
+
+The Core tools worker completed `LocalToolOptions.WebSearchReady` and
+`WebSearchToolBinding`. This pass applied exactly its requested Server glue:
+
+```csharp
+PluginChanged: id => OpenCode.Server.Plugins.NativePluginComposition.Publish(services, location, id),
+WebSearchReady: ct => services.GetRequiredService<WebSearchPluginSource>().ReadyAsync(location, ct));
+```
+
+`WebSearchPluginSource.ReadyAsync(LocationInfo, CancellationToken)` is now public
+and documented as a **borrowed-runtime accessor**. It returns the actual initialized
+native generation without acquiring a Location or constructing any providers. Its
+caller must retain the real Location lease, or call it during factory initialization
+after backend activation. The Core binding uses actual permission/Form/clock services
+and refreshes eligibility at acquisition/model-snapshot boundaries; that implementation
+was not edited here.
+
+Do not substitute `IWebSearchLocationSource.AcquireAsync`: it enters
+CommandHostService and reacquires ToolLocationFactory, recursively entering the
+Location being constructed. This glue introduces no such acquisition and no second
+backend/runtime/transport set.
+
+Two accessor corrections support the shared binding:
+
+- Recheck entry identity after awaited configuration loading. If the entry closed
+  or was replaced while acquisition waited, return unavailable rather than handing
+  out the old generation. The caller still owns the enclosing Location/readiness
+  boundary; this is not a new cluster lease or plugin scheduler.
+- Apply `WebSearchRuntime.Configure` only when effective selection changes (or on
+  first configuration). It publishes `websearch.updated`; unconditional reapplication
+  on every HTTP/tool snapshot would generate spurious observer refreshes. This
+  does not cache credential eligibility or bypass the Core worker's refresh checks.
+
+Configured/discovered JS guards, native keyless restrictions, exact-integration
+credential lookup, plugin disposal ownership, and parent User-Agent branding remain.
+
+### Other confirmed existing-contract fixes
+
+1. **Client fs.read path encoding.** Upstream generated `encodePath` in
+   `packages/client/src/promise/generated/client.ts` splits on `/`, encodes each
+   segment, and rejoins with `/`. The native client now does the same instead of
+   converting backslashes and encoding the entire path as one segment. A literal
+   backslash in a Unix server filename is no longer changed into a directory
+   separator based on client assumptions. Raw bytes, HTTP cancellation, and response
+   ownership are unchanged.
+2. **Compaction admission and advisory wake.** Source
+   `packages/core/src/session/session.ts:Session.compact` checks the Session, admits
+   the control, and then wakes; it does not require a ready model before admission.
+   Removed the endpoint's premature `RequireReady()` check. The Server's advisory
+   `WakeAsync` now selects Schedule's recording-ready boundary rather than its model
+   readiness boundary. Explicit Resume still requires execution readiness. Host-owned
+   scheduling/settlement, admission cancellation, and Core attempt/claim policies
+   are unchanged. A provider/tool resolution failure belongs to the independently
+   owned drain, not a pre-admission refusal of otherwise valid compaction work.
+
+No HTTP route, payload, response, or Schema/Protocol shape was added or changed.
+Reviewed filesystem, message pagination, global/session generation, Session admission,
+and WebSearch surfaces; no unsupported handler was converted into an empty success.
+
+### Remaining parent/domain work
+
+- Global `POST /api/generate` (`v2.generate.text`) remains distinct from existing
+  Session-context generation. Upstream uses a stateless Generate service in the base
+  config Location. No matching native Core stateless operation or shared typed
+  payload was found; this pass did not create a parallel Server model loop or guess
+  a contract. Coordinate Core plus parent/Schema owner agreement before implementing
+  that missing surface.
+- Full Wellknown configuration consumption and compatible external plugin execution
+  stay with their Core owners. This pass did not execute or register manifest auth
+  commands as a shortcut.
+- Dynamic plugin replacement beyond existing native Location/readiness ownership
+  remains the plugin host's responsibility. No independent runtime was introduced
+  for requests or model tools.
+
+### Exact pass-2 files changed
+
+- `src/OpenCode.Server/ServerHost.cs` — requested WebSearchReady callback only.
+- `src/OpenCode.Server/Services/WebSearchHostService.cs` — documented public borrowed
+  accessor, generation identity check, and unchanged-config notification suppression.
+- `src/OpenCode.Server/Services/SessionExecutionService.cs` — advisory wake uses the
+  recording-ready scheduling boundary.
+- `src/OpenCode.Server/Endpoints/SessionEndpoints.cs` — remove pre-admission model
+  readiness check from compaction.
+- `src/OpenCode.Client/SessionHttpClient.Files.cs` — source path-segment encoding.
+- `docs/network-surface-pass.md` — this append-only handoff.
+
+No Core/Schema/Protocol/project/global/generated/test files were changed by this pass.
+
+### Build status and blocking dependency
+
+Both build attempts used the pinned `.dotnet/dotnet.exe` SDK
+`11.0.100-preview.7.26381.103`, unique artifacts, `--disable-build-servers`, and
+`-p:OpenApiGenerateDocuments=false`.
+
+1. `C:/tmp/opencode/network-pass-136fc7001b614bcc8b4be0443f6652d8/`
+   - Server passed with **0 warnings / 0 errors**, before the final WebSearchReady
+     ServerHost line was added.
+   - Client encountered a concurrently introduced Schema duplicate-type error.
+2. `C:/tmp/opencode/network-pass-28ed8fcc1a5c497ca6e4a8bb489a80e9/`
+   - Final Server and Client builds both stop in Schema with **2 errors / 0 warnings**.
+   - `SessionIdleEventData` is declared in both
+     `src/OpenCode.Schema/ClientEventDefinitions.cs:45` and
+     `src/OpenCode.Schema/SessionEvent.cs:58` (`CS0101`, `CS8863`).
+   - These files belong to the Schema worker and were not edited. Parent should
+     reconcile the canonical definition, then rebuild Server and Client. The final
+     glue is source-complete but is **not claimed as build-verified past this blocker**.
+
+Logs are `server-build.log` and `client-build.log` in each artifact root. No owned
+warnings were reported; the final dependency failure prevents a complete final
+owned-compilation result. No diagnostic suppression was added.
+
+Pass 2 is frozen for parent integration. No tests, app/Server/Client/SDK execution,
+DI startup, plugin loading, DB/SQL/migration, provider/MCP/PTY/native execution, or
+production data access occurred. No Git/push/install/publication or delegation.

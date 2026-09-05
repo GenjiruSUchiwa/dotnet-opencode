@@ -293,7 +293,6 @@ public static class SessionEndpoints
                 return Invalid("Compaction input ID must start with msg_.", "id");
             if (input.Delivery is not ("queue" or "steer")) return Invalid("Delivery must be queue or steer.", "delivery");
             execution.RequireRecordingReady();
-            execution.RequireReady();
             SessionInboxItem item;
             try
             {

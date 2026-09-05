@@ -21,6 +21,8 @@ public sealed class WebSearchPluginSource(CredentialStore credentials, IDatabase
         internal WebSearchRuntime Runtime { get; } = runtime;
         internal Dictionary<string, NativeWebSearchProvider> Providers { get; } = new(StringComparer.Ordinal);
         internal SemaphoreSlim Configure { get; } = new(1, 1);
+        internal bool Configured;
+        internal ConfigWebSearchSelection? Configuration;
     }
 
     public IReadOnlyList<NativePluginDefinition> Definitions(LocationInfo location)
@@ -62,17 +64,37 @@ public sealed class WebSearchPluginSource(CredentialStore credentials, IDatabase
                 ?.Providers.Values.Select(provider => provider.Integration).ToArray() ?? [];
     }
 
-    internal async Task<WebSearchRuntime> ReadyAsync(LocationInfo location, CancellationToken ct)
+    /// <summary>
+    /// Returns the actual initialized native generation without acquiring/reentering
+    /// the tool Location. The caller must own that Location's lease (or be inside
+    /// its factory after backend plugin activation) and preserve plugin readiness guards.
+    /// Does not create providers, resolve credentials, or advertise a model tool.
+    /// </summary>
+    public async Task<WebSearchRuntime> ReadyAsync(LocationInfo location, CancellationToken ct)
     {
+        var key = PermissionLocationMap.Canonical(new(location.Directory, location.WorkspaceId));
         Entry entry;
         lock (_gate)
-            entry = _entries.GetValueOrDefault(PermissionLocationMap.Canonical(new(location.Directory, location.WorkspaceId)))
+            entry = _entries.GetValueOrDefault(key)
                 ?? throw new WebSearchException(WebSearchFailure.Unavailable, "Native web search plugins have not initialized.");
         await entry.Configure.WaitAsync(ct);
         try
         {
             var snapshot = await ConfigLoader.LoadSnapshotAsync(location.Directory, ct);
-            entry.Runtime.Configure(snapshot.Merge()["websearch"]?.Deserialize(OpenCodeJsonContext.Default.ConfigWebSearchSelection));
+            var configuration = snapshot.Merge()["websearch"]?.Deserialize(OpenCodeJsonContext.Default.ConfigWebSearchSelection);
+            // Do not return an old generation if its scope closed/replaced while
+            // this acquisition was reading configuration or waiting for serialization.
+            lock (_gate)
+                if (_entries.GetValueOrDefault(key) != entry)
+                    throw new WebSearchException(WebSearchFailure.Unavailable, "Web search plugin generation changed during acquisition.");
+            // Configure publishes websearch.updated. Reapplying equal state on every
+            // query/snapshot creates a spurious refresh loop for model-tool observers.
+            if (!entry.Configured || !Equals(entry.Configuration, configuration))
+            {
+                entry.Runtime.Configure(configuration);
+                entry.Configuration = configuration;
+                entry.Configured = true;
+            }
             return entry.Runtime;
         }
         finally { entry.Configure.Release(); }

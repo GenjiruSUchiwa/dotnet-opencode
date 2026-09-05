@@ -135,7 +135,10 @@ public sealed class SessionExecutionService(
     /// <summary>Advisory scheduling acknowledges Core ownership, not model completion.</summary>
     public async Task WakeAsync(SessionId sessionId)
     {
-        if (await Schedule(sessionId, token => engine.WakeAsync(sessionId, token)) is { } failure) ExceptionDispatchInfo.Capture(failure).Throw();
+        // Advisory wake acknowledges scheduling, not model execution readiness.
+        // Durable prompt/compaction admission must not become an HTTP failure just
+        // because the independently owned drain cannot resolve a provider/tool yet.
+        if (await Schedule(sessionId, token => engine.WakeAsync(sessionId, token), recordingOnly: true) is { } failure) ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     /// <summary>Request cancellation stops waiting; host cancellation owns execution and settlement.</summary>

@@ -374,7 +374,8 @@ public static class ServerHost
             ShellRuntime: () => services.GetRequiredService<ShellLocationServices>().ForLocation(location),
             ShellJobs: () => services.GetRequiredService<IShellToolJobs>(),
             Plugins: OpenCode.Server.Plugins.NativePluginComposition.Definitions(services, location),
-            PluginChanged: id => OpenCode.Server.Plugins.NativePluginComposition.Publish(services, location, id));
+            PluginChanged: id => OpenCode.Server.Plugins.NativePluginComposition.Publish(services, location, id),
+            WebSearchReady: ct => services.GetRequiredService<WebSearchPluginSource>().ReadyAsync(location, ct));
     }
 
     internal static async ValueTask FlushNativeLocationAsync(LocationInfo location, IServiceProvider services, CancellationToken ct)

@@ -65,9 +65,11 @@ internal sealed class SessionAttempt(SessionStore store, SessionId sessionId, Re
             try
             {
                 // Exactly one physical request; no SDK/in-memory tool loop.
+                var terminal = false;
                 await foreach (var item in model.Client.StreamAsync(request, ct).ConfigureAwait(false))
                 {
                     ct.ThrowIfCancellationRequested();
+                    terminal |= item is LlmEvent.Finish or LlmEvent.ProviderError;
                     // Drain the response after an emitted error, but do not publish subsequent provider content.
                     if (overflowFailure is not null || _providerFailed) continue;
                     if (!_outputStarted && item is LlmEvent.ProviderError { Reason: LlmFailure.InvalidRequest { Classification: LlmFailureClassification.ContextOverflow } } overflow)
@@ -80,6 +82,7 @@ internal sealed class SessionAttempt(SessionStore store, SessionId sessionId, Re
                 }
                 ct.ThrowIfCancellationRequested();
                 if (overflowFailure is not null) failure = overflowFailure;
+                else if (!terminal) throw new LlmException(new LlmFailure.InvalidProviderOutput("The provider response ended unexpectedly.", true));
                 else if (_finish is null && !_providerFailed) throw new LlmException(new LlmFailure.InvalidProviderOutput("Provider stream ended without step finish.", true));
             }
             catch (Exception error)

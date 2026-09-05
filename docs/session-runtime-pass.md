@@ -164,3 +164,96 @@ Final pass-2 full SDK dependency-graph rebuild after the exact provider-handoff
 helper-name alignment: **0 warnings, 0 errors**. Log:
 `C:/tmp/opencode/session-runtime-pass2-build-final.log`.
 Code is frozen for parent integration; runtime behavior remains unexercised.
+
+## Pass 3: compaction settlement and incomplete responses
+
+### Implemented runtime corrections
+
+- `SessionCompaction.RunAsync` folds only `LlmException` from the provider stream
+  into an ordinary failed compaction outcome. Unexpected defects now propagate,
+  rather than allowing a manual drain to continue after them. Request-contract
+  preparation is outside that provider-error fold and follows the Started
+  publication, as in `core/session/compaction.ts:execute`.
+- The existing manual-control caller settles propagated defects with
+  `compaction.failed` and the native exception's diagnostic text, then rethrows.
+  Cancellation still uses `aborted` / `Compaction cancelled`. Automatic cancellation
+  still records observed usage before `compaction.interrupted`; the manual owner
+  remains responsible for manual interruption, without a duplicate terminal event.
+- Normal attempts, title attempts, and compaction now require a terminal `Finish`
+  or emitted `ProviderError` before accepting a successfully enumerated response.
+  This is the source `ai/src/route/client.ts:requireTerminalEvent` contract at the
+  native Session boundary. A StepFinish alone can record real usage, but does not
+  prove that the response completed. Missing terminal events become typed
+  incomplete-stream errors: normal execution uses its existing bounded retry or
+  continuation policy, titles retain the existing distinct-primary fallback, and
+  compaction cannot publish a completed checkpoint from truncated text.
+- `SessionText.Trim` shares ECMAScript whitespace semantics between title handling
+  and compaction's empty-summary check. In particular, a BOM-only summary fails
+  rather than advancing the epoch. Actual summary text is not trimmed or rewritten.
+
+One physical stream per attempt, full consumption, cache lineage, request identity,
+step allowance, retry accounting, and independent completion/cleanup tokens remain
+in place. No transport state, schema, event definition, or persistence code was added.
+
+### History and instruction flow reviewed
+
+The review traced `compaction.ts:planContent/select`, `runner/step.ts`,
+`context.ts:select/load`, `history.ts`, `subagent-completion.ts`, and restart child
+result selection against their native callers. Compaction uses the last completed
+checkpoint plus its retained recent text; system-update messages are excluded from
+summary planning as in the source. Request assembly continues to obtain the
+persisted epoch Initial separately from ordered projected messages. Only the
+canonical completed-compaction projection advances the epoch; a failed, interrupted,
+or defect-aborted summary is not a replacement checkpoint.
+
+Foreground children still select the latest completed, error-free assistant in the
+last 20 messages. Recovered children use the current context. Both concatenate
+actual text in content order and use the source's no-text message only when that
+result contains no text. Background completion admits the original synthetic text,
+description, metadata and notification identity before removing the shared job
+marker. No duplicate child execution or result-history mechanism was introduced.
+
+### Exact ephemeral usage handoff
+
+Reference: `core/session/projector.ts:publishSessionUsage` and its subscription.
+
+The persistence/Schema owners should publish registered ephemeral
+`session.usage.updated` with `{ sessionID, cost, tokens }`, using cumulative committed
+Session totals, after:
+
+1. `session.step.ended`;
+2. `session.step.failed` only when **both** cost and tokens are present;
+3. `session.usage.recorded` (including title and compaction).
+
+Missing Sessions produce no update. The runtime's existing durable facts already
+provide these inputs. StepFinish usage is normalized with `SessionUsage.Tokens`;
+cost is calculated per physical step using its pricing tier before auxiliary-step
+totals are added. No usage is invented from text length or copied into a synthetic
+message. Each child accounts under its own Session ID; its parent receives the
+normal completion content, not a second charge for the child's model usage.
+
+`OpenCodeClient.EventsAsync` needs the owner's registered event on the existing
+volatile event stream, not a new SDK host or runner emitter. No usage update is
+requested for standalone Session generation, which remains persistence-read-only.
+GlobalGenerate and its stateless host composition remain foundation-owned and were
+not modified or duplicated.
+
+### Scope and verification
+
+Pass-2 cache callsites and interrupt-continuation behavior are unchanged, including
+ordinary idle-interrupt no-op behavior and steering/control-only continuation.
+The parent-reviewed tool-output exception message and manual SDK composition are
+unchanged. Only owned non-persistence Session files and this document were edited.
+
+Verification uses pinned .NET 11 builds with OpenAPI generation disabled and
+`C:/tmp/opencode/session-runtime-pass3-20260905-a` artifacts. No tests or runtime,
+serializer, SDK/DI/EF, database/SQL, provider/native, MCP/PTY, credential, or Git
+operations were executed. The first build encountered four concurrent
+ProviderResolver errors, including an unresolved GenerationModelResolutionException;
+those files were left to their owner. Final build status is reported below.
+
+Final full SDK dependency-graph rebuild: **0 warnings, 0 errors**. The concurrent
+provider build blockers were resolved by their owner. Log:
+`C:/tmp/opencode/session-runtime-pass3-build-final.log`.
+Pass-3 code is frozen for parent integration; compilation is verified, runtime
+behavior is not.

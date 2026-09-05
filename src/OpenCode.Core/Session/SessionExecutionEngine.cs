@@ -370,7 +370,8 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         {
                             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15), sessionStore.Clock);
                             await compaction.FailAsync(sessionId, "manual", error is OperationCanceledException
-                                ? new SessionStructuredError("aborted", "Compaction cancelled") : SessionFailure.From(error), input, cleanup.Token).ConfigureAwait(false);
+                                ? new SessionStructuredError("aborted", "Compaction cancelled")
+                                : new SessionStructuredError("compaction.failed", error.ToString()), input, cleanup.Token).ConfigureAwait(false);
                             throw;
                         }
                         force = false;

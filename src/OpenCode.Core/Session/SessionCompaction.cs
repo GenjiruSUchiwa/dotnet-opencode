@@ -28,7 +28,6 @@ internal sealed class SessionCompaction(SessionStore store, ProviderResolver pro
             // Manual resolution is deliberately after content planning.
             resolved ??= await providers.ResolveAsync(ct: ct, directory: session.Location.Directory, sessionModel: session.Model, sessionId: session.Id.Value).ConfigureAwait(false);
             metadata ??= await MetadataAsync(session, resolved, ct).ConfigureAwait(false);
-            SessionExecutionEngine.RequireToolContract(ConfigLoader.LoadConfig(directory: session.Location.Directory), resolved.Selection);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
@@ -37,10 +36,15 @@ internal sealed class SessionCompaction(SessionStore store, ProviderResolver pro
         if (!started)
             await store.PublishCompactionAsync(session.Id, CompactionProjector.Started, new SessionCompactionStartedEventData(session.Id, reason, plan.Recent, inputId), ct).ConfigureAwait(false);
 
+        // Request preparation is outside the provider-error fold. Unexpected preparation
+        // failures propagate to the manual-control owner instead of allowing its drain to continue.
+        SessionExecutionEngine.RequireToolContract(ConfigLoader.LoadConfig(directory: session.Location.Directory), resolved.Selection);
+
         var chunks = new StringBuilder();
         SessionStructuredError? failure = null;
         TokenUsageInfo? tokens = null;
         double cost = 0;
+        var terminal = false;
         Exception? interruption = null;
         try
         {
@@ -68,18 +72,23 @@ internal sealed class SessionCompaction(SessionStore store, ProviderResolver pro
                         cost += SessionUsage.Cost(metadata.Cost, usage).Amount;
                         break;
                     case LlmEvent.ProviderError error:
+                        terminal = true;
                         failure = new SessionStructuredError(
                             error.Reason is LlmFailure.InvalidRequest { Classification: LlmFailureClassification.ContextOverflow }
                                 ? "provider.invalid-request" : "provider.error", error.Reason.Message);
+                        break;
+                    case LlmEvent.Finish:
+                        terminal = true;
                         break;
                     case LlmEvent.ToolCall or LlmEvent.ToolResult or LlmEvent.ToolError or LlmEvent.ToolInputStart or LlmEvent.ToolInputDelta or LlmEvent.ToolInputEnd or LlmEvent.ToolInputError:
                         throw new NotSupportedException("Compaction summaries do not execute or accept tool calls.");
                 }
             }
             ct.ThrowIfCancellationRequested();
+            if (!terminal) throw new LlmException(new LlmFailure.InvalidProviderOutput("The provider response ended unexpectedly.", true));
         }
         catch (OperationCanceledException error) { interruption = error; }
-        catch (Exception error) { failure = SessionFailure.From(error); }
+        catch (LlmException error) { failure = SessionFailure.From(error); }
 
         using var settlement = new CancellationTokenSource(TimeSpan.FromSeconds(15), store.Clock);
         if (tokens is not null)
@@ -93,7 +102,7 @@ internal sealed class SessionCompaction(SessionStore store, ProviderResolver pro
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(interruption).Throw();
         }
         var summary = chunks.ToString();
-        if (failure is not null || string.IsNullOrWhiteSpace(summary))
+        if (failure is not null || SessionText.Trim(summary).Length == 0)
             return await FailAsync(session.Id, reason, failure ?? new SessionStructuredError("compaction.failed", "Compaction produced no summary"), inputId, settlement.Token).ConfigureAwait(false);
         await store.PublishCompactionAsync(session.Id, CompactionProjector.Ended, new SessionCompactionEndedEventData(session.Id, reason, summary, plan.Recent), settlement.Token).ConfigureAwait(false);
         return new CompactionOutcome(true);

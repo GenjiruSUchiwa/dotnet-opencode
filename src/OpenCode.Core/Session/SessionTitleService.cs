@@ -83,9 +83,9 @@ public sealed class SessionTitleService : IAsyncDisposable
                 var original = "Original request:\n" + first.Text[..Math.Min(2000, first.Text.Length)];
                 var recent = string.Join("\n\n", (await _queries.ContextAsync(sessionId, token).ConfigureAwait(false)).SelectMany(message =>
                 {
-                    if (message is UserMessage user && user.Id != first.Id) return new[] { "User: " + Trim(user.Text) };
+                    if (message is UserMessage user && user.Id != first.Id) return new[] { "User: " + SessionText.Trim(user.Text) };
                     if (message is not AssistantMessage assistant) return [];
-                    var content = string.Join('\n', assistant.Content.OfType<AssistantTextContent>().Select(part => Trim(part.Text)).Where(part => part.Length > 0));
+                    var content = string.Join('\n', assistant.Content.OfType<AssistantTextContent>().Select(part => SessionText.Trim(part.Text)).Where(part => part.Length > 0));
                     return content.Length == 0 ? [] : new[] { "Assistant: " + content };
                 }));
                 var prefix = original + "\n\nRecent conversation:\n";
@@ -155,6 +155,7 @@ public sealed class SessionTitleService : IAsyncDisposable
         };
         var chunks = new StringBuilder();
         var failed = false;
+        var terminal = false;
         TokenUsageInfo? tokens = null;
         double cost = 0;
         try
@@ -165,7 +166,8 @@ public sealed class SessionTitleService : IAsyncDisposable
                 switch (item)
                 {
                     case LlmEvent.TextDelta delta: chunks.Append(delta.Text); break;
-                    case LlmEvent.ProviderError: failed = true; break;
+                    case LlmEvent.ProviderError: terminal = true; failed = true; break;
+                    case LlmEvent.Finish: terminal = true; break;
                     case LlmEvent.StepFinish finish:
                         var usage = SessionUsage.Tokens(finish.Usage);
                         tokens = tokens is null ? usage : SessionUsage.Add(tokens, usage);
@@ -176,6 +178,7 @@ public sealed class SessionTitleService : IAsyncDisposable
                 }
             }
             ct.ThrowIfCancellationRequested();
+            if (!terminal) throw new LlmException(new LlmFailure.InvalidProviderOutput("The provider response ended unexpectedly.", true));
         }
         catch (LlmException) { failed = true; }
         finally
@@ -186,7 +189,7 @@ public sealed class SessionTitleService : IAsyncDisposable
                 await _persistence.UsageAsync(session.Id, Money.FromExisting(cost), tokens, publication.Token).ConfigureAwait(false);
             }
         }
-        return failed ? null : chunks.ToString().Split('\n').Select(Trim).FirstOrDefault(line => line.Length > 0);
+        return failed ? null : chunks.ToString().Split('\n').Select(SessionText.Trim).FirstOrDefault(line => line.Length > 0);
     }
 
     private async Task ObserveAsync(Task task, SessionId? automatic)
@@ -216,5 +219,4 @@ public sealed class SessionTitleService : IAsyncDisposable
         finally { _lifetime.Dispose(); }
     }
 
-    private static string Trim(string value) => value.Trim("\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000\uFEFF".ToCharArray());
 }

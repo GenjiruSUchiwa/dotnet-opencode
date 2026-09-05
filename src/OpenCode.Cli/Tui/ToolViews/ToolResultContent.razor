@@ -1,0 +1,21 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+
+@foreach (var item in Content.Select((value, index) => (value, index)))
+{
+    @switch (item.value)
+    {
+        case ToolTextContent text:
+            <TuiText @key="item.index" Value="@text.Text" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+            break;
+        case ToolFileContent file:
+            <TuiText @key="item.index" Value="@($"{file.Name ?? file.Uri} ({file.Mime})")" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+            break;
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public AssistantToolContent Part { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    private IReadOnlyList<ToolContent> Content => Part.State switch
+    { ToolStateCompleted value => value.Content, ToolStateError value => value.Content ?? [], _ => [] };
+}

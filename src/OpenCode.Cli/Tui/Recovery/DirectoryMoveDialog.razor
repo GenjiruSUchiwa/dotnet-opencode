@@ -1,0 +1,66 @@
+@namespace OpenCode.Cli.Tui.Recovery
+@using OpenCode.Schema
+@using OpenTui.Native
+
+<Modal Size="ModalSize.ExtraLarge" OnClose="Close" Background="@Theme.Background">
+    <Box PaddingX="2" PaddingBottom="1" Gap="1">
+        <TuiText Value="Move session" Height="1" Bold="true" Fg="@Theme.Text" />
+        @if (Current.WorkspaceId is not null)
+        {
+            <TuiText Value="Moving from an explicit workspace is unsupported by the local move service." Fg="@Theme.Error" />
+        }
+        else
+        {
+            <Input Value="@_filter" Cursor="_cursor" FocusKey="session.move.directory" Placeholder="@(_manual ? "Directory (validated by the server)" : "Filter worktrees")"
+                   OnKeyDown="Key" OnPaste="Paste" OnTextInput="Text" />
+            @if (_loading) { <TuiText Value="Loading server directories…" Height="1" Fg="@Theme.Subdued" /> }
+            @if (_error is not null) { <TuiText Value="@_error" Fg="@Theme.Error" /> }
+            @if (MoveState is { Pending: true } pending)
+            {
+                <TuiText Value="@pending.Message" Fg="@Theme.Warning" />
+                @if (pending.Error is not null) { <TuiText Value="@pending.Error" Fg="@Theme.Error" /> }
+            }
+            @if (_manual)
+            {
+                <TuiText Value="Enter the destination directory. No client filesystem check is performed." Fg="@Theme.Subdued" />
+                <Box Direction="TuiFlexDirection.Row" Gap="1">
+                    <Box PaddingX="1" Bg="@Theme.FocusedActionBackground" OnClick="SubmitManual">
+                        <TuiText Value="Move session" Fg="@(CanSubmit ? Theme.FocusedActionText : Theme.DisabledText)" PointerEvents="false" />
+                    </Box>
+                    <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="ShowWorktrees"><TuiText Value="Worktrees" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+                </Box>
+            }
+            else
+            {
+                @if (!_loading && _directories is null)
+                {
+                    <TuiText Value="Could not load worktrees. Retry the server read or enter a directory manually." Fg="@Theme.Subdued" />
+                }
+                @if (!_loading && _directories is not null && Rows.Count == 0)
+                {
+                    <TuiText Value="@(_filter.Length == 0 ? "No worktrees available" : "No worktrees found")" Fg="@Theme.Subdued" />
+                }
+                @foreach (var row in VisibleRows())
+                {
+                    <Box Direction="TuiFlexDirection.Row" Height="1" Bg="@(row.Index == _selected ? Theme.FocusedActionBackground : Theme.Background)"
+                         OnPointerEnter="() => _selected = row.Index" OnClick="args => Select(row.Index, args)">
+                        <TuiText Value="@row.Option.Category" Width="9" Height="1" Fg="@Theme.Subdued" PointerEvents="false" />
+                        <TuiText Value="@row.Option.Directory" Grow="1" Height="1" Fg="@(row.Index == _selected ? Theme.FocusedActionText : Theme.Text)"
+                                 WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                    </Box>
+                }
+                <Box Direction="TuiFlexDirection.Row" Gap="1">
+                    <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="ShowManual"><TuiText Value="Enter directory…" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+                    <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="RefreshClick"><TuiText Value="Refresh" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+                    @if (LoadChildren is not null)
+                    {
+                        <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="BrowseClick"><TuiText Value="Browse selected" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+                    }
+                </Box>
+            }
+            @if (_submitting) { <TuiText Value="Submitting move admission…" Fg="@Theme.Subdued" /> }
+            <TuiText Value="@(_manual ? "Enter move  Esc back" : "Enter move  Right browse  Ctrl+R refresh  Esc close")" Height="1" Fg="@Theme.Subdued" />
+            <TuiText Value="Move acceptance is not recovery. The current Session remains unavailable until its location changes and hydrates." Fg="@Theme.Subdued" />
+        }
+    </Box>
+</Modal>

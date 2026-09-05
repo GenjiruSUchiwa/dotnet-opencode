@@ -1,0 +1,44 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+
+<Box Width="@Math.Max(1, Width)">
+    @if (_document.Error is { } error)
+    {
+        <TuiText Value="@error" Fg="@Theme.Error" WrapMode="NativeTextWrapMode.Word" />
+        <TuiText Value="@Patch" Fg="@Theme.Text" WrapMode="Wrap" Selectable="true" />
+    }
+    else
+    {
+        @foreach (var hunk in _document.Hunks)
+        {
+            <Box @key="hunk.Index">
+                @if (hunk.Index > 0)
+                {
+                    <TuiText Value="@($" {hunk.Header}")" Fg="@(Theme.DiffHunk ?? Theme.Subdued)"
+                             Bg="@Bindings?.DiffColors?.ContextBackground" Height="1" WrapMode="NativeTextWrapMode.None" />
+                }
+                <PatchHunkView Hunk="hunk" Theme="Theme" Bindings="Bindings" FilePath="@FilePath"
+                               Digits="_document.Digits" Split="Split" Width="Width" Wrap="Wrap" />
+            </Box>
+        }
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public string Patch { get; set; } = "";
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public ToolViewBindings? Bindings { get; set; }
+    [Parameter] public string? FilePath { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    // The source uses transcript width, before the block's own gutter/padding.
+    [Parameter] public int ViewportWidth { get; set; } = 80;
+    private bool Split => Bindings?.DiffView == ToolDiffView.Split || (Bindings?.DiffView ?? ToolDiffView.Auto) == ToolDiffView.Auto && ViewportWidth > 120;
+    private NativeTextWrapMode Wrap => Bindings?.DiffWrap ?? NativeTextWrapMode.Word;
+    private string? _previous;
+    private PatchDocument _document = new([], 1, null);
+    protected override void OnParametersSet()
+    {
+        if (_previous == Patch) return;
+        _previous = Patch;
+        _document = PatchDocument.Parse(Patch);
+    }
+}

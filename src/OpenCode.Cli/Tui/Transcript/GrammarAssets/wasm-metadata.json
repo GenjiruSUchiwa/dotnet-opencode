@@ -1,0 +1,4824 @@
+[
+  {
+    "language": "agda",
+    "sha256": "8d88926c064b19b756814b6633090e0a63674675e6663ff81b6cf16ec7c60d6e",
+    "dylink": {
+      "memorySize": 2002424,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_agda",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "bash",
+    "sha256": "364f0a2cd385c792239423026ef442dbd073d34c396b7bc9e5932426b8e4aa5d",
+    "dylink": {
+      "memorySize": 1198656,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memset",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strcmp",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_bash",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "c",
+    "sha256": "c852c2a85ebf2beb636aa3b0ef7f7e70458684d74f6741b20dcb296885bed9f9",
+    "dylink": {
+      "memorySize": 552384,
+      "memoryAlign": 4,
+      "tableSize": 2,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_c",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "clojure",
+    "sha256": "90f8866b74d04e1643ed73cce25720c732df2aaa38b45da9dcc773bae8181c27",
+    "dylink": {
+      "memorySize": 70064,
+      "memoryAlign": 4,
+      "tableSize": 1,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_clojure",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "cpp",
+    "sha256": "174eb0deb75b2ec7881bcacda9f995648d8e683956e5c2267e69ab6dc503fcbf",
+    "dylink": {
+      "memorySize": 3304208,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memset",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_cpp",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "csharp",
+    "sha256": "d7fe0bf8e8b8d26b2b253f375e3c43386b332d23f7b7b3e15d49fff180fe46e3",
+    "dylink": {
+      "memorySize": 5837384,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_c_sharp",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "css",
+    "sha256": "8a23977fe271357cce6f254ef88c9bebf3854602d8046605aef6a45c02135c59",
+    "dylink": {
+      "memorySize": 50396,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_css",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "diff",
+    "sha256": "60409c8a17dd5a804e5119887c5b1322f0e780f1976e27d81a1e251dc92e2761",
+    "dylink": {
+      "memorySize": 8188,
+      "memoryAlign": 4,
+      "tableSize": 1,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_diff",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "elixir",
+    "sha256": "1818ae0d7343f880abb0b7932c9a815f09896ca67b3e126096a2dd7677d1477b",
+    "dylink": {
+      "memorySize": 1321120,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_elixir",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "fsharp",
+    "sha256": "f7c54b09d3bcff0fd44dcd605d989eb2cdd107555cec09271eb085f1617a28d4",
+    "dylink": {
+      "memorySize": 11263200,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_fsharp",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "go",
+    "sha256": "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
+    "dylink": {
+      "memorySize": 201632,
+      "memoryAlign": 4,
+      "tableSize": 2,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_go",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "haskell",
+    "sha256": "37a6b07b1a838d02ffb4f4c2a06863637a8efe48432d60a275f50f1d08f1092c",
+    "dylink": {
+      "memorySize": 3766504,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strlen",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_haskell",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "hcl",
+    "sha256": "2f9acf63e7c263215f283e2cf0f4ebbb9bfa77f58e18fa42b91094be201372a7",
+    "dylink": {
+      "memorySize": 82112,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memset",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswxdigit",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_hcl",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "html",
+    "sha256": "c48fcd82c7ea8bf943180088ba7f28c48b2bb5287874179168bf9d31e394cf85",
+    "dylink": {
+      "memorySize": 9428,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "towupper",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "strlen",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcmp",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strncpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_html",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "java",
+    "sha256": "4fdeac4ca6ca089f06c6f7e562abcac1733cd465728cc7031ebb73c2019122c4",
+    "dylink": {
+      "memorySize": 390920,
+      "memoryAlign": 4,
+      "tableSize": 2,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_java",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "json",
+    "sha256": "d2119fb98d5912719b13f9458574f8608d2d29dfbe45f6be1f860ea1fe2a2405",
+    "dylink": {
+      "memorySize": 2928,
+      "memoryAlign": 4,
+      "tableSize": 1,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_json",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "julia",
+    "sha256": "e0f52c36eadf0299e46fccd6715c760d35eaa3f09721bec38633da551ac9e781",
+    "dylink": {
+      "memorySize": 5882320,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_julia",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "kotlin",
+    "sha256": "c624e7443b371c28adc5d81674e73067564c12555ebe3ed96a6c8db814b7602d",
+    "dylink": {
+      "memorySize": 3900328,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "abort",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_kotlin",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "lua",
+    "sha256": "df08a1704e504c70b8dba4a3e6f8e0c99a4fb94e1b1693d2969f53141d09f0d4",
+    "dylink": {
+      "memorySize": 42880,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_lua",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "make",
+    "sha256": "1254d1e5787be8bb944d55d1f6552b6b2b7908272ed498013bfdc07bd7d042dd",
+    "dylink": {
+      "memorySize": 113620,
+      "memoryAlign": 4,
+      "tableSize": 2,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_make",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "nix",
+    "sha256": "10a66e15b62be1a59cd256abf4b48fdeac07e50c0a8e50ceb64296fcec019930",
+    "dylink": {
+      "memorySize": 62140,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_nix",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "ocaml",
+    "sha256": "761a78a804931cfac1fa0c6238989b4b0e86cc70db461b1315d743de923f8246",
+    "dylink": {
+      "memorySize": 5398776,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "towupper",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_ocaml",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "php",
+    "sha256": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+    "dylink": {
+      "memorySize": 1012336,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcmp",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswxdigit",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_php",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "python",
+    "sha256": "8c93692fb368e288a5824cee55773c9b3602804f513bda48c97661e52e9c2da2",
+    "dylink": {
+      "memorySize": 430928,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_python",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "r",
+    "sha256": "2a8f5acd1c53d91e0ec5c01a6830d8ac7f5a7f96f0ac4b3768c016c8e9d07711",
+    "dylink": {
+      "memorySize": 468064,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_r",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "ruby",
+    "sha256": "09a96427d7c72f0613ed470cd9812223fc4a91d6a9c025c0235cc6bd59ff96f4",
+    "dylink": {
+      "memorySize": 2029908,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswlower",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memmove",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswupper",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memchr",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_ruby",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "rust",
+    "sha256": "44b8d1a2e307ee8933d7c0bcb6b0f30d56bc999999fd1d2d9608a7dcf6e8ce56",
+    "dylink": {
+      "memorySize": 1084704,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_rust",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "scala",
+    "sha256": "6cd77d9152bb634b1690d8e9ce8c0b23aa0d84c018e113260f7b11ce54446d7b",
+    "dylink": {
+      "memorySize": 3782068,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_scala",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "swift",
+    "sha256": "e179468b0f3c30c29d8dd8e57c5a79e67812623046cc18fa593f8563795c0b77",
+    "dylink": {
+      "memorySize": 2963436,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_swift",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "toml",
+    "sha256": "1ac6a83826c35a68857f8325e00c78f6bcbef4eb6db3931a6cf3041f76e5e09f",
+    "dylink": {
+      "memorySize": 13656,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_toml",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "vim",
+    "sha256": "93cc332cbd093d163ba3d3b7ff223eacc023e6f5135088018a1c5e86ca627bec",
+    "dylink": {
+      "memorySize": 552480,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strncpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswlower",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "strlen",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_vim",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "vue",
+    "sha256": "94d9292677797c4d0299009885dfca5453513f44b79405efbf9d7dd3e1a1b5a2",
+    "dylink": {
+      "memorySize": 16780,
+      "memoryAlign": 4,
+      "tableSize": 6,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0",
+      "name",
+      "producers",
+      "target_features"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswspace",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "towupper",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strlen",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcmp",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "strncpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      }
+    ],
+    "exports": [
+      {
+        "name": "tree_sitter_vue",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  },
+  {
+    "language": "xml",
+    "sha256": "9950327f8542a3d563fe4192aa05986a53e6fd6adca518cbb1a1699cbc8970ad",
+    "dylink": {
+      "memorySize": 29736,
+      "memoryAlign": 4,
+      "tableSize": 7,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "iswalpha",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "iswalnum",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcmp",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "abort",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "memcpy",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__stack_pointer",
+        "kind": 3,
+        "signature": {
+          "mutable": 1,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_xml",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "language": "yaml",
+    "sha256": "0a0e5ebcfeb0b2bf272d071396eeed107b2c4b2617b69d5959b13f78b357a4d6",
+    "dylink": {
+      "memorySize": 166752,
+      "memoryAlign": 4,
+      "tableSize": 8,
+      "tableAlign": 0,
+      "needed": 0
+    },
+    "custom": [
+      "dylink.0"
+    ],
+    "imports": [
+      {
+        "module": "env",
+        "name": "calloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "free",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "malloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "realloc",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127
+          ],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "module": "env",
+        "name": "__assert_fail",
+        "kind": 0,
+        "signature": {
+          "parameters": [
+            127,
+            127,
+            127,
+            127
+          ],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "abort",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "module": "env",
+        "name": "__memory_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "__table_base",
+        "kind": 3,
+        "signature": {
+          "mutable": 0,
+          "type": 127
+        }
+      },
+      {
+        "module": "env",
+        "name": "memory",
+        "kind": 2,
+        "signature": null
+      },
+      {
+        "module": "env",
+        "name": "__indirect_function_table",
+        "kind": 1,
+        "signature": null
+      }
+    ],
+    "exports": [
+      {
+        "name": "__wasm_call_ctors",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      },
+      {
+        "name": "tree_sitter_yaml",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": [
+            127
+          ]
+        }
+      },
+      {
+        "name": "__wasm_apply_data_relocs",
+        "kind": 0,
+        "signature": {
+          "parameters": [],
+          "results": []
+        }
+      }
+    ]
+  }
+]

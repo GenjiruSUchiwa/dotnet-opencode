@@ -1,0 +1,86 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+@using System.Text.RegularExpressions
+
+<Box Gap="1">
+    @if (Files.Count > 0)
+    {
+        @foreach (var file in Files)
+        {
+            <Box @key="file.Index" Border="left" BorderFg="@Theme.Border" PaddingLeft="1">
+                <TuiText Value="@($"{(IsEdit ? "← Edit" : Label(file.Type))} {file.RelativePath}")" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                @if (Expanded)
+                {
+                    @if (!IsEdit && file.Type == "delete")
+                    {
+                        <TuiText Value="@($"-{file.Deletions} line{(file.Deletions == 1 ? "" : "s")}")" Fg="@(Theme.DiffRemoved ?? Theme.Text)" />
+                    }
+                    else
+                    {
+                        <PatchDiff Patch="@file.Patch" FilePath="@file.RelativePath" Theme="Theme" Bindings="Bindings"
+                                   Width="@Math.Max(1, Width - 2)" ViewportWidth="Width" />
+                    }
+                    @if (IsEdit)
+                    {
+                        @foreach (var diagnostic in Diagnostics.Select((item, index) => (item, index)))
+                        {
+                            <TuiText @key="diagnostic.index" Value="@($"Error [{diagnostic.item.Line + 1}:{diagnostic.item.Character + 1}] {diagnostic.item.Message}")"
+                                     Fg="@Theme.Error" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                        }
+                    }
+                }
+            </Box>
+        }
+    }
+    else if (!IsEdit && Applied.Count > 0)
+    {
+        @foreach (var file in Applied)
+        {
+            <TuiText @key="file.Index" Value="@($"{Label(file.Type)} {file.Resource}")" Fg="@(file.Type == "delete" ? Theme.DiffRemoved ?? Theme.Text : Theme.Text)"
+                     WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+        }
+    }
+    else
+    {
+        <TuiText Value="@PendingLabel" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+        @if (Expanded)
+        {
+            <ToolResultContent Part="Part" Theme="Theme" />
+        }
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public AssistantToolContent Part { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public ToolViewBindings? Bindings { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    private bool IsEdit => ToolResultData.Kind(Part.Name) == "edit";
+    private IReadOnlyList<ToolPatchFile> Files = [];
+    private IReadOnlyList<ToolAppliedFile> Applied = [];
+    private IReadOnlyList<ToolDiagnostic> Diagnostics = [];
+    private string PendingLabel = "";
+    private ToolState? _previous;
+    private string? _name;
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_previous, Part.State) && _name == Part.Name) return;
+        _previous = Part.State;
+        _name = Part.Name;
+        var metadata = ToolResultData.Metadata(Part);
+        var input = ToolResultData.Input(Part);
+        Files = ToolResultData.Files(metadata);
+        if (IsEdit) Files = Files.Take(1).ToArray();
+        Applied = ToolResultData.Applied(metadata);
+        Diagnostics = ToolResultData.Diagnostics(metadata, ToolResultData.Text(input, "path") ?? "");
+        if (IsEdit)
+        {
+            PendingLabel = ToolResultData.Text(input, "path") is { Length: > 0 } path ? $"← Edit {path}" : "# Preparing edit…";
+            return;
+        }
+        var targets = Regex.Matches(ToolResultData.Text(input, "patchText") ?? "", @"\*\*\* (?:Add|Update|Delete) File: ([^\r\n]+)")
+            .Select(match => match.Groups[1].Value.Trim()).ToArray();
+        PendingLabel = (Part.State is ToolStateError ? "# Patch failed" : "Patching") + (targets.Length == 1 ? $" {targets[0]}" : "");
+    }
+    private static string Label(string type) => type switch { "add" => "# Created", "delete" => "# Deleted", _ => "← Patched" };
+}

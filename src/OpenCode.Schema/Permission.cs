@@ -4,33 +4,34 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 [JsonConverter(typeof(PermissionIdJsonConverter))]
-public readonly record struct PermissionId : IEquatable<PermissionId>
+[Vogen.ValueObject<string>(comparison: Vogen.ComparisonGeneration.Omit)]
+public readonly partial struct PermissionId
 {
     public const string Prefix = "per_";
-    public string Value { get; }
-
-    public PermissionId(string value)
+    public static PermissionId FromExisting(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        Value = value;
+        return From(value);
     }
 
-    public static PermissionId Create(string? id = null) => new(id ?? $"{Prefix}{Identifier.Ascending()}");
+    public static PermissionId Create(string? id = null) => FromExisting(id ?? $"{Prefix}{Identifier.Ascending()}");
+    private static Vogen.Validation Validate(string value) => !string.IsNullOrWhiteSpace(value)
+        ? Vogen.Validation.Ok : Vogen.Validation.Invalid("PermissionId cannot be empty or whitespace.");
     public override string ToString() => Value;
     public static implicit operator string(PermissionId id) => id.Value;
-    public static explicit operator PermissionId(string value) => new(value);
+    public static explicit operator PermissionId(string value) => FromExisting(value);
 }
 
-public sealed class PermissionIdJsonConverter : JsonConverter<PermissionId>
+public sealed class PermissionIdJsonConverter() : ScalarJsonConverter<PermissionId, string>(PermissionId.FromExisting, static value => value.Value)
 {
     public override PermissionId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        new(reader.GetString()!);
+        PermissionId.FromExisting(reader.GetString()!);
 
     public override void Write(Utf8JsonWriter writer, PermissionId value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.Value);
 }
 
-[JsonConverter(typeof(JsonStringEnumConverter<PermissionEffect>))]
+[JsonConverter(typeof(PermissionEffectJsonConverter))]
 public enum PermissionEffect
 {
     [JsonStringEnumMemberName("allow")]
@@ -53,10 +54,18 @@ public enum PermissionReply
 }
 
 public sealed record PermissionRule(
-    [property: JsonPropertyName("action")] string Action,
-    [property: JsonPropertyName("resource")] string Resource,
-    [property: JsonPropertyName("effect")] PermissionEffect Effect
-);
+    string Action,
+    string Resource,
+    PermissionEffect Effect
+)
+{
+    [JsonPropertyName("action"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))]
+    public string Action { get; init => field = PromptValidation.Required(value); } = PromptValidation.Required(Action);
+    [JsonPropertyName("resource"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))]
+    public string Resource { get; init => field = PromptValidation.Required(value); } = PromptValidation.Required(Resource);
+    [JsonPropertyName("effect"), JsonRequired]
+    public PermissionEffect Effect { get; init => field = PermissionEffectJsonConverter.Validate(value); } = PermissionEffectJsonConverter.Validate(Effect);
+}
 
 public sealed record PermissionSource(
     [property: JsonPropertyName("type")] string Type,

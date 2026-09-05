@@ -1,0 +1,92 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+@using OpenTui.Blazor.Code
+@implements IAsyncDisposable
+
+@if (Split)
+{
+    @foreach (var row in Hunk.Pairs)
+    {
+        @* A native flex row takes the taller wrapped side. The next logical pair therefore
+           starts at the same visual row without estimating terminal cells in managed code. *@
+        <Box @key="row.Index" Direction="TuiFlexDirection.Row" Width="@Math.Max(1, Width)">
+            <PatchCell Line="row.Left" OldSide="true" Digits="Digits" Width="@Math.Max(1, Width / 2)"
+                       Theme="Theme" Colors="Bindings?.DiffColors" Wrap="Wrap" Document="_left.Document" Offset="@_leftOffsets[row.Index]" />
+            <PatchCell Line="row.Right" Digits="Digits" Width="@Math.Max(1, Width - Width / 2)"
+                       Theme="Theme" Colors="Bindings?.DiffColors" Wrap="Wrap" Document="_right.Document" Offset="@_rightOffsets[row.Index]" />
+        </Box>
+    }
+}
+else
+{
+    @for (var index = 0; index < Hunk.Lines.Count; index++)
+    {
+        var line = Hunk.Lines[index];
+        <PatchCell @key="line.Index" Line="line" OldSide="@(line.Kind == '-')" Digits="Digits" Width="Width"
+                   Theme="Theme" Colors="Bindings?.DiffColors" Wrap="Wrap" Document="_left.Document" Offset="@_leftOffsets[index]" />
+    }
+}
+@if (_left.Diagnostic is { } warning && Bindings?.CodeHighlighter is not null)
+{
+    <TuiText Value="@($"Syntax highlighting unavailable: {warning}")" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+}
+@if (Split && _right.Diagnostic is { } rightWarning && rightWarning != _left.Diagnostic && Bindings?.CodeHighlighter is not null)
+{
+    <TuiText Value="@($"Syntax highlighting unavailable: {rightWarning}")" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+}
+
+@code {
+    [Parameter, EditorRequired] public PatchHunk Hunk { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public ToolViewBindings? Bindings { get; set; }
+    [Parameter] public string? FilePath { get; set; }
+    [Parameter] public bool Split { get; set; }
+    [Parameter] public int Width { get; set; }
+    [Parameter] public int Digits { get; set; }
+    [Parameter] public NativeTextWrapMode Wrap { get; set; }
+    private readonly CodeHighlightState _left = new();
+    private readonly CodeHighlightState _right = new();
+    private int[] _leftOffsets = [];
+    private int[] _rightOffsets = [];
+    private PatchHunk? _previous;
+    private bool _wasSplit;
+    private bool _disposed;
+    private string _leftText = "";
+    private string _rightText = "";
+
+    protected override void OnInitialized() { _left.Changed += Changed; _right.Changed += Changed; }
+    protected override void OnParametersSet()
+    {
+        if (!ReferenceEquals(Hunk, _previous) || _wasSplit != Split)
+        {
+            _previous = Hunk;
+            _wasSplit = Split;
+            var left = Split ? Hunk.Pairs.Select(row => row.Left?.Text ?? "").ToArray() : Hunk.Lines.Select(line => line.Text).ToArray();
+            var right = Split ? Hunk.Pairs.Select(row => row.Right?.Text ?? "").ToArray() : [];
+            _leftText = string.Join('\n', left);
+            _rightText = string.Join('\n', right);
+            _leftOffsets = Offsets(left);
+            _rightOffsets = Offsets(right);
+        }
+        var filetype = FilePath is { } path ? Bindings?.Filetype?.Invoke(path) : null;
+        // Borrow only the approved abstract provider. Neither parser ownership nor a fallback lexer lives here.
+        // Conceal is false, matching DiffRenderable's source default and preserving gutter/source offsets.
+        _left.Update(new(_leftText, filetype, Bindings?.CodeHighlighter, Bindings?.SyntaxRules, Conceal: false));
+        _right.Update(new(_rightText, Split ? filetype : null, Split ? Bindings?.CodeHighlighter : null, Bindings?.SyntaxRules, Conceal: false));
+    }
+
+    private static int[] Offsets(IReadOnlyList<string> lines)
+    {
+        var offsets = new int[lines.Count];
+        for (var index = 1; index < lines.Count; index++) offsets[index] = offsets[index - 1] + lines[index - 1].Length + 1;
+        return offsets;
+    }
+    private void Changed() { if (!_disposed) _ = InvokeAsync(() => { if (!_disposed) StateHasChanged(); }); }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _left.Changed -= Changed;
+        _right.Changed -= Changed;
+        await _left.DisposeAsync();
+        await _right.DisposeAsync();
+    }
+}

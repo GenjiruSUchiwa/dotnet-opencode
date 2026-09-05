@@ -1,0 +1,175 @@
+@namespace OpenCode.Cli.Tui.Forms
+
+<Box Width="@Math.Max(1, Width)" Shrink="0" Border="left" BorderFg="@Theme.Border" Bg="@Theme.Background">
+    <Box Gap="1" PaddingLeft="1" PaddingRight="3" PaddingTop="1" PaddingBottom="1">
+        <Box PaddingLeft="1">
+            <TuiText Value="@Request.Form.Title" Fg="@Theme.Subdued" />
+        </Box>
+        @if (Message is { Length: > 0 } message)
+        {
+            <Box PaddingLeft="1"><TuiText Value="@message" Fg="@Theme.Text" /></Box>
+        }
+        @if (ServiceStatus is { } unavailable)
+        {
+            <Box PaddingLeft="1"><TuiText Value="@unavailable" Fg="@Theme.Error" /></Box>
+        }
+        @if (!_state.Single && !Tabbed)
+        {
+            <Box Direction="TuiFlexDirection.Row" Gap="3" PaddingLeft="1">
+                <TuiText Value="@(_state.Review ? "Review" : $"Field {_state.Tab + 1} of {_state.Visible.Length}")" Fg="@Theme.Subdued" />
+                @if (_state.Visible.Length > 0)
+                {
+                    <TuiText Value="@($"· {_state.Completed}/{_state.Visible.Length} completed")" Fg="@Theme.Subdued" />
+                }
+            </Box>
+        }
+        @if (!_state.Single && Tabbed)
+        {
+            <Box Direction="TuiFlexDirection.Row" PaddingLeft="1">
+                @for (var index = 0; index < _state.Visible.Length; index++)
+                {
+                    var item = _state.Visible[index];
+                    var selected = index == _state.Tab;
+                    <Box @key="item.Key" PaddingRight="2" Bg="@(selected ? Theme.FieldSelectedBackground : Theme.Background)" OnClick="args => SelectField(args, item.Key)">
+                        <TuiText Value="@Truncate(item.Label, 24)" Fg="@(selected ? Theme.Text : Theme.Subdued)" Bold="selected" Height="1" />
+                    </Box>
+                }
+                <Box Bg="@(_state.Review ? Theme.FieldSelectedBackground : Theme.Background)" OnClick="args => SelectField(args, null)">
+                    <TuiText Value="Submit" Fg="@(_state.Review ? Theme.Text : Theme.Subdued)" Bold="_state.Review" Height="1" />
+                </Box>
+            </Box>
+        }
+
+        @if (_state.Current is { Kind: TerminalFormFieldKind.External } external)
+        {
+            <Box PaddingLeft="1" Gap="1">
+                @if (external.Title is not null)
+                {
+                    <TuiText Value="@external.Title" Fg="@Theme.Text" />
+                }
+                @if (external.Description is not null)
+                {
+                    <TuiText Value="@external.Description" Fg="@Theme.Subdued" />
+                }
+                <TuiText Value="@external.Url" Fg="@Theme.ActionText" OnClick="OpenLink" />
+                <TuiText Value="@(_state.Value(external.Key) is TerminalFormValue.Boolean { Value: true } ? "✓ Acknowledged"
+                    : _state.ExternalReady(external.Key) ? "Complete the external action, then press enter to confirm."
+                    : "Open or copy the URL, complete the external action, then confirm.")"
+                    Fg="@(_state.Value(external.Key) is TerminalFormValue.Boolean { Value: true } ? Theme.Success : Theme.Subdued)" />
+            </Box>
+        }
+        else if (_state.Current is { } current)
+        {
+            <Box PaddingLeft="1" Gap="1">
+                <TuiText Value="@(current.Description ?? current.Label)" Fg="@Theme.Text" />
+                @if (current.Textual)
+                {
+                    <Box PaddingLeft="1">
+                        <Input @key="current.Key" Value="@_state.Editor.Text" Cursor="_state.Editor.Cursor"
+                               SelectionAnchor="_state.Editor.SelectionAnchor" Placeholder="@Placeholder" MaxHeight="6"
+                               FocusKey="@FocusKey" OnKeyDown="Key" OnPaste="Paste" />
+                    </Box>
+                }
+                else
+                {
+                    <Box>
+                        @for (var index = 0; index < _state.Rows.Length; index++)
+                        {
+                            var row = _state.Rows[index];
+                            var rowIndex = index;
+                            var active = index == _state.Selected;
+                            var picked = _state.Picked(row.Value);
+                            var multiple = current.Kind == TerminalFormFieldKind.Multiselect;
+                            <Box @key="row.Value" OnClick="args => ChooseRow(args, rowIndex)">
+                                <Box Direction="TuiFlexDirection.Row">
+                                    <Box PaddingRight="1" Bg="@(active ? Theme.FieldFocusedBackground : Theme.Background)">
+                                        <TuiText Value="@($"{index + 1}.")" Fg="@(active ? Theme.FieldFocusedText : Theme.Subdued)" />
+                                    </Box>
+                                    <Box Direction="TuiFlexDirection.Row" Bg="@(active ? Theme.FieldFocusedBackground : Theme.Background)">
+                                        @if (multiple)
+                                        {
+                                            <TuiText Value="@(picked ? "[✓]" : "[ ]")" Width="4"
+                                                     Fg="@(active ? Theme.FieldFocusedText : picked ? Theme.FieldSelectedText : Theme.Subdued)" />
+                                        }
+                                        <TuiText Value="@row.Label" Fg="@(active ? Theme.FieldFocusedText : Theme.FieldText)" />
+                                    </Box>
+                                    @if (!multiple && picked)
+                                    {
+                                        <TuiText Value=" ✓" Fg="@Theme.FieldSelectedText" />
+                                    }
+                                </Box>
+                                @if (row.Description is not null)
+                                {
+                                    <Box PaddingLeft="@(multiple ? 7 : 3)">
+                                        <TuiText Value="@row.Description" Fg="@Theme.Subdued" />
+                                    </Box>
+                                }
+                            </Box>
+                        }
+                        @if (current.AllowsCustom)
+                        {
+                            var picked = _state.Picked(new TerminalFormValue.Text(_state.CustomText(current.Key)));
+                            <Box Direction="TuiFlexDirection.Row" OnClick="args => ChooseRow(args, _state.Rows.Length)">
+                                <Box PaddingRight="1" Bg="@(_state.Other ? Theme.FieldFocusedBackground : Theme.Background)">
+                                    <TuiText Value="@($"{_state.Rows.Length + 1}.")" Fg="@(_state.Other ? Theme.FieldFocusedText : Theme.Subdued)" />
+                                </Box>
+                                <Box Direction="TuiFlexDirection.Row" Grow="1" Bg="@(_state.Other ? Theme.FieldFocusedBackground : Theme.Background)">
+                                    @if (current.Kind == TerminalFormFieldKind.Multiselect)
+                                    {
+                                        <TuiText Value="@(picked || _state.Other && _state.Editing ? "[✓]" : "[ ]")" Width="4"
+                                                 Fg="@(_state.Other ? Theme.FieldFocusedText : picked ? Theme.FieldSelectedText : Theme.Subdued)" />
+                                    }
+                                    @if (_state.Editing)
+                                    {
+                                        <Box Grow="1">
+                                            <Input Value="@_state.Editor.Text" Cursor="_state.Editor.Cursor"
+                                                   SelectionAnchor="_state.Editor.SelectionAnchor" Placeholder="Type your own answer" MaxHeight="6"
+                                                   FocusKey="@FocusKey" OnKeyDown="Key" OnPaste="Paste" />
+                                        </Box>
+                                    }
+                                    else
+                                    {
+                                        <TuiText Value="@(_state.CustomText(current.Key) is { Length: > 0 } custom ? custom : "Type your own answer")"
+                                                 Fg="@(_state.Other ? Theme.FieldFocusedText : Theme.FieldText)" />
+                                        @if (current.Kind != TerminalFormFieldKind.Multiselect && picked)
+                                        {
+                                            <TuiText Value=" ✓" Fg="@Theme.FieldSelectedText" />
+                                        }
+                                    }
+                                </Box>
+                            </Box>
+                        }
+                    </Box>
+                }
+            </Box>
+        }
+        @if (_state.Review)
+        {
+            <Box Height="ReviewHeight" PaddingLeft="1">
+                @foreach (var line in VisibleReviewLines())
+                {
+                    <TuiText Value="@line.Text" Fg="@line.Color" Height="1" />
+                }
+            </Box>
+        }
+    </Box>
+    <Box PaddingLeft="2" PaddingRight="3" PaddingBottom="1">
+        @if (_state.InputActive)
+        {
+            <TuiText Value="@Hints" Fg="@Theme.Subdued" />
+        }
+        else
+        {
+            @* Choice/review modes still need an input target in the generic host's focus tree. *@
+            <Input Value="" Placeholder="@Hints" PlaceholderFg="@Theme.Subdued" MaxHeight="1" FocusKey="@FocusKey" OnKeyDown="Key" OnPaste="Paste" />
+        }
+        @if (_state.Error is { } error)
+        {
+            <TuiText Value="@error" Fg="@Theme.Error" />
+        }
+        @if (_notice is not null && !_finished)
+        {
+            <TuiText Value="@_notice" Fg="@Theme.Subdued" />
+        }
+    </Box>
+</Box>

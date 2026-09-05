@@ -20,7 +20,7 @@ public sealed record SessionStatsToolUsage(
     [property: JsonPropertyName("succeeded")] int Succeeded,
     [property: JsonPropertyName("failed")] int Failed,
     [property: JsonPropertyName("unfinished")] int Unfinished,
-    [property: JsonPropertyName("durationP50")] double? DurationP50 = null
+    [property: JsonPropertyName("durationP50"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? DurationP50 = null
 );
 
 public sealed record SessionStatsToolTotals(
@@ -31,9 +31,29 @@ public sealed record SessionStatsToolTotals(
 );
 
 public sealed record SessionStatsDateRange(
-    [property: JsonPropertyName("from")] DateTimeOffset From,
-    [property: JsonPropertyName("to")] DateTimeOffset To
+    [property: JsonPropertyName("from"), JsonConverter(typeof(EpochMillisecondsJsonConverter))] DateTimeOffset From,
+    [property: JsonPropertyName("to"), JsonConverter(typeof(EpochMillisecondsJsonConverter))] DateTimeOffset To
 );
+
+[JsonConverter(typeof(JsonStringEnumConverter<SessionStatsToolMode>))]
+public enum SessionStatsToolMode
+{
+    [JsonStringEnumMemberName("none")] None,
+    [JsonStringEnumMemberName("summary")] Summary,
+    [JsonStringEnumMemberName("detail")] Detail
+}
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "mode")]
+[JsonDerivedType(typeof(SessionStatsToolsNone), "none")]
+[JsonDerivedType(typeof(SessionStatsToolsSummary), "summary")]
+[JsonDerivedType(typeof(SessionStatsToolsDetail), "detail")]
+public abstract record SessionStatsTools;
+public sealed record SessionStatsToolsNone : SessionStatsTools;
+public sealed record SessionStatsToolsSummary(
+    [property: JsonPropertyName("totals"), JsonRequired] SessionStatsToolTotals Totals) : SessionStatsTools;
+public sealed record SessionStatsToolsDetail(
+    [property: JsonPropertyName("totals"), JsonRequired] SessionStatsToolTotals Totals,
+    [property: JsonPropertyName("usage"), JsonRequired] IReadOnlyList<SessionStatsToolUsage> Usage) : SessionStatsTools;
 
 /// <summary>
 /// 1:1 port of SessionStats.Info from packages/schema/src/session-stats.ts
@@ -50,5 +70,5 @@ public sealed record SessionStatsInfo(
     [property: JsonPropertyName("streak")] int Streak,
     [property: JsonPropertyName("activity")] IReadOnlyList<SessionStatsActivity> Activity,
     [property: JsonPropertyName("models")] IReadOnlyList<SessionStatsModelUsage> Models,
-    [property: JsonPropertyName("toolTotals")] SessionStatsToolTotals? ToolTotals = null
+    [property: JsonPropertyName("tools"), JsonRequired] SessionStatsTools Tools
 );

@@ -1,0 +1,420 @@
+@namespace OpenCode.Cli.Tui.Components
+@using OpenCode.Cli.Tui.Transcript
+@using OpenCode.Cli.Tui.Dialogs
+@using OpenCode.Cli.Tui.Sessions
+@using OpenCode.Cli.Tui.Permissions
+@using OpenCode.Cli.Tui.Forms
+@using OpenCode.Cli.Tui.Layout
+@using OpenCode.Cli.Tui.Settings
+@using OpenCode.Cli.Tui.Tabs
+@using OpenCode.Cli.Tui.MessageActions
+@using OpenCode.Cli.Tui.Commands
+@using OpenCode.Cli.Tui.Integrations
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Attachments
+@using OpenCode.Cli.Tui.Terminals
+@using OpenCode.Cli.Tui.Images
+@using OpenCode.Cli.Tui.Recovery
+@using OpenCode.Cli.Tui.Skills
+@using OpenCode.Cli.Tui.Activities
+@using OpenCode.Cli.Tui.Models
+@using OpenCode.Cli.Tui.SystemDialogs
+@using OpenCode.Cli.Tui.Stash
+
+<Box Grow="1" Bg="@BaseColors.Background.Hex">
+    @if ((_hasConversation || _tabs.Tabs.Length > 1) && TabHeight > 0)
+    {
+        <ConversationTabs Tabs="_tabs.Tabs" Selected="_tabs.Selected" Busy="@(SelectedSessionRunning ? _tabs.Selected : null)" Activity="_tabActivity"
+                          TerminalWidth="_width" TerminalHeight="_height" Theme="TabColors" OnSelect="SelectTab" OnClose="CloseTab" OnAdd="NewTab"
+                          OnMove="MoveTab" OnPromote="PromoteTab" OnContextMenu="OpenTabMenu" />
+    }
+    @if (_hasConversation)
+    {
+        <SessionFrame @ref="_sessionFrame" State="_frame" Width="_width" ChildSession="_childSession" BlockingRequest="PromptBlocked" Theme="TranscriptColors"
+                      TerminalFocused="_terminalFocused" OnFocusSession="FocusSessionPane" OnResizeStart="BeginTerminalResize" OnResize="ResizeTerminal" OnResizeEnd="EndTerminalResize"
+                      Title="@_conversationTitle" Directory="@CurrentDirectory" Workspace="@_presentation?.Location.WorkspaceId?.Value"
+                      Summary="Summary" Mcp="@(_presentation?.Mcp ?? [])" SidebarError="@_presentation?.McpError"
+                      AwayFromBottom="@(!TranscriptScroll.AtBottom)" OnJumpToLatest="JumpToLatest" OnCloseSidebar="CloseSidebar">
+        <Transcript>
+            <CascadingValue Value="TranscriptToolBindings">
+            <SessionTranscript Messages="_transcriptMessages" Theme="TranscriptColors" ScrollState="TranscriptScroll"
+                               SyntaxRules="@(TranscriptSyntax.Rules(BaseColors))"
+                               CodeHighlighter="TranscriptCodeHighlighter"
+                               Width="ComposerWidth"
+                               ExpandedRows="_expandedRows" CollapsedRows="_collapsedRows"
+                               OnToggleRow="ToggleTranscriptRow"
+                               MarkdownMode="_markdownMode" OnMessageActions="OpenMessageActions" OnCopyCode="CopyCode"
+                               OnImagePreview="OpenImagePreview"
+                               PendingToolIds="@(_permissions.Where(permission => permission.SessionId == _sessionId && permission.Source?.Type == "tool").Select(permission => permission.Source!.Id).ToHashSet())"
+                               ShowReasoning="ShowReasoning" ShowToolOutput="ShowToolDetails"
+                               ShowUsage="ShowUsage" ShowTimestamps="ShowTimestamps" />
+            </CascadingValue>
+        </Transcript>
+        <Composer>
+        @if (!PromptBlocked && !_activitiesOpen && !_terminalListOpen && MutateInbox is not null && QueuedInputs.Count > 0)
+        {
+            <InboxDock Items="QueuedInputs" Theme="TranscriptColors" OnOpen="OpenQueuedPrompts" />
+        }
+        @if (ActivePermission is { } permission)
+        {
+            <PermissionComposer @key="permission.Id" Request="permission" Theme="PermissionColors" OnReply="SendPermission"
+                                OnCancel="RefreshPermissionState" CanPersistAlways="_canPersistAlways" RequestRejectionFeedback="@(permission.SessionId != _sessionId)"
+                                SourceInput="PermissionInput" SourceMetadata="PermissionMetadata" Width="ComposerWidth"
+                                TerminalWidth="_width" TerminalHeight="_height" FocusKey="permission" />
+        }
+        else if (ActiveForm is not null && _formScope is { } formScope)
+        {
+            <FormOutlet Pending="formScope.Pending" Location="formScope.Location" Session="_sessionId"
+                        Descendants="formScope.Descendants" ChildSession="_childSession"
+                        PermissionPending="@(ActivePermission is not null)" Theme="FormColors"
+                        Width="FormWidth" TerminalHeight="_height" OnReply="SendFormReply" OnCancel="SendFormCancellation"
+                        OpenExternal="OpenFormLink" CopyExternal="CopyFormLink" ReadClipboard="ReadFormClipboard" />
+        }
+        else if (_recoveryLocation is { } unavailable)
+        {
+            <SessionLocationUnavailable Evidence="unavailable" Theme="RecoveryColors" Width="ComposerWidth" TerminalWidth="_width"
+                                        Home="@RecoveryHome" Busy="RecoveryBusy"
+                                        ChooseDirectory="@(CanChooseRecoveryDirectory ? MoveRecoveryLocation : null)" Move="RecoveryMove" />
+        }
+        else if (_activitiesOpen)
+        {
+            @if (_activitySession is { } activitySession && _activityClient is { } activityClient)
+            {
+                <SessionActivities @key="(activityClient, activitySession, _activityTab)" @ref="_activities"
+                    Client="activityClient" SessionId="activitySession" CurrentSession="_sessionId" Open="true" DefaultTab="_activityTab"
+                    Theme="ElevatedColors" Width="ComposerWidth" TerminalHeight="_height"
+                    Sessions="ActivityFamily" ActiveSessions="_activityActive" Messages="ActivityMessages"
+                    Permissions="_permissions" Forms="@(ReadForms?.Invoke()?.Pending.Select(item => item.Form).ToArray())"
+                    Shells="ActivityShells" FamilyComplete="_activityFamilyComplete"
+                    SessionError="@_activitySessionError" ShellError="@(_activityShellError ?? _activityFeed?.Error)"
+                    ResolveCommand="ResolveComposerCommand" KillShortcut="@Shortcut("composer.shell.kill")"
+                    InterruptShortcut="@Shortcut("composer.subagent.interrupt")"
+                    OnFocusRequested="FocusActivity" OnClose="CloseActivityPanel" OnOpenSession="OpenActivitySession"
+                    OnRequestMessages="RequestActivityMessages" OnShellObserved="MergeObservedShell"
+                    OnShellRemoved="RemoveObservedShell" OnRefresh="RefreshActivities" />
+            }
+            else
+            {
+                <TuiText Value="@(_activitySessionError ?? "Loading activities…")" Fg="@TranscriptColors.Subdued" />
+            }
+        }
+        else if (_terminalListOpen)
+        {
+            <TerminalSelector Entries="_terminalEntries" Current="SelectedTerminal?.Id" Theme="ElevatedColors"
+                              CanCreate="@(_terminalCapability?.CanAttempt == true)" Loading="_terminalLoading" Error="@_terminalError"
+                              OnSelect="ChooseTerminal" OnRemove="RemoveTerminal" OnClose="CloseTerminalList" />
+        }
+        else
+        {
+            <SessionComposer Value="@_input" Cursor="_cursor" SelectionAnchor="_selectionAnchor" Width="ComposerWidth"
+                             TerminalWidth="_width" TerminalHeight="_height" Directory="@CurrentDirectory" Loading="_configurationBusy"
+                              Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant" ShellMode="ShellMode" ShellColor="@ShellColor"
+                             Summary="Summary" Running="SelectedSessionRunning" RunningChildren="RunningChildren" Theme="TranscriptColors"
+                             CommandShortcut="@Shortcut("command.palette.show")" AgentShortcut="@Shortcut("agent.cycle")"
+                             InterruptShortcut="@Shortcut("session.interrupt")" OnKeyDown="InputKey" OnPaste="InputPaste"
+                             OnPointerDown="PromptPointerDown" OnPointerMove="PromptPointerMove" OnPointerUp="PromptPointerUp" OnTextInput="InputText" Muted="_terminalFocused" TextMarks="PromptTextMarks" />
+        }
+        </Composer>
+        <Terminal>
+            @if (SelectedTerminal is { } terminal && ReadSessionClient?.Invoke() is { } terminalClient)
+            {
+                <TerminalPane @key="(terminalClient, terminal.Id)" PtyId="terminal.Id" Client="terminalClient" Theme="ElevatedColors"
+                              DeferRichKey="DeferTerminalKey" Resizing="_terminalResizing" AutoFocus="_terminalAutoFocus"
+                              OnAutoFocus="ConsumeTerminalFocus" OnFocusRequest="RememberTerminalFocus" OnFocusChange="TerminalFocusChanged"
+                              OnDisconnect="FocusSessionPane" CancellationToken="_configurationLifetime.Token" />
+            }
+        </Terminal>
+        <Feedback>
+        @StashFeedback
+        @if (_modelPreferenceInfo is { } modelInformation)
+        {
+            <TuiText Value="@modelInformation" Fg="@BaseColors.Color("text.feedback.info.default").Hex" />
+        }
+        @if ((_modelPreferenceError ?? (ModelPreferenceState?.Loaded == true ? null : ModelPreferenceLoadError)) is { } preferenceError)
+        {
+            <TuiText Value="@preferenceError" Fg="@TranscriptColors.Error" />
+        }
+        @if (RecoveryDataUnavailable || RecoveryBusy || _recoveryWaitError is not null)
+        {
+            <RecoveryStatus Theme="RecoveryColors" Synchronization="@(_recoverySession?.Synchronization ?? SessionSynchronization.Empty)"
+                            Error="@(_recoveryWaitError ?? _recoverySession?.Error)" Busy="RecoveryBusy"
+                            Retry="@(RetryRecoveryFeed is null ? null : RetryRecoveryConnection)"
+                            Reload="@(ReloadRecoverySession is null || _sessionId is null ? null : ReloadSelectedRecoverySession)"
+                            Cancel="CancelRecoveryWait" />
+        }
+        @if (_inboxRefreshError is { } inboxRefreshError)
+        {
+            <TuiText Value="@inboxRefreshError" Fg="@TranscriptColors.Error" />
+        }
+        @if ((_settingsError ?? _settingsPersistenceError) is { } settingsError)
+        {
+            <TuiText Value="@settingsError" Fg="@TranscriptColors.Error" />
+        }
+        @if (_themeError is { } themeError)
+        {
+            <TuiText Value="@themeError" Fg="@TranscriptColors.Error" />
+        }
+        @if ((_formRefreshError ?? _formScope?.Error) is { } formError)
+        {
+            <Box Width="ComposerWidth" PaddingTop="1" Shrink="1">
+                <TuiText Value="@formError" Fg="@FormColors.Error" />
+            </Box>
+        }
+        @if (!_configurationBusy && (_inputError ?? SelectionError ?? ExecutionError) is { Length: > 0 } explanation)
+        {
+            <Box Width="ComposerWidth" PaddingTop="1" PaddingBottom="1" Shrink="1">
+                <TuiText Value="@explanation" Fg="@TranscriptColors.Error" />
+            </Box>
+        }
+
+        @if ((_keyHint ?? _tabStorageError) is { } hint)
+        {
+            <TuiText Value="@hint" Height="1" Fg="@TranscriptColors.Subdued" />
+        }
+        </Feedback>
+        </SessionFrame>
+    }
+    else
+    {
+        <Box Grow="1" Center="true" PaddingX="SidePadding">
+            <Box Grow="1" Height="0" />
+            <Box Height="4" Shrink="1" />
+            @if (_height >= 12)
+            {
+                <Wordmark TerminalWidth="_width" Theme="WordmarkColors" />
+            }
+            <Box Height="1" Shrink="1" />
+            @if (ActiveForm is not null)
+            {
+                <SessionComposer Value="@_input" Width="ComposerWidth" TerminalWidth="_width" TerminalHeight="_height"
+                                 Directory="@CurrentDirectory" Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
+                                 Theme="TranscriptColors" Disabled="true" Summary="Summary" CommandShortcut="@Shortcut("command.palette.show")" />
+            }
+            else
+            {
+                <Box Width="ComposerWidth" Shrink="0" FocusKey="command-composer">
+                <Composer Value="@_input" Cursor="_cursor" SelectionAnchor="_selectionAnchor" TerminalWidth="_width" TerminalHeight="_height"
+                          Home="true" Width="ComposerWidth" CurrentDirectory="@CurrentDirectory" Loading="_configurationBusy" Theme="ComposerColors" ShellMode="ShellMode"
+                          CommandShortcut="@Shortcut("command.palette.show")" Agent="@ActiveAgent" Model="@ActiveModel" Provider="@ActiveProvider" Variant="@ActiveVariant"
+                          OnKeyDown="InputKey" OnPaste="InputPaste" OnTextInput="InputText" TextMarks="PromptTextMarks" />
+                </Box>
+            }
+            @StashFeedback
+            @if (_modelPreferenceInfo is { } homeModelInformation)
+            {
+                <TuiText Value="@homeModelInformation" Fg="@BaseColors.Color("text.feedback.info.default").Hex" />
+            }
+            @if (!_configurationBusy && (_inputError ?? _modelPreferenceError ?? (ModelPreferenceState?.Loaded == true ? null : ModelPreferenceLoadError) ?? SelectionError ?? ExecutionError ?? _formRefreshError ?? _formScope?.Error ?? _themeError ?? _settingsError ?? _settingsPersistenceError) is { Length: > 0 } homeError)
+            {
+                <Box Width="ComposerWidth" PaddingTop="1" Shrink="1"><TuiText Value="@homeError" Fg="@TranscriptColors.Error" /></Box>
+            }
+            <Box Grow="1" Height="0" />
+        </Box>
+    }
+    @if (!_hasConversation && FooterHeight > 0)
+    {
+        <Box Height="FooterHeight" Shrink="0" PaddingX="2" PaddingTop="@(_height < 16 ? 0 : 1)" PaddingBottom="@(_height < 16 ? 0 : 1)">
+            <Box Direction="TuiFlexDirection.Row" Height="1">
+                <TuiText Value="@(_keyHint ?? _tabStorageError ?? (_configurationBusy ? (_connection is null ? "Connecting..." : "Refreshing...") : SelectionError is not null || ExecutionError is not null || _status == "Ready" ? "" : _status))"
+                      Grow="1" Height="1" Dim="true" />
+                @if (_width >= 64)
+                {
+                    <TuiText Value="@Version" Height="1" Dim="true" />
+                }
+            </Box>
+        </Box>
+    }
+    @if (!_hasConversation && ActiveForm is not null && _formScope is { } homeForms)
+    {
+        <Box Position="TuiPosition.Absolute" Left="0" Right="0" Bottom="1" ZIndex="2000" PaddingX="2">
+            <FormOutlet Pending="homeForms.Pending" Location="homeForms.Location" Theme="FormColors"
+                        Width="FormWidth" TerminalHeight="_height" OnReply="SendFormReply" OnCancel="SendFormCancellation"
+                        OpenExternal="OpenFormLink" CopyExternal="CopyFormLink" ReadClipboard="ReadFormClipboard" />
+        </Box>
+    }
+    @if (_tabMenuState is { } menu)
+    {
+        <Box Position="TuiPosition.Absolute" Left="0" Right="0" Top="0" Bottom="0" ZIndex="2500" OnPointerDown="DismissTabMenu">
+            <SessionTabContextMenu @ref="_tabMenu" Request="menu" Actions="_tabMenuActions" TerminalWidth="_width"
+                                   TerminalHeight="_height" Theme="TabColors" OnClose="CloseTabMenu" />
+        </Box>
+    }
+    @if (CommandAutocompleteVisible && _commandAnchor is { } commandAnchor)
+    {
+        <CommandAutocomplete Anchor="commandAnchor" Options="_commandOptions" Selected="_commandIndex" Theme="DialogColors"
+                             Border="@OverlayColors.Border.Hex" Loading="_configurationBusy" Error="@_presentation?.CommandError"
+                             OnSelect="ChooseCommand" OnHighlight="HighlightCommand" />
+    }
+    @if (ReferenceAutocompleteVisible && _referenceAnchor is { } referenceAnchor)
+    {
+        <ReferenceAutocomplete Anchor="referenceAnchor" Options="_referenceOptions" Selected="_referenceIndex" Theme="DialogColors"
+                               Border="@OverlayColors.Border.Hex" Loading="_referenceLoading" Error="@_referenceError"
+                               ErrorForeground="@OverlayColors.Color("text.feedback.error.default").Hex"
+                               OnSelect="SelectReference" OnHighlight="HighlightReference" />
+    }
+    @if (_recoveryFeed is { } recoveryFeed)
+    {
+        <Reconnecting Feed="recoveryFeed" Theme="RecoveryColors" TerminalWidth="_width" TerminalHeight="_height" />
+    }
+</Box>
+
+@if (_palette)
+{
+    <CommandPaletteDialog Commands="PaletteCommands" Context="_paletteContext" Theme="DialogColors"
+                          Shortcut="AllShortcuts" Settings="@(Settings?.PaletteSettings ?? [])" OnSetting="OpenSettings"
+                          TerminalHeight="_height" OnExecute="RunCommand" OnClose="CloseDialog" />
+}
+@if (_settings && Settings is { } settingsController)
+{
+    <DialogConfig Controller="settingsController" Theme="DialogColors" Current="@_selectedSetting"
+                  TerminalHeight="_height" OnClose="CloseDialog" />
+}
+@if (_statusDialog)
+{
+    <DialogStatus Theme="ElevatedColors" Backdrop="@DialogColors.Backdrop" Mcp="_statusMcp" Loading="_statusLoading"
+                  Error="@_statusMcpError" TerminalHeight="_height" OnClose="CloseDialog" />
+}
+@if (_stashOpen)
+{
+    <DialogStash @key="_promptStash" Store="_promptStash" Theme="ElevatedColors" Backdrop="@DialogColors.Backdrop"
+                 TerminalHeight="_height" ResolveCommand="ResolveDialogCommand" DeleteShortcut="@Shortcut("stash.delete")"
+                 CanRestore="CanRestoreStash" OnRestore="RestoreStashedPrompt" OnClose="CloseDialog" />
+}
+@if (_themesDialog && Themes is { } themeState && ApplicationThemeCatalog is { } themeCatalog)
+{
+    <DialogThemeList @key="(themeCatalog, themeState)" @ref="_themeListDialog" Catalog="themeCatalog" State="themeState"
+                     Backdrop="@DialogColors.Backdrop" TerminalHeight="_height" ResolveCommand="ResolveDialogCommand"
+                     FlushPersistence="FlushThemeWrites" PersistenceError="@_themeError" ReportError="ThemeFailed" OnClose="CloseDialog" />
+}
+@if (_recoveryMovePicker is { } moveSession)
+{
+    <DirectoryMoveDialog @key="moveSession.Id" SessionId="moveSession.Id" ProjectId="moveSession.ProjectId" Current="moveSession.Location"
+                         Theme="RecoveryColors" TerminalHeight="_height" LoadDirectories="LoadRecoveryDirectories" LoadChildren="BrowseRecoveryDirectory"
+                         SubmitMove="SubmitRecoveryMove" MoveState="PickerMove" OnAdmitted="RecoveryMoveAdmitted" OnClose="CloseRecoveryDirectory" />
+}
+@if (_messageTarget is { } messageTarget && _messageActions is { } messageActions)
+{
+    <DialogMessage Target="messageTarget" Controller="messageActions" Theme="DialogColors" TerminalHeight="_height"
+                   CancellationToken="_configurationLifetime.Token" OnClose="CloseDialog" />
+}
+@if (_imagePreview is { } imagePreview)
+{
+    <DialogImagePreview @key="imagePreview" Controller="imagePreview" Theme="ElevatedColors" TerminalHeight="_height" OnClose="CloseDialog" />
+}
+@if (_skillsOpen && _skillClient is { } skillClient && _skillLocation is { } skillLocation)
+{
+    <SkillPicker @key="(skillClient, skillLocation)" Client="skillClient" Location="skillLocation" Theme="DialogColors"
+                 ErrorColor="@FormColors.Error" TerminalHeight="_height" Catalog="ActiveSkills"
+                 OnLoaded="CacheSkills" OnSelect="SelectSkill" OnClose="CloseDialog" ResolveCommand="ResolveDialogCommand" />
+}
+@if (_inboxDialog)
+{
+    @if (_pendingSteer is not null)
+    {
+        <DialogSelect T="PendingInputAction" Title="Pending steer" Theme="DialogColors" TerminalHeight="_height" Error="@_inboxActionError"
+                      Options="@(new[] { new DialogSelectOption<PendingInputAction>(PendingInputAction.Queue, "Move to queue"), new DialogSelectOption<PendingInputAction>(PendingInputAction.Cancel, "Delete") })"
+                      OnSelect="ChangePendingSteer" OnClose="CloseDialog" />
+    }
+    else
+    {
+        <DialogSelect T="MessageId?" Title="@(_queuedOnly ? "Queued prompts" : "Pending prompts")" Theme="DialogColors" Error="@_inboxActionError"
+                      TerminalHeight="_height" Options="InboxOptions()" Actions="InboxActions" ResolveCommand="ResolveDialogCommand"
+                      OnSelect="SelectPendingInput" OnClose="CloseDialog">
+            <Footer><TuiText Value="enter steer" Fg="@DialogColors.Subdued" Height="1" /></Footer>
+        </DialogSelect>
+    }
+}
+@if (_transcriptRowPicker)
+{
+    <DialogSelect T="string" Title="Transcript row details" Options="@(TranscriptRowOptions().Select(option => new DialogSelectOption<string>(option.Value, option.Title, option.Description)).ToArray())" Theme="DialogColors" TerminalHeight="_height"
+                  OnSelect="ToggleTranscriptRow" OnClose="CloseDialog" />
+}
+@if (_tabList)
+{
+    <DialogSelect T="Guid" Title="Session tabs" Theme="DialogColors"
+                  Options="@(_tabs.Tabs.Select(tab => new DialogSelectOption<Guid>(tab.Key, tab.Title, tab.SessionId?.Value ?? "New session")).ToArray())"
+                  TerminalHeight="_height" OnSelect="SelectTab" OnClose="CloseDialog" />
+}
+@if (_models && ModelPreferenceState is { } modelPreferences)
+{
+    <ModelPicker Models="@(_catalog?.Models ?? [])" Providers="@(_catalog?.Providers ?? [])" Current="CurrentModelSelection"
+                 Provider="_modelProvider" Actions="ModelActions" ResolveCommand="ResolveDialogCommand" RegisterActionDispatcher="RegisterModelActionDispatcher"
+                 Theme="DialogColors" Preferences="modelPreferences" Integrations="_catalog?.Integrations"
+                 Keybindings="_resolvedBindings" Shortcut="AllShortcuts" AcceptSelection="AcceptExactModel" UnavailableReason="ModelPreferenceCatalog.Unavailable"
+                 TerminalHeight="_height" Loading="@(_catalogLoading || _modelCatalogRefreshing)" Error="@ModelDialogError" OnClose="CloseDialog" />
+}
+@if (_agents)
+{
+    <AgentPicker Agents="@(_catalog?.Agents ?? [])" Current="@_agentSelection"
+                 Theme="DialogColors"
+                 TerminalHeight="_height" Loading="_catalogLoading" Error="@_catalogError" OnSelect="ChooseAgent" OnClose="CloseDialog" />
+}
+@if (_variants)
+{
+    @if (!_catalogLoading && SelectedModelInfo is { } variantModel && AppCatalog.SupportsTransport(variantModel, _catalog?.Providers.FirstOrDefault(provider => provider.Id == variantModel.ProviderId)))
+    {
+        <VariantPicker Model="variantModel" Current="CurrentModelSelection" TerminalHeight="_height" Error="@ModelDialogError"
+                       Theme="DialogColors"
+                       OnSelect="ChooseVariant" OnClose="CloseDialog" />
+    }
+    else
+    {
+        <Modal OnClose="CloseDialog" Background="@OverlayColors.Background.Hex" Backdrop="@DialogColors.Backdrop">
+            <Box PaddingX="2" PaddingBottom="1">
+                <TuiText Value="@(_catalogLoading ? "Loading variants..." : _catalogError ?? "Variants are unavailable for the selected model or transport.")" />
+            </Box>
+        </Modal>
+    }
+}
+@if (_sessions && LoadSessions is not null && OpenSession is not null)
+{
+    <SessionPicker LoadPage="LoadTabSessionPage" SelectSession="ChooseTabSession"
+                   CreateSession="@(CreateSession is null ? null : CreateTabSessionFromPicker)"
+                   RenameSession="@(RenameSession is null ? null : RenameTabSession)" DeleteSession="DeleteSession" OnDeleted="PruneDeletedTabSession" ResolveCommand="ResolveDialogCommand" Theme="TabColors"
+                   CachedSessions="@(ReadSessionCache?.Invoke() ?? [])" CurrentDirectory="@CurrentDirectory"
+                   AllProjects="_tabPickerAllProjects" AllProjectsChanged="SetTabPickerScope" TabsEnabled="SessionTabsEnabled"
+                   RenameShortcut="@Shortcut("session.rename")" DeleteShortcut="@Shortcut("session.delete")" PinShortcut="@Shortcut("session.pin.toggle")"
+                   Current="_sessionId" ActiveSessionIds="_activeSessions" LocationLabel="@CurrentDirectory" TerminalHeight="_height" OnClose="CloseDialog" />
+}
+@if (_tabRename is { SessionId: { } renameID } renameTab)
+{
+    <SessionPicker @key="renameID" LoadPage="LoadTabSessionPage" RenameTarget="renameID" InitialTitle="@renameTab.Title"
+                   RenameSession="RenameTabSession" Theme="TabColors" Size="ModalSize.Medium" OnClose="CloseTabRename" />
+}
+@if (_integrations && _managementClient is { } integrationClient && _managementLocation is { } integrationLocation)
+{
+    <IntegrationManager @key="(integrationClient, integrationLocation)" @ref="_integrationManager"
+                        Client="integrationClient" Location="integrationLocation" Theme="DialogColors" FormTheme="FormColors"
+                        TerminalWidth="_width" TerminalHeight="_height" OpenExternal="OpenFormLink" CopyExternal="CopyFormLink"
+                        ReadClipboard="ReadFormClipboard" ResolveCommand="ResolveDialogCommand"
+                        OnChanged="RefreshManagementCatalogs" OnConnected="IntegrationConnected" OnClose="CloseDialog" />
+}
+@if (_mcps && _managementClient is { } mcpClient && _managementLocation is { } mcpLocation)
+{
+    <McpManager @key="(mcpClient, mcpLocation)" @ref="_mcpManager"
+                Client="mcpClient" Location="mcpLocation" Theme="DialogColors" FormTheme="FormColors"
+                TerminalWidth="_width" TerminalHeight="_height" OpenExternal="OpenFormLink" CopyExternal="CopyFormLink"
+                ReadClipboard="ReadFormClipboard" ResolveCommand="ResolveDialogCommand"
+                OnChanged="RefreshManagementCatalogs" OnConnected="IntegrationConnected" OnClose="CloseDialog" />
+}
+
+@code {
+    private RenderFragment StashFeedback => @<Box Shrink="0">
+        @if (_stashActionError is { } actionError)
+        {
+            <TuiText Value="@actionError" Fg="@BaseColors.Color("text.feedback.error.default").Hex" />
+        }
+        @if (StashPersistenceError is { } persistenceError)
+        {
+            <TuiText Value="@persistenceError" Fg="@BaseColors.Color("text.feedback.error.default").Hex" />
+        }
+        else if (_stashSnapshot?.Dirty == true)
+        {
+            <TuiText Value="Stash changes are in memory; saving…" Fg="@BaseColors.Color("text.feedback.info.default").Hex" />
+        }
+        @if (StashReady && _stashSnapshot?.Dirty == true && StashPersistenceError is not null)
+        {
+            <TuiText Value="Retry stash save" Fg="@ElevatedColors.ActionText(Theme.ThemeActionVariant.Primary).Hex" OnClick="RetryStashSave" />
+        }
+    </Box>;
+}

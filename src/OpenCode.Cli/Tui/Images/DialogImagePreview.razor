@@ -1,0 +1,63 @@
+@namespace OpenCode.Cli.Tui.Images
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Cli.Tui.Theme
+@using OpenTui.Blazor
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+@implements IAsyncDisposable
+
+<Modal Size="ModalSize.ExtraLarge" Centered="true" Background="@Theme.Background.Hex" OnClose="OnClose">
+    <Box PaddingX="2" PaddingBottom="1" Gap="1" FocusKey="image-preview" OnKeyDown="Key">
+        <Box Direction="TuiFlexDirection.Row" Height="1">
+            <TuiText Value="@($"Image {Controller.Index + 1} of {Controller.Items.Count}")" Fg="@Theme.Text.Hex" Bold="true" Height="1" Grow="1" />
+            <TuiText Value="esc" Fg="@Theme.Subdued.Hex" Height="1" OnClick="Close" />
+        </Box>
+        <TuiImage State="Controller.Image" Fit="ImageFit.Fit" Height="@Math.Max(3, TerminalHeight - 8)" />
+        <Box Direction="TuiFlexDirection.Row" Height="1">
+            <TuiText Value="@(Controller.Items.Count > 1 ? "← previous" : "")" Fg="@Theme.Subdued.Hex" Height="1" OnClick="Previous" />
+            <TuiText Value="@(Failed ? "No preview" : Controller.Current?.Mention ?? $"Image {Controller.Index + 1}")" Grow="1" Height="1"
+                     Fg="@(Failed ? Theme.Color("text.feedback.error.default").Hex : Theme.Subdued.Hex)" />
+            <TuiText Value="@(Controller.Items.Count > 1 ? "next →" : "")" Fg="@Theme.Subdued.Hex" Height="1" OnClick="Next" />
+        </Box>
+    </Box>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public ImagePreviewController Controller { get; set; } = null!;
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback OnClose { get; set; }
+    private ImagePreviewController? _subscribed;
+    private bool Failed => Controller.Image.LoadError is not null || Controller.Image.RenderError is not null;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(_subscribed, Controller)) return;
+        if (_subscribed is not null)
+        {
+            _subscribed.Changed -= Refresh;
+            await _subscribed.DisposeAsync();
+        }
+        _subscribed = Controller;
+        Controller.Changed += Refresh;
+        await Controller.LoadAsync();
+    }
+    private void Refresh() => StateHasChanged();
+    private async Task Key(TerminalKeyEventArgs args)
+    {
+        args.Handled = true;
+        if (args.Key.Modifiers != 0) return;
+        if (args.Key.Key == ConsoleKey.LeftArrow) await Controller.MoveAsync(-1);
+        if (args.Key.Key == ConsoleKey.RightArrow) await Controller.MoveAsync(1);
+    }
+    private async Task Previous(TerminalPointerEventArgs args) { args.Handled = true; await Controller.MoveAsync(-1); }
+    private async Task Next(TerminalPointerEventArgs args) { args.Handled = true; await Controller.MoveAsync(1); }
+    private async Task Close(TerminalPointerEventArgs args) { args.Handled = true; await OnClose.InvokeAsync(); }
+    public async ValueTask DisposeAsync()
+    {
+        if (_subscribed is not null)
+        {
+            _subscribed.Changed -= Refresh;
+            await _subscribed.DisposeAsync();
+        }
+    }
+}

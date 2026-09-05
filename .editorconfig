@@ -1,0 +1,83 @@
+root = true
+
+# Analyzer policy applies to owned application/library source, not test projects.
+# Meziantou defaults remain enabled except the individually explained policies below.
+[src/**/*.{cs,razor}]
+dotnet_diagnostic.CA2012.severity = warning
+dotnet_diagnostic.CA2013.severity = warning
+dotnet_diagnostic.CA2008.severity = warning
+dotnet_diagnostic.CA2200.severity = warning
+dotnet_diagnostic.MA0040.severity = warning
+dotnet_diagnostic.MA0042.severity = warning
+dotnet_diagnostic.MA0166.severity = warning
+dotnet_diagnostic.MA0188.severity = warning
+
+# C# string ==/!= is already ordinal. Preserve the source's direct value comparisons.
+dotnet_diagnostic.MA0006.severity = none
+# Source modules intentionally colocate related records and keep ordered algorithms
+# together. File/type renames and arbitrary method splitting are not correctness fixes.
+dotnet_diagnostic.MA0048.severity = none
+dotnet_diagnostic.MA0051.severity = none
+# Existing public collection and Action-based event contracts are deliberate;
+# changing them to interfaces/EventHandler is a separate API migration.
+dotnet_diagnostic.MA0016.severity = none
+dotnet_diagnostic.MA0046.severity = none
+# Layout is owned by explicit native ABI definitions or existing managed contracts,
+# not automatically switched to Auto as a performance-style change.
+dotnet_diagnostic.MA0008.severity = none
+# An explicit property path can be the useful public validation parameter name.
+MA0015.consider_member_access_as_parameter = true
+# Equality-based string collections already default to ordinal. Require explicit
+# choices for culture-sensitive ordering without rewriting equivalent hash lookups.
+MA0002.report_only_non_ordinal = true
+# Zero is the native/BCL no-flags/unknown-key representation when no enum member
+# names it. Never substitute FileAttributes.Normal (128) for an empty flag mask.
+MA0099.exclude_enum_without_zero_member = true
+
+[src/OpenCode.Cli/Tui/**]
+# These methods invoke caller/UI callbacks and preserve dispatcher continuation.
+# Transport and parser libraries retain their own explicit ConfigureAwait policy.
+dotnet_diagnostic.MA0004.severity = none
+
+[src/OpenTui.Blazor/**]
+# Rendering/input/clipboard callbacks are dispatcher-owned. Do not mechanically
+# detach continuations merely to satisfy a library-style ConfigureAwait rule.
+dotnet_diagnostic.MA0004.severity = none
+
+[src/OpenCode.Server/**]
+# Request handlers and SDK-hosted callbacks retain their existing context policy.
+# This is not a directive to add ConfigureAwait(false) across application code.
+dotnet_diagnostic.MA0004.severity = none
+
+[src/OpenCode.Sdk/**]
+# Embedded host lifecycle calls retain the embedding caller's context contract.
+dotnet_diagnostic.MA0004.severity = none
+
+[src/OpenCode.Schema/**]
+# Native validation text is part of wire/error compatibility; do not append a new
+# ArgumentException parameter suffix or replace property-path identities.
+dotnet_diagnostic.MA0015.severity = none
+
+[src/OpenCode.Protocol/**]
+dotnet_diagnostic.MA0015.severity = none
+
+[src/OpenCode.Schema/Ids/Identifiers.cs]
+# SessionId intentionally provides ordinal CompareTo without widening its existing
+# operator API. Vogen's typed equality is generated in another partial declaration.
+dotnet_diagnostic.MA0097.severity = none
+
+[src/OpenCode.Schema/Identifier.cs]
+# Preserve the established static ID generator's synchronization implementation;
+# this cleanup does not change its clock/counter/random/order algorithm.
+dotnet_diagnostic.MA0158.severity = none
+
+[src/OpenTui.Native/**]
+# Interop value structs use CLR field equality where explicitly compared; inventing
+# semantic equality/hash implementations for opaque native handles is not safe.
+dotnet_diagnostic.MA0065.severity = none
+
+[src/**/*.Generated.cs]
+generated_code = true
+
+[src/**/*.g.cs]
+generated_code = true

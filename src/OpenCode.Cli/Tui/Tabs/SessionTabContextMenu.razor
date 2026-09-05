@@ -1,0 +1,39 @@
+@namespace OpenCode.Cli.Tui.Tabs
+
+<Box Position="TuiPosition.Absolute" Left="@Math.Clamp(Request.X, 0, Math.Max(0, TerminalWidth - 16))"
+     Top="@Math.Clamp(Request.Y + 1, 0, Math.Max(0, TerminalHeight - Actions.Count))" Width="16" Height="Actions.Count"
+     ZIndex="2500" Bg="@Theme.Hovered" OnPointerDown="Stop">
+    @foreach (var item in Actions.Select((action, index) => (Action: action, Index: index)))
+    {
+        <Box Height="1" Width="16" PaddingX="1" Bg="@(item.Index == _selected ? Theme.Selected : Theme.Hovered)"
+             OnPointerEnter="() => _selected = item.Index" OnPointerLeave="() => _selected = -1" OnClick="args => Run(item.Index, args)">
+            <TuiText Value="@item.Action.Title" Height="1" Fg="@Theme.Text" PointerEvents="false" />
+        </Box>
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public SessionTabContextRequest Request { get; set; } = new(null, 0, 0);
+    [Parameter] public IReadOnlyList<SessionTabMenuAction> Actions { get; set; } = [];
+    [Parameter] public int TerminalWidth { get; set; }
+    [Parameter] public int TerminalHeight { get; set; }
+    [Parameter] public SessionTabsTheme Theme { get; set; } = SessionTabsTheme.Default;
+    [Parameter] public EventCallback OnClose { get; set; }
+    private int _selected = -1;
+    private static void Stop(TerminalPointerEventArgs args) => args.Handled = true;
+    private async Task Run(int index, TerminalPointerEventArgs args) { args.Handled = true; var action = Actions[index]; await OnClose.InvokeAsync(); await action.Run(); }
+    public async Task HandleKey(TerminalKeyEventArgs args)
+    {
+        args.Handled = await HandleKey(args.Key);
+    }
+    public async Task<bool> HandleKey(ConsoleKeyInfo key)
+    {
+        if (key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.C && key.Modifiers.HasFlag(ConsoleModifiers.Control)) { await OnClose.InvokeAsync(); return true; }
+        if (Actions.Count == 0) return true;
+        if (key.Key == ConsoleKey.DownArrow) _selected = (_selected + 1) % Actions.Count;
+        else if (key.Key == ConsoleKey.UpArrow) _selected = (_selected + Actions.Count - 1) % Actions.Count;
+        else if (key.Key == ConsoleKey.Enter && _selected >= 0) { var action = Actions[_selected]; await OnClose.InvokeAsync(); await action.Run(); }
+        StateHasChanged();
+        return true;
+    }
+}

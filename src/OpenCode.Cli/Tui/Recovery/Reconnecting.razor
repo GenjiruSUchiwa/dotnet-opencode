@@ -1,0 +1,80 @@
+@namespace OpenCode.Cli.Tui.Recovery
+@using OpenTui.Native
+@implements IDisposable
+
+@if (_visible && Feed.Phase is SessionFeedPhase.Connecting or SessionFeedPhase.Reconnecting)
+{
+    <Box Position="TuiPosition.Absolute" Left="0" Right="0" Top="0" Bottom="0" ZIndex="10000" Bg="#00000096"
+         OnPointerDown="BlockPointer" OnPointerUp="BlockPointer" OnWheel="BlockPointer">
+        <Box Position="TuiPosition.Absolute" Left="@Math.Max(0, (TerminalWidth - PanelWidth) / 2)"
+             Top="@Math.Max(0, (TerminalHeight - PanelHeight) / 2)" Width="PanelWidth" Height="PanelHeight"
+             PaddingX="2" PaddingTop="1" PaddingBottom="1" Gap="1" Bg="@Theme.Background">
+            <Box Direction="TuiFlexDirection.Row" Height="TitleHeight">
+                <TuiText Value="@(Frames[_frame] + " ")" Width="2" Height="1" Fg="@Theme.Text" />
+                <TuiText Value="@Title" Grow="1" Height="TitleHeight" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" />
+            </Box>
+            <TuiText Value="@Message" Height="MessageHeight" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+        </Box>
+    </Box>
+}
+
+@code {
+    [Inject] public TimeProvider Clock { get; set; } = TimeProvider.System;
+    [Parameter, EditorRequired] public SessionFeedSnapshot Feed { get; set; } = new(SessionFeedPhase.Connecting, 0);
+    [Parameter, EditorRequired] public RecoveryTheme Theme { get; set; } = default!;
+    [Parameter] public int TerminalWidth { get; set; }
+    [Parameter] public int TerminalHeight { get; set; }
+    // Use only with an actual host-owned restart in progress, never merely because a URL is local.
+    [Parameter] public bool ManagedRestart { get; set; }
+    private static readonly string[] Frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly RecoveryTextMetrics _metrics = new();
+    private CancellationTokenSource? _grace;
+    private SessionFeedPhase? _phase;
+    private bool _visible;
+    private bool _disposed;
+    private int _frame;
+    private string Title => ManagedRestart ? "Restarting service…" : "Connection lost…";
+    private string Message => ManagedRestart ? "Your session will resume automatically." : "Reconnecting to the server automatically.";
+    private int PanelWidth => RecoveryPresentation.OverlayWidth(TerminalWidth);
+    private int TitleHeight => _metrics.Lines(Title, Math.Max(1, PanelWidth - 6));
+    private int MessageHeight => _metrics.Lines(Message, Math.Max(1, PanelWidth - 4));
+    private int PanelHeight => Math.Min(Math.Max(0, TerminalHeight), 3 + TitleHeight + MessageHeight);
+
+    protected override void OnInitialized() => _ = Animate();
+    protected override void OnParametersSet()
+    {
+        ArgumentNullException.ThrowIfNull(Theme);
+        if (_phase == Feed.Phase) return; // Backoff revisions do not restart the source grace timer.
+        _phase = Feed.Phase;
+        _grace?.Cancel(); _grace?.Dispose();
+        if (Feed.Phase is SessionFeedPhase.Live or SessionFeedPhase.Disposed) { _visible = false; return; }
+        _grace = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _ = Reveal(Feed.Phase, _grace.Token);
+    }
+    private async Task Reveal(SessionFeedPhase phase, CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(RecoveryPresentation.OverlayDelay(phase)), Clock, ct);
+            await InvokeAsync(() => { if (_disposed || ct.IsCancellationRequested) return; _visible = true; StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+    private async Task Animate()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(80), Clock);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(_lifetime.Token))
+                if (_visible) await InvokeAsync(() => { if (_disposed) return; _frame = (_frame + 1) % Frames.Length; StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+    }
+    private static void BlockPointer(TerminalPointerEventArgs args) => args.Handled = true;
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true; _lifetime.Cancel(); _grace?.Cancel(); _grace?.Dispose(); _metrics.Dispose(); _lifetime.Dispose();
+    }
+}

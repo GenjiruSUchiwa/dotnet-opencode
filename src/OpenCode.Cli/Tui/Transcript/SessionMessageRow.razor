@@ -1,0 +1,75 @@
+@namespace OpenCode.Cli.Tui.Transcript
+
+@switch (Message)
+{
+    case UserMessage user:
+        <Box Border="left" BorderFg="@Theme.Agent" Bg="@Theme.ElevatedBackground" PaddingLeft="2" PaddingRight="1" PaddingTop="1" PaddingBottom="1"
+             OnClick="@MessageClick">
+            <TuiText Value="@user.Text" Fg="@Theme.Text" Selectable="true" />
+            @foreach (var file in user.Files ?? [])
+            {
+                <TuiText Value="@($"{file.Name ?? "Attachment"} ({file.Mime})")" Fg="@Theme.MarkdownLink" />
+            }
+            @foreach (var attachedSkill in user.Skills ?? [])
+            {
+                <TuiText Value="@($"skill {attachedSkill.Name}")" Fg="@Theme.Text" Bold="true" />
+            }
+            @foreach (var attachedAgent in user.Agents ?? [])
+            {
+                <TuiText Value="@($"@{attachedAgent.Name}")" Fg="@Theme.Agent" />
+            }
+        </Box>
+        break;
+    case SyntheticMessage synthetic:
+        <Box PaddingLeft="3"><TuiText Value="@synthetic.Description" Fg="@Theme.Subdued" /></Box>
+        break;
+    case SystemMessage system:
+        <Box PaddingLeft="3"><TuiText Value="@(system.Description ?? system.Text)" Fg="@Theme.Subdued" /></Box>
+        break;
+    case AgentSelectedMessage agent:
+        <Box PaddingLeft="3"><TuiText Value="@($"Agent: {agent.Agent}")" Fg="@Theme.Subdued" /></Box>
+        break;
+    case ModelSelectedMessage model:
+        <Box PaddingLeft="3"><TuiText Value="@($"Model: {model.Model.Id} ({model.Model.ProviderId})")" Fg="@Theme.Subdued" /></Box>
+        break;
+    case LocationSwitchedMessage location:
+        <Box PaddingLeft="3"><TuiText Value="@($"Location: {location.Location.Directory}")" Fg="@Theme.Subdued" /></Box>
+        break;
+    case SkillMessage skill:
+        <Box PaddingLeft="3"><TuiText Value="@($"Loaded skill: {skill.Name}")" Fg="@Theme.Subdued" /></Box>
+        break;
+    case ShellMessage shell:
+        <Box PaddingLeft="3" Gap="1">
+            <TuiText Value="@($"$ {shell.Command} [{shell.Status}{(shell.ExitCode is null ? "" : $", exit {shell.ExitCode}")}]")" Fg="@Theme.Subdued" />
+            @if (shell.Output is not null)
+            {
+                <TuiText Value="@shell.Output.Output" Fg="@Theme.Text" />
+                @if (shell.Output.Truncated)
+                {
+                    <TuiText Value="Output truncated" Fg="@Theme.Warning" />
+                }
+            }
+        </Box>
+        break;
+    case CompactionMessage compaction:
+        <Box PaddingLeft="3">
+            <TuiText Value="@($"Compaction: {compaction.Status} ({compaction.Reason})")" Fg="@(compaction is CompactionFailedMessage ? Theme.Error : Theme.Subdued)" />
+            @if (compaction is CompactionFailedMessage failed)
+            {
+                <TuiText Value="@failed.Error.Message" Fg="@Theme.Error" />
+            }
+        </Box>
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public SessionMessage Message { get; set; } = default!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public EventCallback<MessageId> OnMessageActions { get; set; }
+    private EventCallback<TerminalPointerEventArgs> MessageClick => OnMessageActions.HasDelegate
+        ? EventCallback.Factory.Create<TerminalPointerEventArgs>(this, async args =>
+        {
+            args.Handled = true;
+            await OnMessageActions.InvokeAsync(Message.Id);
+        }) : default;
+}

@@ -1,0 +1,692 @@
+[
+  {
+    "language": "agda",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/agda/highlights.scm",
+    "file": "agda-query-0.scm",
+    "sha256": "124f3246955696b0a7d33c750be29977efe256faf9702ed292b1c5680736cf6b",
+    "bytes": 1003,
+    "error": null
+  },
+  {
+    "language": "agda",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-agda/releases/download/v1.3.3/tree-sitter-agda.wasm",
+    "file": "agda-wasm-0.wasm",
+    "sha256": "8d88926c064b19b756814b6633090e0a63674675e6663ff81b6cf16ec7c60d6e",
+    "bytes": 2152563,
+    "error": null
+  },
+  {
+    "language": "bash",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/bash/highlights.scm",
+    "file": "bash-query-0.scm",
+    "sha256": "77860b9f127ca82681e3691bba003e62d1d8dbced05e4fe96041d26fd8944656",
+    "bytes": 5776,
+    "error": null
+  },
+  {
+    "language": "bash",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-bash/releases/download/v0.25.0/tree-sitter-bash.wasm",
+    "file": "bash-wasm-0.wasm",
+    "sha256": "364f0a2cd385c792239423026ef442dbd073d34c396b7bc9e5932426b8e4aa5d",
+    "bytes": 1380769,
+    "error": null
+  },
+  {
+    "language": "c",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/c/highlights.scm",
+    "file": "c-query-0.scm",
+    "sha256": "a99c4c0bf9d9b9f7de0124c529a4229fddada96d65bf5fb0c9d487266e15d483",
+    "bytes": 6332,
+    "error": null
+  },
+  {
+    "language": "c",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-c/releases/download/v0.24.1/tree-sitter-c.wasm",
+    "file": "c-wasm-0.wasm",
+    "sha256": "c852c2a85ebf2beb636aa3b0ef7f7e70458684d74f6741b20dcb296885bed9f9",
+    "bytes": 625918,
+    "error": null
+  },
+  {
+    "language": "clojure",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/clojure/highlights.scm",
+    "file": "clojure-query-0.scm",
+    "sha256": "73c7916d54213dcd734de3ad5d890ddea08237074b65120472c86a733c032c76",
+    "bytes": 13722,
+    "error": null
+  },
+  {
+    "language": "clojure",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/anomalyco/tree-sitter-clojure/releases/download/v0.0.1/tree-sitter-clojure.wasm",
+    "file": "clojure-wasm-0.wasm",
+    "sha256": "90f8866b74d04e1643ed73cce25720c732df2aaa38b45da9dcc773bae8181c27",
+    "bytes": 91957,
+    "error": null
+  },
+  {
+    "language": "cpp",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/cpp/highlights.scm",
+    "file": "cpp-query-0.scm",
+    "sha256": "69d1dbed8d49c498e93a75db6afedfb8769fa2fed455a64d588dc347281d642f",
+    "bytes": 4904,
+    "error": null
+  },
+  {
+    "language": "cpp",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-cpp/releases/download/v0.23.4/tree-sitter-cpp.wasm",
+    "file": "cpp-wasm-0.wasm",
+    "sha256": "174eb0deb75b2ec7881bcacda9f995648d8e683956e5c2267e69ab6dc503fcbf",
+    "bytes": 3434931,
+    "error": null
+  },
+  {
+    "language": "csharp",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/c_sharp/highlights.scm",
+    "file": "csharp-query-0.scm",
+    "sha256": "4b79059a52926e8cd08a1d80af70ba02acefb86bc8ed82315897fb104ed1a338",
+    "bytes": 8302,
+    "error": null
+  },
+  {
+    "language": "csharp",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-c-sharp/releases/download/v0.23.1/tree-sitter-c_sharp.wasm",
+    "file": "csharp-wasm-0.wasm",
+    "sha256": "d7fe0bf8e8b8d26b2b253f375e3c43386b332d23f7b7b3e15d49fff180fe46e3",
+    "bytes": 5926763,
+    "error": null
+  },
+  {
+    "language": "css",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/css/highlights.scm",
+    "file": "css-query-0.scm",
+    "sha256": "6641fed120530bfbce5682ab88b2a8d14d99bfcd971ac9f78cd91738b4b0578a",
+    "bytes": 1177,
+    "error": null
+  },
+  {
+    "language": "css",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-css/releases/download/v0.25.0/tree-sitter-css.wasm",
+    "file": "css-wasm-0.wasm",
+    "sha256": "8a23977fe271357cce6f254ef88c9bebf3854602d8046605aef6a45c02135c59",
+    "bytes": 128668,
+    "error": null
+  },
+  {
+    "language": "diff",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-diff/master/queries/highlights.scm",
+    "file": "diff-query-0.scm",
+    "sha256": "6e7ac233333886d61fa0cd4186c36b7ab34fa95a86aea618ed87b60f9eaa4e4b",
+    "bytes": 915,
+    "error": null
+  },
+  {
+    "language": "diff",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-diff/releases/download/v0.1.0/tree-sitter-diff.wasm",
+    "file": "diff-wasm-0.wasm",
+    "sha256": "60409c8a17dd5a804e5119887c5b1322f0e780f1976e27d81a1e251dc92e2761",
+    "bytes": 22125,
+    "error": null
+  },
+  {
+    "language": "elixir",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/elixir/highlights.scm",
+    "file": "elixir-query-0.scm",
+    "sha256": "a5ba25c44d681d11af4d611a8e229463f91219ced15a3ca240a6c215df1f869a",
+    "bytes": 3899,
+    "error": null
+  },
+  {
+    "language": "elixir",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/elixir-lang/tree-sitter-elixir/releases/download/v0.3.5/tree-sitter-elixir.wasm",
+    "file": "elixir-wasm-0.wasm",
+    "sha256": "1818ae0d7343f880abb0b7932c9a815f09896ca67b3e126096a2dd7677d1477b",
+    "bytes": 1436984,
+    "error": null
+  },
+  {
+    "language": "fsharp",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/fsharp/highlights.scm",
+    "file": "fsharp-query-0.scm",
+    "sha256": "a7002cfebe89a5aab612c3b9a73bd6b5aa89007c3b261a3582e7d5d4a5b989dc",
+    "bytes": 5423,
+    "error": null
+  },
+  {
+    "language": "fsharp",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/ionide/tree-sitter-fsharp/releases/download/0.3.0/tree-sitter-fsharp.wasm",
+    "file": "fsharp-wasm-0.wasm",
+    "sha256": "f7c54b09d3bcff0fd44dcd605d989eb2cdd107555cec09271eb085f1617a28d4",
+    "bytes": 11529765,
+    "error": null
+  },
+  {
+    "language": "go",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/go/highlights.scm",
+    "file": "go-query-0.scm",
+    "sha256": "c58a7336d4834ebfbb038002c6ab033f792cd1b8d3e7e1682bdaa982bee7f6b1",
+    "bytes": 3934,
+    "error": null
+  },
+  {
+    "language": "go",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-go/releases/download/v0.25.0/tree-sitter-go.wasm",
+    "file": "go-wasm-0.wasm",
+    "sha256": "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
+    "bytes": 217182,
+    "error": null
+  },
+  {
+    "language": "haskell",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/haskell/highlights.scm",
+    "file": "haskell-query-0.scm",
+    "sha256": "233575930c05febf2cfda861de1e26856c0245c7804fc352e49782bb4a5aeeb7",
+    "bytes": 8730,
+    "error": null
+  },
+  {
+    "language": "haskell",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-haskell/releases/download/v0.23.1/tree-sitter-haskell.wasm",
+    "file": "haskell-wasm-0.wasm",
+    "sha256": "37a6b07b1a838d02ffb4f4c2a06863637a8efe48432d60a275f50f1d08f1092c",
+    "bytes": 3805902,
+    "error": null
+  },
+  {
+    "language": "hcl",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/master/queries/hcl/highlights.scm",
+    "file": "hcl-query-0.scm",
+    "sha256": "a4e75b096410d0e16da9492e465cda306026ccc7d452699012e3e4d669d88cb6",
+    "bytes": 1531,
+    "error": null
+  },
+  {
+    "language": "hcl",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-hcl/releases/download/v1.2.0/tree-sitter-hcl.wasm",
+    "file": "hcl-wasm-0.wasm",
+    "sha256": "2f9acf63e7c263215f283e2cf0f4ebbb9bfa77f58e18fa42b91094be201372a7",
+    "bytes": 93854,
+    "error": null
+  },
+  {
+    "language": "html",
+    "kind": "query",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-html/raw/refs/heads/master/queries/highlights.scm",
+    "file": "html-query-0.scm",
+    "sha256": "1ebb3811a8cdc054385b847a3aac6fbf7079faefd5b3dfab5bbad256cd5afdcf",
+    "bytes": 197,
+    "error": null
+  },
+  {
+    "language": "html",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-html/releases/download/v0.23.2/tree-sitter-html.wasm",
+    "file": "html-wasm-0.wasm",
+    "sha256": "c48fcd82c7ea8bf943180088ba7f28c48b2bb5287874179168bf9d31e394cf85",
+    "bytes": 18385,
+    "error": null
+  },
+  {
+    "language": "java",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/java/highlights.scm",
+    "file": "java-query-0.scm",
+    "sha256": "c68c0e7e9ae36d94c9e5ab06556b34c5e8568d1ce1867043d92bbe4b3b4dcf2f",
+    "bytes": 4425,
+    "error": null
+  },
+  {
+    "language": "java",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-java/releases/download/v0.23.5/tree-sitter-java.wasm",
+    "file": "java-wasm-0.wasm",
+    "sha256": "4fdeac4ca6ca089f06c6f7e562abcac1733cd465728cc7031ebb73c2019122c4",
+    "bytes": 414641,
+    "error": null
+  },
+  {
+    "language": "json",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/json/highlights.scm",
+    "file": "json-query-0.scm",
+    "sha256": "6ab09656820f0e8dac860c96dced341221284544c05308ee337727f5db937101",
+    "bytes": 412,
+    "error": null
+  },
+  {
+    "language": "json",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-json/releases/download/v0.24.8/tree-sitter-json.wasm",
+    "file": "json-wasm-0.wasm",
+    "sha256": "d2119fb98d5912719b13f9458574f8608d2d29dfbe45f6be1f860ea1fe2a2405",
+    "bytes": 5596,
+    "error": null
+  },
+  {
+    "language": "julia",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/julia/highlights.scm",
+    "file": "julia-query-0.scm",
+    "sha256": "aed65b7d7ca5b3202a6923e9b9cc502618bcd50fc5095caae51033f31e390b31",
+    "bytes": 6621,
+    "error": null
+  },
+  {
+    "language": "julia",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-julia/releases/download/v0.23.1/tree-sitter-julia.wasm",
+    "file": "julia-wasm-0.wasm",
+    "sha256": "e0f52c36eadf0299e46fccd6715c760d35eaa3f09721bec38633da551ac9e781",
+    "bytes": 6223352,
+    "error": null
+  },
+  {
+    "language": "kotlin",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/fwcd/tree-sitter-kotlin/0.3.8/queries/highlights.scm",
+    "file": "kotlin-query-0.scm",
+    "sha256": "2d74bb308bc589c2dadd9a599613f750f51470a8974190e09e24ec4786bab987",
+    "bytes": 6312,
+    "error": null
+  },
+  {
+    "language": "kotlin",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/fwcd/tree-sitter-kotlin/releases/download/0.3.8/tree-sitter-kotlin.wasm",
+    "file": "kotlin-wasm-0.wasm",
+    "sha256": "c624e7443b371c28adc5d81674e73067564c12555ebe3ed96a6c8db814b7602d",
+    "bytes": 4052625,
+    "error": null
+  },
+  {
+    "language": "lua",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-lua/v0.5.0/queries/highlights.scm",
+    "file": "lua-query-0.scm",
+    "sha256": "d2625fb712357f86386878602d18845f9f3e90fee81f02a5ecd87be6512918d1",
+    "bytes": 2919,
+    "error": null
+  },
+  {
+    "language": "lua",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-lua/releases/download/v0.5.0/tree-sitter-lua.wasm",
+    "file": "lua-wasm-0.wasm",
+    "sha256": "df08a1704e504c70b8dba4a3e6f8e0c99a4fb94e1b1693d2969f53141d09f0d4",
+    "bytes": 54603,
+    "error": null
+  },
+  {
+    "language": "make",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/make/highlights.scm",
+    "file": "make-query-0.scm",
+    "sha256": "49b859e9da027d79383ca896e60c4c141c9ee344a3dacfed29437a0c87593a47",
+    "bytes": 2584,
+    "error": null
+  },
+  {
+    "language": "make",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-make/releases/download/v1.1.1/tree-sitter-make.wasm",
+    "file": "make-wasm-0.wasm",
+    "sha256": "1254d1e5787be8bb944d55d1f6552b6b2b7908272ed498013bfdc07bd7d042dd",
+    "bytes": 147061,
+    "error": null
+  },
+  {
+    "language": "nix",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/nix/highlights.scm",
+    "file": "nix-query-0.scm",
+    "sha256": "56fd3a06df812415ea583b363624539d625dd7b2dfbc37522a1653eb07ac9fef",
+    "bytes": 6137,
+    "error": null
+  },
+  {
+    "language": "nix",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/ast-grep/ast-grep.github.io/raw/40b84530640aa83a0d34a20a2b0623d7b8e5ea97/website/public/parsers/tree-sitter-nix.wasm",
+    "file": "nix-wasm-0.wasm",
+    "sha256": "10a66e15b62be1a59cd256abf4b48fdeac07e50c0a8e50ceb64296fcec019930",
+    "bytes": 79503,
+    "error": null
+  },
+  {
+    "language": "ocaml",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/ocaml/highlights.scm",
+    "file": "ocaml-query-0.scm",
+    "sha256": "04bb46b159b760f27b2703eb545018ac7c7d035cbb0a8b4274098eaa653dd03a",
+    "bytes": 4067,
+    "error": null
+  },
+  {
+    "language": "ocaml",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-ocaml/releases/download/v0.24.2/tree-sitter-ocaml.wasm",
+    "file": "ocaml-wasm-0.wasm",
+    "sha256": "761a78a804931cfac1fa0c6238989b4b0e86cc70db461b1315d743de923f8246",
+    "bytes": 5553934,
+    "error": null
+  },
+  {
+    "language": "php",
+    "kind": "query",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-php/raw/refs/heads/master/queries/highlights.scm",
+    "file": "php-query-0.scm",
+    "sha256": "a2a7367659cff3b4be09961c8117d69a9b8703bfc266f8092e089b1760f197e9",
+    "bytes": 3207,
+    "error": null
+  },
+  {
+    "language": "php",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-php/releases/download/v0.24.2/tree-sitter-php.wasm",
+    "file": "php-wasm-0.wasm",
+    "sha256": "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+    "bytes": 1058041,
+    "error": null
+  },
+  {
+    "language": "python",
+    "kind": "query",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-python/raw/refs/heads/master/queries/highlights.scm",
+    "file": "python-query-0.scm",
+    "sha256": "a6708f209381618e2b398972c8f1ccd892f0c064eab35a2a3f911c3e22e79a7e",
+    "bytes": 1957,
+    "error": null
+  },
+  {
+    "language": "python",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-python/releases/download/v0.23.6/tree-sitter-python.wasm",
+    "file": "python-wasm-0.wasm",
+    "sha256": "8c93692fb368e288a5824cee55773c9b3602804f513bda48c97661e52e9c2da2",
+    "bytes": 457796,
+    "error": null
+  },
+  {
+    "language": "r",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/r/highlights.scm",
+    "file": "r-query-0.scm",
+    "sha256": "e9bdfbc6f0a1d47ca2d96d2aa85a28c35e71150e22f6a9e70b213ff02fe6433f",
+    "bytes": 1739,
+    "error": null
+  },
+  {
+    "language": "r",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/r-lib/tree-sitter-r/releases/download/v1.2.0/tree-sitter-r.wasm",
+    "file": "r-wasm-0.wasm",
+    "sha256": "2a8f5acd1c53d91e0ec5c01a6830d8ac7f5a7f96f0ac4b3768c016c8e9d07711",
+    "bytes": 481163,
+    "error": null
+  },
+  {
+    "language": "ruby",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/ruby/highlights.scm",
+    "file": "ruby-query-0.scm",
+    "sha256": "1cc8fc205e4cce4fe9e0d63bb1be903e49ea0f2eda77ae9368898a31ff98bc18",
+    "bytes": 4068,
+    "error": null
+  },
+  {
+    "language": "ruby",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-ruby/releases/download/v0.23.1/tree-sitter-ruby.wasm",
+    "file": "ruby-wasm-0.wasm",
+    "sha256": "09a96427d7c72f0613ed470cd9812223fc4a91d6a9c025c0235cc6bd59ff96f4",
+    "bytes": 2106352,
+    "error": null
+  },
+  {
+    "language": "rust",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/rust/highlights.scm",
+    "file": "rust-query-0.scm",
+    "sha256": "c649a4785322ab72af84874b9dc03c7a4f5d9a05de45a85919a60770d7d5457d",
+    "bytes": 8610,
+    "error": null
+  },
+  {
+    "language": "rust",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-rust/releases/download/v0.24.0/tree-sitter-rust.wasm",
+    "file": "rust-wasm-0.wasm",
+    "sha256": "44b8d1a2e307ee8933d7c0bcb6b0f30d56bc999999fd1d2d9608a7dcf6e8ce56",
+    "bytes": 1111756,
+    "error": null
+  },
+  {
+    "language": "scala",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/scala/highlights.scm",
+    "file": "scala-query-0.scm",
+    "sha256": "e9e89654a7df214f4c79c28af7bc50bdb5c6cc5abb9690e3e1ce19c35b797991",
+    "bytes": 4858,
+    "error": null
+  },
+  {
+    "language": "scala",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter/tree-sitter-scala/releases/download/v0.24.0/tree-sitter-scala.wasm",
+    "file": "scala-wasm-0.wasm",
+    "sha256": "6cd77d9152bb634b1690d8e9ce8c0b23aa0d84c018e113260f7b11ce54446d7b",
+    "bytes": 3848689,
+    "error": null
+  },
+  {
+    "language": "swift",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/alex-pinkus/tree-sitter-swift/main/queries/highlights.scm",
+    "file": "swift-query-0.scm",
+    "sha256": "8ec97ea3fb576bc4db25cc49d8425e659de745a83bb7abceb732a11474aad6b6",
+    "bytes": 4937,
+    "error": null
+  },
+  {
+    "language": "swift",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/alex-pinkus/tree-sitter-swift/releases/download/0.7.1/tree-sitter-swift.wasm",
+    "file": "swift-wasm-0.wasm",
+    "sha256": "e179468b0f3c30c29d8dd8e57c5a79e67812623046cc18fa593f8563795c0b77",
+    "bytes": 3316692,
+    "error": null
+  },
+  {
+    "language": "toml",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/master/queries/toml/highlights.scm",
+    "file": "toml-query-0.scm",
+    "sha256": "059618709a4c7e6b287643a68282257e197c5a05cfb9d82b6ac517d32230cb12",
+    "bytes": 394,
+    "error": null
+  },
+  {
+    "language": "toml",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-toml/releases/download/v0.7.0/tree-sitter-toml.wasm",
+    "file": "toml-wasm-0.wasm",
+    "sha256": "1ac6a83826c35a68857f8325e00c78f6bcbef4eb6db3931a6cf3041f76e5e09f",
+    "bytes": 24040,
+    "error": null
+  },
+  {
+    "language": "vim",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/vim/highlights.scm",
+    "file": "vim-query-0.scm",
+    "sha256": "3ccb59deb5ed0d363a91433a2b7baaf25489b449c587a8d6decb40dcf129a16c",
+    "bytes": 4443,
+    "error": null
+  },
+  {
+    "language": "vim",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-vim/releases/download/v0.8.1/tree-sitter-vim.wasm",
+    "file": "vim-wasm-0.wasm",
+    "sha256": "93cc332cbd093d163ba3d3b7ff223eacc023e6f5135088018a1c5e86ca627bec",
+    "bytes": 1406535,
+    "error": null
+  },
+  {
+    "language": "vue",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/anomalyco/tree-sitter-vue/v0.1.2/queries/html_tags/highlights.scm",
+    "file": "vue-query-0.scm",
+    "sha256": "2b64708e3cea1527adca4841247e28b90229c367722471c1d250e8925d1cc6a4",
+    "bytes": 1752,
+    "error": null
+  },
+  {
+    "language": "vue",
+    "kind": "query",
+    "index": 1,
+    "source": "https://raw.githubusercontent.com/anomalyco/tree-sitter-vue/v0.1.2/queries/vue/highlights.scm",
+    "file": "vue-query-1.scm",
+    "sha256": "43cae0c256b1236a051e856eb4dec18a157d70a00e9d41304549b858c534cefc",
+    "bytes": 763,
+    "error": null
+  },
+  {
+    "language": "vue",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/anomalyco/tree-sitter-vue/releases/download/v0.1.2/tree-sitter-vue.wasm",
+    "file": "vue-wasm-0.wasm",
+    "sha256": "94d9292677797c4d0299009885dfca5453513f44b79405efbf9d7dd3e1a1b5a2",
+    "bytes": 30682,
+    "error": null
+  },
+  {
+    "language": "xml",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/xml/highlights.scm",
+    "file": "xml-query-0.scm",
+    "sha256": "a71142b97d01ef98027414d6598ac23536729daddfa9d979c45808c98c3c97fb",
+    "bytes": 2472,
+    "error": null
+  },
+  {
+    "language": "xml",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-xml/releases/download/v0.7.0/tree-sitter-xml.wasm",
+    "file": "xml-wasm-0.wasm",
+    "sha256": "9950327f8542a3d563fe4192aa05986a53e6fd6adca518cbb1a1699cbc8970ad",
+    "bytes": 47032,
+    "error": null
+  },
+  {
+    "language": "yaml",
+    "kind": "query",
+    "index": 0,
+    "source": "https://raw.githubusercontent.com/nvim-treesitter/nvim-treesitter/refs/heads/master/queries/yaml/highlights.scm",
+    "file": "yaml-query-0.scm",
+    "sha256": "13352b80d2ce28c3328ccb2f321e5144c3365ff6055078e00e7cff118d1488b5",
+    "bytes": 1700,
+    "error": null
+  },
+  {
+    "language": "yaml",
+    "kind": "wasm",
+    "index": 0,
+    "source": "https://github.com/tree-sitter-grammars/tree-sitter-yaml/releases/download/v0.7.2/tree-sitter-yaml.wasm",
+    "file": "yaml-wasm-0.wasm",
+    "sha256": "0a0e5ebcfeb0b2bf272d071396eeed107b2c4b2617b69d5959b13f78b357a4d6",
+    "bytes": 189197,
+    "error": null
+  }
+]

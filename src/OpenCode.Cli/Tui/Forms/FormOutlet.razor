@@ -1,0 +1,31 @@
+@namespace OpenCode.Cli.Tui.Forms
+@using OpenCode.Schema
+
+@if (!ComposerOpen && !PermissionPending && Selected is { } pending)
+{
+    <FormComposer @key="(pending.Form.SessionId, pending.Form.Id, pending.Location)" Request="pending" Theme="Theme"
+                  Width="Width" TerminalHeight="TerminalHeight" OnReply="OnReply" OnCancel="OnCancel"
+                  OpenExternal="OpenExternal" CopyExternal="CopyExternal" ReadClipboard="ReadClipboard"
+                  UnavailableReason="@UnavailableReason" FocusKey="@FocusKey" />
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PendingForm> Pending { get; set; } = [];
+    [Parameter, EditorRequired] public LocationRef Location { get; set; } = null!;
+    [Parameter, EditorRequired] public TerminalFormTheme Theme { get; set; } = null!;
+    [Parameter] public SessionId? Session { get; set; }
+    [Parameter] public IReadOnlyList<SessionId> Descendants { get; set; } = [];
+    [Parameter] public bool ChildSession { get; set; }
+    [Parameter] public bool ComposerOpen { get; set; }
+    [Parameter] public bool PermissionPending { get; set; }
+    [Parameter] public int Width { get; set; } = 75;
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public string FocusKey { get; set; } = "form";
+    [Parameter] public Func<FormReplyRequest, CancellationToken, Task>? OnReply { get; set; }
+    [Parameter] public Func<FormCancelRequest, CancellationToken, Task>? OnCancel { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task>? OpenExternal { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task>? CopyExternal { get; set; }
+    [Parameter] public Func<CancellationToken, Task<string?>>? ReadClipboard { get; set; }
+    [Parameter] public string? UnavailableReason { get; set; }
+    public PendingForm? Selected => FormAdapter.FirstForRoute(Pending, Location, Session, Descendants, ChildSession);
+}

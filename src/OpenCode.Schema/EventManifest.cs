@@ -1,7 +1,7 @@
 namespace OpenCode.Schema;
 
 /// <summary>
-/// 1:1 port of EventManifest from packages/schema/src/event-manifest.ts
+/// Existing event-name conveniences. These constants are not a definition or membership inventory.
 /// </summary>
 public static class EventTypes
 {
@@ -47,4 +47,43 @@ public static class EventTypes
 
     // VCS events
     public const string VcsUpdated = "vcs.updated";
+}
+
+/// <summary>Only implemented definitions. A missing key means unreviewed, never private or invalid.</summary>
+public static class EventManifest
+{
+    public const bool IsPublicInventoryComplete = false;
+    public const bool IsSharedInventoryComplete = false;
+    public const bool IsDurableInventoryComplete = false;
+
+    private static IReadOnlyList<EventDefinition> Foundation { get; } = EventDefinitions.Inventory(
+        [.. ModelsDevEventDefinitions.Definitions, .. CredentialEventDefinitions.Definitions,
+         .. IntegrationEventDefinitions.Definitions, .. CatalogEventDefinitions.Definitions,
+         .. AgentEventDefinitions.Definitions, .. SessionEventDefinitions.ImplementedDefinitions]);
+
+    private static IReadOnlyList<EventDefinition> Features { get; } = EventDefinitions.Inventory(
+        [.. ReferenceEventDefinitions.Definitions, .. ProjectEventDefinitions.Definitions,
+         .. WorktreeEventDefinitions.Definitions, .. CommandEventDefinitions.Definitions,
+         .. ConfigEventDefinitions.Definitions, .. SkillEventDefinitions.Definitions,
+         .. PtyEventDefinitions.Definitions, .. PersistentPtyEventDefinitions.Definitions,
+         .. ShellEventDefinitions.Definitions, .. FormEventDefinitions.Definitions]);
+
+    public static IReadOnlyList<EventDefinition> ImplementedPublicDefinitions { get; } =
+        EventDefinitions.Inventory([.. Foundation, .. Features, .. InstallationEventDefinitions.Definitions,
+            .. VcsEventDefinitions.Definitions, McpEventDefinitions.StatusChanged, McpEventDefinitions.ResourcesChanged]);
+    public static IReadOnlyDictionary<string, EventDefinition> ImplementedPublicLatest { get; } =
+        EventDefinitions.Latest(ImplementedPublicDefinitions);
+
+    // Preserve the source's broader Definitions membership and relative inventory order.
+    public static IReadOnlyList<EventDefinition> ImplementedDefinitions { get; } =
+        EventDefinitions.Inventory([.. Foundation, .. InstallationEventDefinitions.Definitions, .. Features,
+            .. McpEventDefinitions.Definitions, .. SessionCompactionEventDefinitions.Definitions,
+            .. VcsEventDefinitions.Definitions, .. ServerEventDefinitions.Definitions]);
+    public static IReadOnlyDictionary<string, EventDefinition> ImplementedLatest { get; } =
+        EventDefinitions.Latest(ImplementedDefinitions);
+
+    public static IReadOnlyDictionary<string, EventDefinition> ImplementedDurable { get; } =
+        EventDefinitions.DurableMap([.. SessionEventDefinitions.ImplementedDurableDefinitions, WorktreeEventDefinitions.Resolved]);
+
+    // No IsServer predicate: this subset must not suppress valid, not-yet-ported public events.
 }

@@ -6,13 +6,24 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Wasmtime" Version="[44.0.0]" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);BL0006</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Code\Assets\**\*.wasm;Code\Assets\**\*.scm" />
+    <None Update="Code\Assets\LICENSE.*;Code\Assets\NOTICE.md;Code\LICENSE.opentui"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Runtime.Time\Runtime.Time.csproj" />
+    <Using Include="Runtime.Time" />
+  </ItemGroup>
 </Project>

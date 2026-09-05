@@ -1,0 +1,21 @@
+@namespace OpenCode.Cli.Tui.Layout
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Transcript
+
+@if (Items.Count > 0)
+{
+    <Box Border="left" BorderFg="@Theme.Border" OnClick="Open">
+        <Box Direction="TuiFlexDirection.Row" PaddingTop="1" PaddingBottom="1" PaddingLeft="2" PaddingRight="1" Bg="@Theme.ElevatedBackground">
+            <TuiText Value="@($"{Items.Count} queued")" Height="1" Fg="@Theme.Text" />
+            <TuiText Value="@(" · " + ((UserInboxPayload)Items[0].Payload).Text.Replace('\n', ' ').Replace('\r', ' '))"
+                     Height="1" Grow="1" Fg="@Theme.Subdued" />
+        </Box>
+    </Box>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SessionInboxItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public EventCallback OnOpen { get; set; }
+    private Task Open(TerminalPointerEventArgs args) { args.Handled = true; return OnOpen.InvokeAsync(); }
+}

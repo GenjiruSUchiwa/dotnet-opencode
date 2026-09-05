@@ -1,0 +1,71 @@
+@namespace OpenCode.Cli.Tui.Activities
+
+@if (Open)
+{
+    <Box Width="Math.Max(1, Width)" Shrink="0" Border="left" BorderFg="@Theme.Border.Hex" Bg="@Theme.Background.Hex"
+         PaddingLeft="1" PaddingRight="2" PaddingTop="1" PaddingBottom="1" Gap="1">
+        <Box Direction="TuiFlexDirection.Row" PaddingLeft="1" Height="1" Gap="2">
+            <TuiText Value="Subagents" Bold="@(_tab == ActivityTab.Subagents)" Fg="@(_tab == ActivityTab.Subagents ? Theme.Text.Hex : Theme.Subdued.Hex)"
+                     Height="1" OnClick="args => SelectTab(ActivityTab.Subagents, args)" />
+            <TuiText Value="Shell" Bold="@(_tab == ActivityTab.Shells)" Fg="@(_tab == ActivityTab.Shells ? Theme.Text.Hex : Theme.Subdued.Hex)"
+                     Height="1" OnClick="args => SelectTab(ActivityTab.Shells, args)" />
+            <Box Grow="1" />
+            <TuiText Value="esc" Fg="@Theme.Subdued.Hex" Height="1" OnClick="CloseClick" />
+        </Box>
+        <SubagentsPane Client="Client" SessionId="SessionId" CurrentSession="CurrentSession" Theme="Theme" Active="@(_tab == ActivityTab.Subagents)"
+                       Sessions="Sessions" ActiveSessions="ActiveSessions" Messages="Messages" Permissions="Permissions" Forms="Forms" Jobs="Jobs"
+                       FamilyComplete="FamilyComplete" Error="@SessionError" TerminalHeight="TerminalHeight" ResolveCommand="ResolveCommand"
+                       InterruptShortcut="@InterruptShortcut" OnOpenSession="OnOpenSession" OnFocusSession="OnFocusSession"
+                       OnRequestMessages="OnRequestMessages" OnChanged="OnRefresh" OnRefresh="OnRefresh" OnClose="OnClose"
+                       OnSwitchTab="SwitchTab" OnFocusRequested="OnFocusRequested" CancelJob="CancelJob" />
+        <ShellsPane @ref="_shells" Client="Client" SessionId="SessionId" Theme="Theme" Active="@(_tab == ActivityTab.Shells)"
+                    Shells="Shells" Jobs="Jobs" Error="@ShellError" TerminalHeight="TerminalHeight" ResolveCommand="ResolveCommand"
+                    KillShortcut="@KillShortcut" OnFocusShell="OnFocusShell" OnOpenShell="OnOpenShell" OnObserved="OnShellObserved" OnRemoved="OnShellRemoved"
+                    OnRefresh="OnRefresh" OnClose="OnClose" OnSwitchTab="SwitchTab" OnFocusRequested="OnFocusRequested" CancelJob="CancelJob" />
+        <TuiText Value="tabs ←/→" Fg="@Theme.Subdued.Hex" Height="1" />
+    </Box>
+}
+
+@code {
+    [Parameter, EditorRequired] public SessionHttpClient Client { get; set; } = null!;
+    [Parameter, EditorRequired] public SessionId SessionId { get; set; }
+    [Parameter] public SessionId? CurrentSession { get; set; }
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public ActivityTab DefaultTab { get; set; }
+    [Parameter] public IReadOnlyList<LocatedShell>? Shells { get; set; }
+    [Parameter] public IReadOnlyList<SessionInfo>? Sessions { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, SessionActive>? ActiveSessions { get; set; }
+    [Parameter] public IReadOnlyDictionary<SessionId, IReadOnlyList<SessionMessage>>? Messages { get; set; }
+    [Parameter] public IReadOnlyList<PermissionRequest>? Permissions { get; set; }
+    [Parameter] public IReadOnlyList<FormInfo>? Forms { get; set; }
+    [Parameter] public IReadOnlyList<ActivityJobProjection>? Jobs { get; set; }
+    [Parameter] public bool FamilyComplete { get; set; }
+    [Parameter] public string? SessionError { get; set; }
+    [Parameter] public string? ShellError { get; set; }
+    [Parameter] public string InterruptShortcut { get; set; } = "ctrl+d";
+    [Parameter] public string KillShortcut { get; set; } = "ctrl+d";
+    [Parameter] public Func<ConsoleKeyInfo, string?>? ResolveCommand { get; set; }
+    [Parameter] public Func<ActivityJobProjection, CancellationToken, Task>? CancelJob { get; set; }
+    [Parameter] public EventCallback<SessionId> OnOpenSession { get; set; }
+    [Parameter] public EventCallback<SessionId> OnFocusSession { get; set; }
+    [Parameter] public EventCallback<SessionId> OnRequestMessages { get; set; }
+    [Parameter] public EventCallback<LocatedShell> OnFocusShell { get; set; }
+    [Parameter] public EventCallback<LocatedShell> OnOpenShell { get; set; }
+    [Parameter] public EventCallback<LocatedShell> OnShellObserved { get; set; }
+    [Parameter] public EventCallback<LocatedShell> OnShellRemoved { get; set; }
+    [Parameter] public EventCallback<string> OnFocusRequested { get; set; }
+    [Parameter] public EventCallback OnRefresh { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private ShellsPane? _shells;
+    private ActivityTab _tab;
+    private bool _wasOpen;
+    protected override void OnParametersSet() { if (Open && !_wasOpen) _tab = DefaultTab; _wasOpen = Open; }
+    private Task SwitchTab(int direction) { _tab = _tab == ActivityTab.Shells ? ActivityTab.Subagents : ActivityTab.Shells; return Task.CompletedTask; }
+    private Task SelectTab(ActivityTab tab, TerminalPointerEventArgs args) { args.Handled = true; _tab = tab; return Task.CompletedTask; }
+    private Task CloseClick(TerminalPointerEventArgs args) { args.Handled = true; return OnClose.InvokeAsync(); }
+    /// <summary>After updating root Shells from the existing shared feed, refresh only an open output reader.</summary>
+    public Task RefreshOutputAsync() => _shells?.RefreshOutputAsync() ?? Task.CompletedTask;
+}

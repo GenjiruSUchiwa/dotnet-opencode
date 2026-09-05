@@ -1,32 +1,42 @@
 namespace OpenCode.Server.Endpoints;
 
-using System.Diagnostics;
 using OpenCode.Protocol.Groups;
+using OpenCode.Schema;
+using OpenCode.Protocol;
+using OpenCode.Server.Hosting;
 
 public static class HealthEndpoints
 {
     public static void MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/health", () =>
+        app.MapGet("/api/health", (IServerIdentity service, HttpContext context) =>
         {
-            var pid = Process.GetCurrentProcess().Id;
-            return Results.Ok(new ServiceHealthResponse(
-                Healthy: true,
-                Version: "10.0.0-opencode-dotnet",
-                Pid: pid
-            ));
+            var state = service.State;
+            if (state is "starting" or "stopping") context.Response.Headers.RetryAfter = "1";
+            return Results.Json(new
+            {
+                healthy = true,
+                version = OpenCodeChannel.ServiceVersion,
+                buildID = ApplicationBuild.Id,
+                pid = Environment.ProcessId,
+                id = service.Id,
+                application = OpenCodeChannel.Application,
+                channel = OpenCodeChannel.Name,
+                state
+            }, statusCode: state == "ready" ? StatusCodes.Status200OK : state == "failed"
+                ? StatusCodes.Status500InternalServerError : StatusCodes.Status503ServiceUnavailable);
         });
 
-        app.MapGet("/api/server", () =>
+        app.MapGet("/api/server", (IServerIdentity service) =>
         {
             return Results.Ok(new ServerInfoResponse(
-                Urls: ["http://127.0.0.1:5055"]
+                Urls: service.Url is null ? [] : [service.Url]
             ));
         });
 
         app.MapGet("/api/experimental/migration/v1", () =>
         {
-            return Results.Ok(new { status = "completed" });
+            return Results.Problem("Legacy database upgrades are not implemented; only fresh current-schema bootstrap is supported.", statusCode: StatusCodes.Status501NotImplemented);
         });
     }
 }

@@ -4,27 +4,28 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 [JsonConverter(typeof(WorkspaceIdJsonConverter))]
-public readonly record struct WorkspaceId : IEquatable<WorkspaceId>
+[Vogen.ValueObject<string>(comparison: Vogen.ComparisonGeneration.Omit)]
+public readonly partial struct WorkspaceId
 {
     public const string Prefix = "wrk_";
-    public string Value { get; }
-
-    public WorkspaceId(string value)
+    public static WorkspaceId FromExisting(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        Value = value;
+        return From(value);
     }
 
-    public static WorkspaceId Create() => new($"{Prefix}{Identifier.Ascending()}");
+    public static WorkspaceId Create() => FromExisting($"{Prefix}{Identifier.Ascending()}");
+    private static Vogen.Validation Validate(string value) => !string.IsNullOrWhiteSpace(value)
+        ? Vogen.Validation.Ok : Vogen.Validation.Invalid("WorkspaceId cannot be empty or whitespace.");
     public override string ToString() => Value;
     public static implicit operator string(WorkspaceId id) => id.Value;
-    public static explicit operator WorkspaceId(string value) => new(value);
+    public static explicit operator WorkspaceId(string value) => FromExisting(value);
 }
 
-public sealed class WorkspaceIdJsonConverter : JsonConverter<WorkspaceId>
+public sealed class WorkspaceIdJsonConverter() : ScalarJsonConverter<WorkspaceId, string>(WorkspaceId.FromExisting, static value => value.Value)
 {
     public override WorkspaceId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        new(reader.GetString()!);
+        WorkspaceId.FromExisting(reader.GetString()!);
 
     public override void Write(Utf8JsonWriter writer, WorkspaceId value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.Value);

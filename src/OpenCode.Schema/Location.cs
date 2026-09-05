@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 /// </summary>
 public sealed record LocationRef(
     [property: JsonPropertyName("directory")] string Directory,
-    [property: JsonPropertyName("workspaceID")] WorkspaceId? WorkspaceId = null
+    [property: JsonPropertyName("workspaceID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkspaceId? WorkspaceId = null
 );
 
 public sealed record LocationProjectInfo(
@@ -19,5 +19,5 @@ public sealed record LocationProjectInfo(
 public sealed record LocationInfo(
     [property: JsonPropertyName("directory")] string Directory,
     [property: JsonPropertyName("project")] LocationProjectInfo Project,
-    [property: JsonPropertyName("workspaceID")] WorkspaceId? WorkspaceId = null
+    [property: JsonPropertyName("workspaceID"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkspaceId? WorkspaceId = null
 );

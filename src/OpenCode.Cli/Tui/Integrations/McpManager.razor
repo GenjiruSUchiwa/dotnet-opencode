@@ -1,0 +1,36 @@
+@namespace OpenCode.Cli.Tui.Integrations
+
+@if (!_loaded && _error is not null)
+{
+    <ManagementUnavailable Title="MCP servers unavailable" Message="@_error" Theme="Theme" ErrorColor="@FormTheme.Error" Retry="RefreshAsync" OnClose="OnClose" />
+}
+else if (_signIn is { } integration)
+{
+    <IntegrationManager @key="integration" Client="Client" Location="Location" Theme="Theme" FormTheme="FormTheme"
+                        InitialIntegration="integration" AutoConnect="true" TerminalWidth="TerminalWidth" TerminalHeight="TerminalHeight"
+                        OpenExternal="OpenExternal" CopyExternal="CopyExternal" ReadClipboard="ReadClipboard"
+                        ResolveCommand="ResolveCommand" OnConnected="OnConnected" OnChanged="OnChanged" OnClose="FinishSignIn" />
+}
+else if (_detail is { Status: McpFailedStatus failure } detail)
+{
+    <Modal Size="ModalSize.Large" Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="BackAsync">
+        <Box PaddingX="2" PaddingBottom="1" Gap="1">
+            <TuiText Value="@($"MCP server: {detail.Name}")" Fg="@Theme.Text" Bold="true" />
+            <TuiText Value="@failure.Error" Fg="@FormTheme.Error" WrapMode="NativeTextWrapMode.Word" />
+            <TuiText Value="@($"Status: failed\nConfiguration: mcp.servers.{detail.Name}")" Fg="@Theme.Subdued" />
+            @if (detail.IntegrationId is { } id) { <TuiText Value="@($"Integration: {id.Value}")" Fg="@Theme.Subdued" /> }
+            @if (_error is not null) { <TuiText Value="@_error" Fg="@FormTheme.Error" /> }
+            <Input Value="" Placeholder="esc back · c copy error" PlaceholderFg="@Theme.Subdued" FocusKey="mcp-error" OnKeyDown="DetailKey" MaxHeight="1" />
+        </Box>
+    </Modal>
+}
+else
+{
+    <DialogSelect T="string" Title="MCP servers" Theme="Theme" Options="Options" Current="@_focused" HasCurrent="@(_focused is not null)"
+                  PreserveSelection="true" OnMove="Moved" OnFilter="Filtered" Actions="Actions" ResolveCommand="ResolveKey" OnSelect="SelectAsync"
+                  Loading="_loading" Locked="@(_busy is not null)" Error="@_error" TerminalHeight="TerminalHeight" OnClose="OnClose">
+        <Footer>
+            @if (Focused?.Status is McpFailedStatus) { <TuiText Value="enter to view error" Fg="@Theme.Subdued" /> }
+        </Footer>
+    </DialogSelect>
+}

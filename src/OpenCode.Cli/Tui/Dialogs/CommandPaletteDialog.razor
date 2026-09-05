@@ -1,0 +1,54 @@
+@namespace OpenCode.Cli.Tui.Dialogs
+@using OpenTui.Blazor.Keymap
+
+<DialogSelect T="string" Title="Commands" Options="Options()" Theme="Theme" Flat="true" FilterThreshold="0.7"
+              TerminalHeight="TerminalHeight" OnSelect="Choose" OnClose="OnClose" OnFilter="Filter"
+              ResolveCommand="ResolveCommand" />
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<KeymapCommand> Commands { get; set; } = [];
+    [Parameter, EditorRequired] public KeymapContext Context { get; set; } = new();
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter] public Func<string, string>? Shortcut { get; set; }
+    [Parameter] public IReadOnlyList<PaletteSetting> Settings { get; set; } = [];
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<string> OnExecute { get; set; }
+    [Parameter] public EventCallback<string> OnSetting { get; set; }
+    [Parameter] public Func<ConsoleKeyInfo, string?>? ResolveCommand { get; set; }
+    private string _filter = "";
+
+    private IReadOnlyList<DialogSelectOption<string>> Options()
+    {
+        var commands = Commands.Where(command => command.Palette && command.Name != "command.palette.show" && command.Condition.Matches(Context))
+            .DistinctBy(command => command.Name).ToArray();
+        var options = commands.Select(command => new DialogSelectOption<string>(command.Name, command.Title ?? command.Name,
+            command.Description, command.Category, Shortcut?.Invoke(command.Name),
+            string.Join(" ", new[] { command.Name, command.Description }.Where(value => !string.IsNullOrEmpty(value))),
+            string.Join(" · ", new[] { command.Category, Shortcut?.Invoke(command.Name) }.Where(value => !string.IsNullOrEmpty(value))))).ToArray();
+        if (_filter.Length > 0)
+            return options.Concat(OnSetting.HasDelegate ? Settings.Select(setting => new DialogSelectOption<string>("setting:" + setting.Id,
+                setting.Title, Category: setting.Category, SearchText: setting.Keywords, SearchFooter: $"Settings · {setting.Category}")) : []).ToArray();
+        var suggested = commands.Where(command => command.Suggested?.Invoke(Context) == true).Select(command => command.Name).ToHashSet();
+        return options.Where(option => suggested.Contains(option.Value))
+            .Select(option => option with { Value = "suggested:" + option.Value, Category = "Suggested" }).Concat(options).ToArray();
+    }
+
+    private void Filter(string query) => _filter = query;
+    private async Task Choose(string value)
+    {
+        if (value.StartsWith("setting:", StringComparison.Ordinal))
+        {
+            if (OnSetting.HasDelegate && Settings.Any(setting => setting.Id == value[8..])) await OnSetting.InvokeAsync(value[8..]);
+            return;
+        }
+        var id = value.StartsWith("suggested:", StringComparison.Ordinal) ? value[10..] : value;
+        var command = Commands.FirstOrDefault(command => command.Name == id && command.Palette && command.Condition.Matches(Context))
+            ?? throw new InvalidOperationException("The command is no longer available.");
+        // Source clears the dialog before dispatch, so modal focus cannot hijack
+        // the command and commands that open another dialog replace this one.
+        await OnClose.InvokeAsync();
+        if (OnExecute.HasDelegate) await OnExecute.InvokeAsync(id);
+        else if (!command.Run(new(id, null, Context))) throw new InvalidOperationException("The command is unavailable in this context.");
+    }
+}

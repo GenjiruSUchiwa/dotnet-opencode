@@ -1,0 +1,53 @@
+{
+  "package": "@opencode-ai/pty",
+  "version": "0.1.13",
+  "protocol": 7,
+  "repository": "https://github.com/anomalyco/opencode-pty",
+  "gitCommit": "42ef5b055f972196ea61aaea7a5e4a87405b29f0",
+  "license": "MIT",
+  "licenseSha256": "a0b3bba7a9ae94cb3c4e3049ed88ac17a9883464bb28f04ef7298b9fcd0593a2",
+  "targets": {
+    "osx-arm64": {
+      "package": "@opencode-ai/pty-darwin-arm64",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-darwin-arm64/-/pty-darwin-arm64-0.1.13.tgz",
+      "integrity": "sha512-fVtQZqVLBuJx/aB+5ojfmQifS1KMc9gxlxpFQ6bxEFU8tn8xHQTiFPaNroZgOtaw7I4ceGyx/eXieK1wp68yAA==",
+      "sha256": "d333339292bb9f9a739dbce9e2ababbce81b3040ea3d064b8a9b359a1c05ab61",
+      "packageSha256": "c6c62691d2d54d559acaec90102bf9f024b1d412607fc65327a40ec99fe063c6"
+    },
+    "osx-x64": {
+      "package": "@opencode-ai/pty-darwin-x64",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-darwin-x64/-/pty-darwin-x64-0.1.13.tgz",
+      "integrity": "sha512-b/tAEm0hCMXraPM9cxR8Rg7X1UBZInRTaxWAS4Ht9eH1nWj1rANOLvHWiWX/vVh5TB0Ubg8bWPu4B0nZkEHROQ==",
+      "sha256": "449beaea11f4c90c66ecf2bd1cb9610bd9079ba4cf257f55ebb092c3da5eefc6",
+      "packageSha256": "1d6eb0d9c055c01f964b814028a4750d44b66380eb1ce1a1583b77dbb69f12a8"
+    },
+    "linux-arm64": {
+      "package": "@opencode-ai/pty-linux-arm64-gnu",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-linux-arm64-gnu/-/pty-linux-arm64-gnu-0.1.13.tgz",
+      "integrity": "sha512-I124aSYBBjpGZnYExHfIajkvVK1FiK+//OJBGdqqFp5pas2Oruq4O8tv+pMoxomZIYh2ce/QhOOYLHRwXsthTg==",
+      "sha256": "25e9273e84016d34812a06e37974d6ca8b6cd9359c4e8dd647e5dc5b412b599a",
+      "packageSha256": "68f5ea18675c9013e819ba2d878045001ef027980194717d8d3ee52e3939972c"
+    },
+    "linux-musl-arm64": {
+      "package": "@opencode-ai/pty-linux-arm64-musl",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-linux-arm64-musl/-/pty-linux-arm64-musl-0.1.13.tgz",
+      "integrity": "sha512-feWsfKpaDytGJzutoK43GqQwVghG2vHZt6BE/ydPZNuqIrySQ/6JfliUAMwn5BWs/Ky7ouSwKHCyAVeukusSvg==",
+      "sha256": "f9b069d3c7f934d8add09eed186cdd148acfbee88f6cc1a65447a4fda173f711",
+      "packageSha256": "a9a101b7a07902a590e20cced00550c79b4c1dc456040cc1cfcb15c68134df47"
+    },
+    "linux-x64": {
+      "package": "@opencode-ai/pty-linux-x64-gnu",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-linux-x64-gnu/-/pty-linux-x64-gnu-0.1.13.tgz",
+      "integrity": "sha512-jliNgsevGuxfIeX7eyzjHhrJkF8uEUPnDLbF2v16uv69FhEHrraf7jyWkxazMP6rNvn2CGtwMMc4BXPS5pzjhg==",
+      "sha256": "b8caf78cbed9610aa5b744264aade552ed57cac70b2ebc27a788a0b1d2e02caa",
+      "packageSha256": "576de2fe99512e2dd839e7e8a4897daff8eac9cf4cea41e4ebd536b190ba30fe"
+    },
+    "linux-musl-x64": {
+      "package": "@opencode-ai/pty-linux-x64-musl",
+      "tarball": "https://registry.npmjs.org/@opencode-ai/pty-linux-x64-musl/-/pty-linux-x64-musl-0.1.13.tgz",
+      "integrity": "sha512-rXDpidW66gz2b2M/NbUN8ZKmAxaJcASnuHATeXevlrFdiPUv8uJwvkRd6Pla1fp01Q65MkBmgRa7Q9c+H1PlzA==",
+      "sha256": "2ce93573af4052cfcefd322dea9a43d98fbaea08e37f424bb09c3b85a612a3da",
+      "packageSha256": "259ed728396869d12941585310a3e72889aa5916aa2f64fab083fa5fb4b5476d"
+    }
+  }
+}

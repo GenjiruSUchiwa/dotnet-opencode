@@ -1,0 +1,30 @@
+@namespace OpenCode.Cli.Tui.Dialogs
+@using System.Collections.Immutable
+@using System.Text
+@using System.Globalization
+@using OpenCode.Cli.Tui.Transcript
+@using OpenTui.Blazor.Components
+@using OpenTui.Native
+
+<TuiText Runs="_runs" Height="1" WrapMode="NativeTextWrapMode.None" />
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Description { get; set; }
+    [Parameter, EditorRequired] public string TextColor { get; set; } = null!;
+    [Parameter, EditorRequired] public string DescriptionColor { get; set; } = null!;
+    [Parameter] public bool Bold { get; set; }
+    private (string Title, string? Description, string TextColor, string DescriptionColor, bool Bold)? _previous;
+    private ImmutableArray<NativeTextRun> _runs;
+    protected override void OnParametersSet()
+    {
+        var state = (Title, Description, TextColor, DescriptionColor, Bold);
+        if (_previous == state) return;
+        _previous = state;
+        var title = Title.Length <= 61 ? Title : Title[..StringInfo.ParseCombiningCharacters(Title).Last(index => index <= 60)] + "…";
+        _runs = [
+            new(Encoding.UTF8.GetBytes(title), TranscriptColor.Parse(TextColor), Attributes: Bold ? 1u : 0),
+            new(Encoding.UTF8.GetBytes(Description is null ? "" : " " + Description), TranscriptColor.Parse(DescriptionColor), Attributes: Bold ? 1u : 0)
+        ];
+    }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OpenCode.Protocol/OpenCode.Protocol.csproj" />
+    <Compile Include="../../src/OpenCode.Server/Documentation/NativeSchemaExporter.cs" Link="NativeSchemaExporter.cs" />
+    <Compile Include="../../src/OpenCode.Server/Documentation/SchemaReferences.cs" Link="SchemaReferences.cs" />
+    <Reference Include="Microsoft.Build.Framework" HintPath="$(MSBuildToolsPath)/Microsoft.Build.Framework.dll" Private="false" />
+    <Reference Include="Microsoft.Build.Utilities.Core" HintPath="$(MSBuildToolsPath)/Microsoft.Build.Utilities.Core.dll" Private="false" />
+  </ItemGroup>
+</Project>

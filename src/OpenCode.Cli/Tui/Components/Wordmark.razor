@@ -1,0 +1,12 @@
+@namespace OpenCode.Cli.Tui.Components
+
+<Box Width="LogoWidth" Height="@(_rows.Count + (TerminalWidth >= 22 ? 1 : 0))" Shrink="0" Center="true">
+    @if (TerminalWidth >= 22)
+    {
+        <TuiText Value=" dotnet" Width="LogoWidth" Fg="@DotnetLabelColor.Hex" Bold="true" Height="1" />
+    }
+    @foreach (var row in _rows)
+    {
+        <TuiText Width="row.Width" Runs="row.Runs" Height="1" />
+    }
+</Box>

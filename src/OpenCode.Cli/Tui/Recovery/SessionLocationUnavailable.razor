@@ -1,0 +1,65 @@
+@namespace OpenCode.Cli.Tui.Recovery
+@using OpenTui.Native
+@implements IDisposable
+
+<Box Width="@Math.Max(1, Width)" Height="Height" Shrink="0" Border="left" BorderFg="@Theme.FocusedActionBackground"
+     Bg="@Theme.Background" FocusKey="session.location-missing" OnKeyDown="Key">
+    <Box PaddingLeft="1" PaddingRight="3" PaddingTop="1" PaddingBottom="1" Gap="1">
+        <Box Direction="TuiFlexDirection.Row" PaddingLeft="1" Gap="1" Height="TitleHeight">
+            <TuiText Value="△" Height="1" Fg="@Theme.Warning" />
+            <TuiText Value="Session location unavailable" Grow="1" Height="TitleHeight" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" />
+        </Box>
+        <Box PaddingLeft="1" Gap="1">
+            <TuiText Value="@Directory" Height="DirectoryHeight" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+            <TuiText Value="@Instruction" Height="InstructionHeight" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" />
+        </Box>
+    </Box>
+    <Box Direction="@(TerminalWidth < 80 ? TuiFlexDirection.Column : TuiFlexDirection.Row)" PaddingLeft="2" PaddingRight="3"
+         PaddingTop="1" PaddingBottom="1" Gap="1" Bg="@Theme.RaisedBackground">
+        @if (ChooseDirectory is not null)
+        {
+            <Box PaddingX="1" Height="1" Bg="@(Blocked ? Theme.ActionBackground : Theme.FocusedActionBackground)" OnClick="Select">
+                <TuiText Value="Choose directory" Height="1" Fg="@(Blocked ? Theme.DisabledText : Theme.FocusedActionText)" PointerEvents="false" />
+            </Box>
+            @if (TerminalWidth >= 80) { <Box Grow="1" /> }
+            <TuiText Value="@(Move?.Pending == true ? "Reload to inspect move status" : Busy ? "Opening directory selection…" : "enter confirm")" Height="1" Fg="@Theme.Subdued" />
+        }
+        else
+        {
+            <TuiText Value="@CapabilityGap" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+        }
+    </Box>
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public LocationRecoveryEvidence Evidence { get; set; } = default!;
+    [Parameter, EditorRequired] public RecoveryTheme Theme { get; set; } = default!;
+    [Parameter] public int Width { get; set; } = 80;
+    [Parameter] public int TerminalWidth { get; set; } = 80;
+    [Parameter] public string Home { get; set; } = "";
+    [Parameter] public Func<Task>? ChooseDirectory { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public SessionMoveSnapshot? Move { get; set; }
+    [Parameter] public string UnavailableReason { get; set; } = "Directory switching is unavailable: no typed Session-move callback is connected.";
+    private readonly RecoveryTextMetrics _metrics = new();
+    private string Directory => RecoveryPresentation.DirectoryLabel(Evidence.Location.Directory, Home);
+    private bool Blocked => Busy || Move?.Pending == true;
+    private string CapabilityGap => Evidence.Location.WorkspaceId is not null
+        ? "Explicit workspace movement is unsupported by the local move service." : UnavailableReason;
+    private string Instruction => Move is { Pending: true } move ? move.Message : ChooseDirectory is not null ? "Choose another directory to continue this session."
+        : "The server reported the Location service unavailable. Your Session and draft are retained.";
+    private int DirectoryHeight => _metrics.Lines(Directory, Math.Max(1, Width - 6));
+    private int TitleHeight => _metrics.Lines("Session location unavailable", Math.Max(1, Width - 8));
+    private int InstructionHeight => _metrics.Lines(Instruction, Math.Max(1, Width - 6));
+    private int Height => Math.Min(15, 4 + TitleHeight + DirectoryHeight + InstructionHeight +
+        (ChooseDirectory is not null ? TerminalWidth < 80 ? 5 : 3 : 2 + _metrics.Lines(CapabilityGap, Math.Max(1, Width - 6))));
+    protected override void OnParametersSet() { ArgumentNullException.ThrowIfNull(Evidence); ArgumentNullException.ThrowIfNull(Theme); }
+    private Task Select(TerminalPointerEventArgs args) { args.Handled = true; return !Blocked && ChooseDirectory is not null ? ChooseDirectory() : Task.CompletedTask; }
+    private async Task Key(TerminalKeyEventArgs args)
+    {
+        // The source recovery question has one option and no Escape rejection or fullscreen action.
+        if (args.Key.Key == ConsoleKey.Enter && !Blocked && ChooseDirectory is not null) { await ChooseDirectory(); return; }
+        args.Handled = false;
+    }
+    public void Dispose() => _metrics.Dispose();
+}

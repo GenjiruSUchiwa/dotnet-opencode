@@ -1,0 +1,64 @@
+@namespace OpenCode.Cli.Tui.Sessions
+
+<Modal Size="Size" OnClose="Close" Background="@Theme.Hovered">
+    <Box PaddingX="2">
+        @if (_renaming is not null || RenameTarget is not null)
+        {
+            <TuiText Value="Rename session" Height="1" Bold="true" Fg="@Theme.Text" />
+            <Input Value="@_rename" Cursor="_renameCursor" Placeholder="Session title" OnKeyDown="RenameKey" OnPaste="Paste" />
+            @if (_error is not null) { <TuiText Value="@_error" Fg="@Theme.Error" /> }
+            <TuiText Value="Enter confirm  Esc cancel" Height="1" Fg="@Theme.Subdued" />
+        }
+        else
+        {
+        <TuiText Value="@(AllProjects ? "Sessions - all projects" : $"Sessions - {LocationLabel ?? "current location"}")" Height="1" Bold="true" />
+        <Input Value="@_search" Cursor="_cursor" Placeholder="Search sessions" OnKeyDown="Key" OnPaste="Paste" />
+        @if (_preferenceError is not null)
+        {
+            <TuiText Value="@_preferenceError" Fg="@Theme.Error" />
+        }
+        @if (_error is not null)
+        {
+            <TuiText Value="@_error" Fg="@Theme.Error" />
+        }
+        @if (_loading)
+        {
+            <TuiText Value="@(_search.Length == 0 ? "Loading sessions..." : "Searching sessions...")" Height="1" Dim="true" />
+        }
+        @if (_busy)
+        {
+            <TuiText Value="Applying selection... Esc cancel" Height="1" />
+        }
+        @if (!_loading && _rows.Count == 0)
+        {
+            <TuiText Value="@(_search.Length == 0 ? "No sessions available" : "No sessions found")" Height="1" />
+        }
+        @foreach (var row in VisibleRows())
+        {
+            @if (row.Header is not null)
+            {
+                <TuiText Value="@row.Header" Height="1" Bold="true" />
+            }
+            else if (row.Session is { } item)
+            {
+                <Box Direction="TuiFlexDirection.Row" Height="1" Bg="@(_toDelete == item.Session.Id ? Theme.DestructiveBackground : row.Index == _selected ? Theme.Selected : Theme.Hovered)"
+                     OnPointerEnter="() => HoverRow(row.Index)" OnClick="args => ClickRow(row.Index, args)">
+                    <TuiText Value="@(Gutter(item) + " ")" Width="2" Height="1" Fg="@(item.Active ? Theme.Running : Theme.FormField)" PointerEvents="false" />
+                    <TuiText Value="@RowTitle(item)" Grow="1" Height="1" Fg="@(_toDelete == item.Session.Id ? Theme.DestructiveText : Theme.Text)" Bold="@(item.Session.Id == Current)" PointerEvents="false" />
+                    <TuiText Value="@item.Updated" Width="5" Height="1" Fg="@Theme.Subdued" PointerEvents="false" />
+                </Box>
+            }
+        }
+        @if (_rows.ElementAtOrDefault(_selected) is { } selected)
+        {
+            <TuiText Value="@selected.Directory" Height="1" Dim="true" />
+        }
+        <TuiText Value="Enter open  Esc cancel  Up/Down move  PgUp/PgDn page" Height="1" Dim="true" />
+        <TuiText Value="@($"Ctrl+A {(AllProjects ? "current directory" : "all projects")}  Ctrl+G retry{(RenameSession is not null ? $"  {RenameShortcut} rename" : "")}{(DeleteSession is not null ? $"  {DeleteShortcut} delete" : "")}")" Height="1" Dim="true" />
+        @if (_nextCursor is not null || !TabsEnabled || CreateSession is not null)
+        {
+            <TuiText Value="@($"{(_nextCursor is not null ? "Ctrl+L load more  " : "")}{(!TabsEnabled && TogglePin is not null ? $"{PinShortcut} pin/unpin  " : "")}{(CreateSession is not null ? "Ctrl+N new session" : "")}{(!TabsEnabled && QuickSwitchHint is not null ? $"  {QuickSwitchHint} switch" : "")}")" Height="1" Dim="true" />
+        }
+        }
+    </Box>
+</Modal>

@@ -1,0 +1,34 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using System.Collections.Immutable
+@using Markdig.Syntax.Inlines
+@using OpenTui.Native
+@using OpenCode.Cli.Tui.Images
+
+<TuiText Runs="_runs" Fg="@(Subdued ? Theme.Subdued : Theme.MarkdownText)" Bold="Bold" WrapMode="NativeTextWrapMode.Word" Selectable="true" OnClick="ImageClick" />
+
+@code {
+    [Parameter] public ContainerInline? Inline { get; set; }
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public bool Subdued { get; set; }
+    [Parameter] public bool Bold { get; set; }
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
+    private EventCallback<TerminalPointerEventArgs> ImageClick => OnImagePreview.HasDelegate && MarkdownImageReferences.Single(Inline) is { } image
+        ? EventCallback.Factory.Create<TerminalPointerEventArgs>(this, async args =>
+        {
+            args.Handled = true;
+            await OnImagePreview.InvokeAsync(new([image]));
+        }) : default;
+    private ContainerInline? _previous;
+    private TranscriptTheme? _theme;
+    private bool _subdued;
+    private ImmutableArray<NativeTextRun> _runs;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Inline, _previous) && Theme == _theme && Subdued == _subdued) return;
+        _previous = Inline;
+        _theme = Theme;
+        _subdued = Subdued;
+        _runs = MarkdownRuns.Create(Inline, Theme, Subdued);
+    }
+}

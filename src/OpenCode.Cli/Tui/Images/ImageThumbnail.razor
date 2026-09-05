@@ -1,0 +1,47 @@
+@namespace OpenCode.Cli.Tui.Images
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Cli.Tui.Theme
+@using OpenTui.Blazor
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+@implements IAsyncDisposable
+
+@if (_controller is not null)
+{
+    <Box Height="Height" Grow="1">
+        <TuiImage State="_controller.Image" Fit="ImageFit.Cover" Height="Height" />
+        @if (_controller.Image.LoadError is not null || _controller.Image.RenderError is not null)
+        {
+            <Box Position="TuiPosition.Absolute" Left="0" Right="0" Top="0" Bottom="0" PointerEvents="false">
+                <Box Grow="1" Height="0" />
+                <Box CrossAlignment="TuiCrossAlignment.Center"><TuiText Value="No preview" Fg="@Theme.Text.Hex" WrapMode="OpenTui.Native.NativeTextWrapMode.Word" /></Box>
+                <Box Grow="1" Height="0" />
+            </Box>
+        }
+    </Box>
+}
+
+@code {
+    [Parameter, EditorRequired] public ImagePreviewItem Item { get; set; } = null!;
+    [Parameter, EditorRequired] public ImageSourceLoader Loader { get; set; } = null!;
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public int Height { get; set; } = 6;
+    private ImagePreviewController? _controller;
+    private ImagePreviewItem? _previous;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_previous == Item) return;
+        _previous = Item;
+        if (_controller is not null) { _controller.Changed -= Refresh; await _controller.DisposeAsync(); }
+        _controller = new(Loader, [Item]);
+        _controller.Changed += Refresh;
+        await _controller.LoadAsync();
+    }
+    private void Refresh() => StateHasChanged();
+    public async ValueTask DisposeAsync()
+    {
+        if (_controller is null) return;
+        _controller.Changed -= Refresh;
+        await _controller.DisposeAsync();
+    }
+}

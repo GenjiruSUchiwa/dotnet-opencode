@@ -1,0 +1,29 @@
+<Project>
+  <Import Project="$(MSBuildThisFileDirectory)build/PersistentPty.targets" />
+  <UsingTask TaskName="ComputeApplicationBuild" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll"
+             Condition="'$(MSBuildProjectName)' == 'OpenCode.Protocol'">
+    <Task>
+      <Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)build/ComputeApplicationBuild.cs" />
+    </Task>
+  </UsingTask>
+  <Target Name="GetApplicationBuildIdentity"
+          BeforeTargets="AssignTargetPaths;CoreCompile;GetCopyToOutputDirectoryItems;GetCopyToPublishDirectoryItems"
+          Condition="'$(MSBuildProjectName)' == 'OpenCode.Protocol'">
+    <PropertyGroup>
+      <_OpenCodeBuildOutput>$([System.IO.Path]::GetFullPath('$(IntermediateOutputPath)', '$(MSBuildProjectDirectory)'))</_OpenCodeBuildOutput>
+    </PropertyGroup>
+    <ComputeApplicationBuild RepositoryRoot="$(MSBuildThisFileDirectory)"
+                             Flavor="$(Configuration)|$(TargetFramework)|$(RuntimeIdentifier)|$(NETCoreSdkVersion)|pty=$(OpenCodePackagePersistentPty)|ptyTarget=$(OpenCodePtyRuntimeIdentifier)"
+                             OutputDirectory="$(_OpenCodeBuildOutput)"
+                             Expected="$(OpenCodeExpectedBuildId)"
+                             StampFile="$(OpenCodeBuildStampFile)">
+      <Output TaskParameter="Fingerprint" PropertyName="OpenCodeBuildId" />
+    </ComputeApplicationBuild>
+    <ItemGroup>
+      <Compile Include="$(_OpenCodeBuildOutput)/ApplicationBuild.g.cs" />
+      <Content Include="$(_OpenCodeBuildOutput)/opencode-build.id"
+               TargetPath="opencode-build.id" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

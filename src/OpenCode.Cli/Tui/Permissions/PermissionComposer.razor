@@ -1,0 +1,54 @@
+@namespace OpenCode.Cli.Tui.Permissions
+
+<Box Width="@Math.Max(1, Width)" Shrink="0" Border="left"
+     BorderFg="@(_stage == Stage.Reject ? Theme.Error : Theme.FocusedActionBackground)" Bg="@Theme.ElevatedBackground">
+    <Box PaddingLeft="1" PaddingRight="@(Width < 44 ? 1 : 3)" PaddingTop="1" PaddingBottom="1" Gap="1">
+        <Box PaddingLeft="1">
+            <Box Direction="TuiFlexDirection.Row" Gap="1" Height="1">
+                <TuiText Value="@("\u25b3")" Fg="@(_stage == Stage.Reject ? Theme.Error : Theme.Warning)" Height="1" />
+                <TuiText Value="@Title" Fg="@Theme.Text" Height="1" />
+            </Box>
+            @if (_stage == Stage.Permission && Action != "shell")
+            {
+                <Box Direction="TuiFlexDirection.Row" PaddingLeft="2" Gap="1" Height="1">
+                    <TuiText Value="@ActionIcon" Fg="@Theme.Subdued" Height="1" />
+                    <TuiText Value="@ActionTitle" Fg="@Theme.Text" Height="1" />
+                </Box>
+            }
+        </Box>
+        <Box PaddingLeft="1">
+            <TuiText Value="@Body" Height="BodyHeight" Scroll="_scroll"
+                     Fg="@(_stage == Stage.Permission && Action is "shell" or "subagent" ? Theme.Text : Theme.Subdued)" />
+        </Box>
+        @if (_error is not null)
+        {
+            <TuiText Value="@_error" Height="1" Fg="@Theme.Error" />
+        }
+    </Box>
+    <Box Direction="@(TerminalWidth < 80 ? TuiFlexDirection.Column : TuiFlexDirection.Row)"
+         PaddingLeft="2" PaddingRight="@(Width < 44 ? 1 : 3)" PaddingTop="1" PaddingBottom="1" Gap="1" Bg="@Theme.RaisedBackground">
+        @if (_stage != Stage.Reject)
+        {
+            <Box Direction="@(Width < 44 ? TuiFlexDirection.Column : TuiFlexDirection.Row)" Gap="1">
+                @for (var index = 0; index < Labels.Length; index++)
+                {
+                    var disabled = _pending is not null || _submitted || index == 1 && _stage == Stage.Permission && !AlwaysEnabled;
+                    <Box PaddingX="1" Height="1" Bg="@(!disabled && index == _selected ? Theme.FocusedActionBackground : Theme.ActionBackground)">
+                        <TuiText Value="@Labels[index]" Height="1"
+                                 Fg="@(disabled ? Theme.DisabledText : index == _selected ? Theme.FocusedActionText : Theme.ActionText)" />
+                    </Box>
+                }
+            </Box>
+        }
+        <Box Grow="1">
+            @* The generic event API focuses inputs; this row captures choice keys without editing text. *@
+            <Input Value="@(_stage == Stage.Reject ? _feedback : "")" Cursor="@(_stage == Stage.Reject ? _cursor : 0)"
+                   Placeholder="@Hint" MaxHeight="@(_stage == Stage.Reject ? 3 : 1)" FocusKey="@FocusKey"
+                   OnKeyDown="Key" OnPaste="Paste" />
+            @if (_stage == Stage.Reject)
+            {
+                <TuiText Value="@(_pending is not null ? "Sending...  esc cancel" : _submitted ? "Reply sent" : "enter confirm  esc cancel")" Height="1" Fg="@Theme.Subdued" />
+            }
+        </Box>
+    </Box>
+</Box>

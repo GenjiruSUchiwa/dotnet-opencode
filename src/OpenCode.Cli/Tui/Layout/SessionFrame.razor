@@ -1,0 +1,73 @@
+@namespace OpenCode.Cli.Tui.Layout
+@using OpenCode.Cli.Tui.Transcript
+
+<Box Direction="TuiFlexDirection.Row" Grow="1">
+    <Box Width="State.ContentWidth(Width, ChildSession)" Grow="1" PaddingBottom="1" PaddingX="@(Width < 44 ? 1 : 2)">
+        @Transcript
+        <Box Direction="TuiFlexDirection.Row" Height="1" Shrink="0">
+            <Box Grow="1" />
+            @if (AwayFromBottom)
+            {
+                <TuiText Value="Jump to latest ↓" Fg="@Theme.Text" Height="1" OnClick="Jump" />
+            }
+        </Box>
+        <Box Shrink="0">@Composer</Box>
+        @Feedback
+        @if (TerminalFocused)
+        {
+            <Box Position="TuiPosition.Absolute" Left="0" Right="0" Top="0" Bottom="0" ZIndex="1" OnClick="FocusSession" />
+        }
+    </Box>
+    @if (State.TerminalVisible)
+    {
+        <Box Width="State.TerminalWidth(Width)" Shrink="0">@Terminal</Box>
+        <Box Position="TuiPosition.Absolute" Left="@(Width - State.TerminalWidth(Width) - 1)" Top="0" Bottom="0" Width="1" ZIndex="30"
+             Bg="@Theme.Border" OnPointerDown="OnResizeStart" OnPointerMove="OnResize" OnPointerUp="OnResizeEnd" />
+    }
+    @if (State.SidebarVisible(Width, ChildSession) && State.Wide(Width))
+    {
+        <SessionSidebar @ref="_sidebar" Title="@Title" Directory="@Directory" Workspace="@Workspace" Summary="Summary"
+                        Mcp="Mcp" Error="@SidebarError" Theme="Theme" />
+    }
+    @if (State.Overlay(Width, ChildSession) && !BlockingRequest)
+    {
+        <Box Position="TuiPosition.Absolute" Left="0" Right="0" Top="0" Bottom="0" ZIndex="20" Bg="#00000046" OnClick="Dismiss">
+            <Box Position="TuiPosition.Absolute" Right="0" Top="0" Bottom="0" Width="@Math.Min(Width, SessionFrameState.SidebarWidth)" OnClick="Consume">
+                <SessionSidebar @ref="_sidebar" Title="@Title" Directory="@Directory" Workspace="@Workspace" Summary="Summary"
+                                Width="@Math.Min(Width, SessionFrameState.SidebarWidth)" Grow="1" Mcp="Mcp" Error="@SidebarError" Theme="Theme" />
+            </Box>
+        </Box>
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public SessionFrameState State { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public int Width { get; set; }
+    [Parameter] public bool ChildSession { get; set; }
+    [Parameter] public bool BlockingRequest { get; set; }
+    [Parameter] public bool TerminalFocused { get; set; }
+    [Parameter] public bool AwayFromBottom { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string Directory { get; set; } = "";
+    [Parameter] public string? Workspace { get; set; }
+    [Parameter] public SessionSummary Summary { get; set; } = new(null, null, null);
+    [Parameter] public IReadOnlyList<OpenCode.Schema.McpServer> Mcp { get; set; } = [];
+    [Parameter] public string? SidebarError { get; set; }
+    [Parameter] public RenderFragment? Transcript { get; set; }
+    [Parameter] public RenderFragment? Composer { get; set; }
+    [Parameter] public RenderFragment? Feedback { get; set; }
+    [Parameter] public RenderFragment? Terminal { get; set; }
+    [Parameter] public EventCallback OnFocusSession { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnResizeStart { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnResize { get; set; }
+    [Parameter] public EventCallback<TerminalPointerEventArgs> OnResizeEnd { get; set; }
+    [Parameter] public EventCallback OnJumpToLatest { get; set; }
+    [Parameter] public EventCallback OnCloseSidebar { get; set; }
+    private SessionSidebar? _sidebar;
+    private Task Jump(TerminalPointerEventArgs args) { args.Handled = true; return OnJumpToLatest.InvokeAsync(); }
+    private Task FocusSession(TerminalPointerEventArgs args) { args.Handled = true; return OnFocusSession.InvokeAsync(); }
+    private Task Dismiss(TerminalPointerEventArgs args) { args.Handled = true; return OnCloseSidebar.InvokeAsync(); }
+    private static void Consume(TerminalPointerEventArgs args) => args.Handled = true;
+    public void ScrollSidebar(int rows) => _sidebar?.Scroll(rows);
+}

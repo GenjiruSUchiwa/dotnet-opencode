@@ -1,0 +1,57 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+@using System.Globalization
+
+<Box>
+    <TuiText Value="@($"{Icon} {Label}{(Background ? "  [Background]" : "")}")" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+    @if (Session is { } session && Bindings?.NavigateSession is not null)
+    {
+        <TuiText Value="@($"Open subagent {session}")" Fg="@(Theme.ActionText ?? Theme.Text)" OnClick="Navigate" WrapMode="NativeTextWrapMode.Word" />
+    }
+    @if (Expanded)
+    {
+        @if (SessionText is { } id)
+        {
+            <TuiText Value="@($"Session: {id}")" Fg="@Theme.Subdued" Selectable="true" WrapMode="NativeTextWrapMode.Word" />
+        }
+        <ToolResultContent Part="Part" Theme="Theme" />
+    }
+    @if (_error is { } error)
+    {
+        <TuiText Value="@error" Fg="@Theme.Error" WrapMode="NativeTextWrapMode.Word" />
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public AssistantToolContent Part { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public ToolViewBindings? Bindings { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    private string? SessionText => ToolResultData.Text(ToolResultData.Metadata(Part), "sessionID") ?? ToolResultData.Text(ToolResultData.Metadata(Part), "sessionId");
+    private SessionId? Session => SessionText is { Length: > 0 } id && id.StartsWith("ses", StringComparison.Ordinal) ? SessionId.FromExisting(id) : null;
+    private bool Continuation => ToolResultData.Text(ToolResultData.Input(Part), "sessionID") is { Length: > 0 };
+    private bool Running => Part.State is ToolStateRunning || Session is { } session && Bindings?.IsSessionRunning?.Invoke(session) == true;
+    private bool Background => Part.State is ToolStateCompleted && ToolResultData.Text(ToolResultData.Metadata(Part), "status") == "running";
+    private string Icon => Continuation ? "↳" : Running ? "│" : Part.State is ToolStateCompleted ? "✓" : "│";
+    private string Label
+    {
+        get
+        {
+            var input = ToolResultData.Input(Part);
+            var description = ToolResultData.Text(input, "description") ?? "Subagent";
+            if (Part.State is ToolStateStreaming && ToolResultData.Text(input, "description") is null) return "Delegating…";
+            return Continuation ? $"Continue subagent — {description}" : $"{CultureInfo.CurrentCulture.TextInfo.ToTitleCase(ToolResultData.Text(input, "agent") ?? ToolResultData.Text(input, "subagent_type") ?? "General")} Subagent — {description}";
+        }
+    }
+    private bool _navigating;
+    private string? _error;
+    private async Task Navigate(TerminalPointerEventArgs args)
+    {
+        args.Handled = true;
+        if (_navigating || Session is not { } session || Bindings?.NavigateSession is not { } navigate) return;
+        _navigating = true;
+        _error = null;
+        try { await navigate(session); }
+        catch (Exception error) { _error = error.Message; }
+        finally { _navigating = false; }
+    }
+}

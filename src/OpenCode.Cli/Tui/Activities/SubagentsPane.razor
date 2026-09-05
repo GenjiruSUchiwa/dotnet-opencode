@@ -1,0 +1,58 @@
+@namespace OpenCode.Cli.Tui.Activities
+@inject System.TimeProvider Clock
+
+@if (Active)
+{
+    <Box FocusKey="activity-subagents" OnKeyDown="Key" Gap="1">
+        @if (Unavailable is { } unavailable)
+        {
+            <TuiText Value="@unavailable" Fg="@((Error ?? _familyError) is null ? Theme.Subdued.Hex : Theme.Color("text.feedback.error.default").Hex)" WrapMode="NativeTextWrapMode.Word" />
+        }
+        else
+        {
+            <Box Height="ListHeight">
+                <ScrollBox State="_scroll">
+                    @if (_rows.Count == 0)
+                    {
+                        <TuiText Value="@($" No {(_activeOnly ? "active" : "inactive")} subagents{(FamilyComplete ? "" : " in the supplied family")}")" Fg="@Theme.Subdued.Hex" Height="1" />
+                    }
+                    @for (var index = 0; index < _rows.Count; index++)
+                    {
+                        var row = _rows[index];
+                        var position = index;
+                        var selected = index == _selected;
+                        var current = row.Session.Id == (CurrentSession ?? SessionId);
+                        <Box @key="row.Session.Id" Direction="TuiFlexDirection.Row" PaddingX="1" Height="1"
+                             Bg="@RowBackground(selected, current)" OnPointerEnter="args => Hover(position, args)" OnClick="args => OpenClick(position, args)">
+                            <TuiText Value="@($"{row.Prefix}{row.Session.Agent ?? "Subagent"}: {ActivityProjection.Title(row.Session, Clock.GetUtcNow())}")"
+                                     Fg="@RowText(selected, current)" Bold="selected" Grow="1" Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                            <TuiText Value="@Status(row.Session)" Fg="@(selected ? Theme.ActionText(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex : StatusColor(row.Session))"
+                                     Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                        </Box>
+                    }
+                </ScrollBox>
+            </Box>
+            @if (Selected is { } selectedRow && ActivityProjection.SubagentJob(selectedRow.Session, Jobs) is { } job)
+            {
+                <Box Direction="TuiFlexDirection.Row" Height="1" Gap="2">
+                    <TuiText Value="@ActivityProjection.JobLabel(job)" Fg="@Theme.Subdued.Hex" Height="1" Grow="1" WrapMode="NativeTextWrapMode.None" />
+                    @if (job.State == ActivityJobState.Running && CancelJob is not null)
+                    { <TuiText Value="cancel job" Fg="@Theme.ActionText(ThemeActionVariant.Destructive).Hex" OnClick="CancelJobClick" Height="1" /> }
+                </Box>
+            }
+            @if (_details && Selected is { } preview)
+            {
+                <Box Height="Math.Max(1, Math.Min(4, TerminalHeight / 4))" Bg="@Theme.Background.Hex">
+                    <TuiText Value="@Preview(preview.Session.Id)" Fg="@Theme.Text.Hex" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                </Box>
+            }
+        }
+        @if (_error is not null) { <TuiText Value="@_error" Fg="@Theme.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+        <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">
+            @if (Selected is { } selectedEntry && ActivityProjection.Running(selectedEntry.Session.Id, ActiveSessions))
+            { <TuiText Value="@($"interrupt {InterruptShortcut}")" Fg="@Theme.ActionText(ThemeActionVariant.Destructive).Hex" OnClick="InterruptClick" Height="1" /> }
+            <TuiText Value="@($"show {(_activeOnly ? "inactive" : "active")} {ToggleShortcut}")" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="ToggleClick" Height="1" />
+            <TuiText Value="enter open · space details" Fg="@Theme.Subdued.Hex" Height="1" />
+        </Box>
+    </Box>
+}

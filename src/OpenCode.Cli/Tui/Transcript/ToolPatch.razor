@@ -1,0 +1,18 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using OpenTui.Native
+
+<Box Border="left" BorderFg="@Theme.Border" Bg="@Theme.ElevatedBackground" PaddingLeft="1">
+    @foreach (var line in Patch.Replace("\r\n", "\n").Split('\n'))
+    {
+        <TuiText Value="@(line.Length == 0 ? " " : line)" Fg="@Color(line)" WrapMode="NativeTextWrapMode.Character" Selectable="true" />
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public string Patch { get; set; } = "";
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    private string Color(string line) => line.StartsWith("@@", StringComparison.Ordinal) ? Theme.DiffHunk ?? Theme.Subdued
+        : line.StartsWith('+') && !line.StartsWith("+++", StringComparison.Ordinal) ? Theme.DiffAdded ?? Theme.Text
+        : line.StartsWith('-') && !line.StartsWith("---", StringComparison.Ordinal) ? Theme.DiffRemoved ?? Theme.Text
+        : Theme.Text;
+}

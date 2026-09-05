@@ -1,0 +1,49 @@
+@namespace OpenCode.Cli.Tui.Commands
+@using OpenCode.Cli.Tui.Dialogs
+
+<Box Position="TuiPosition.Absolute" Left="Anchor.X" Top="@(Anchor.Y - Rows)"
+     Width="Anchor.Width" Height="Rows" ZIndex="100" Direction="TuiFlexDirection.Row" Bg="@Theme.Background">
+    <TuiText Value="@string.Join('\n', Enumerable.Repeat("┃", Rows))" Width="1" Fg="@Border" />
+    <Box Grow="1">
+        <ScrollBox State="_scroll">
+            @if (Options.Count == 0)
+            {
+                <Box PaddingX="1"><TuiText Value="@(Error ?? (Loading ? "Loading commands…" : "No matching commands"))" Fg="@Theme.Subdued" Height="1" /></Box>
+            }
+            @foreach (var item in Options.Select((option, index) => (Option: option, Index: index)))
+            {
+                <Box @key="item.Option.Key" Direction="TuiFlexDirection.Row" PaddingX="1" Height="1"
+                     Bg="@(item.Index == Selected ? Theme.FocusedBackground : Theme.Background)"
+                     OnPointerEnter="() => OnHighlight.InvokeAsync(item.Index)" OnClick="args => Choose(item.Index, args)">
+                    <TuiText Value="@(("/" + item.Option.Name).PadRight(LabelWidth))" Height="1" Fg="@(item.Index == Selected ? Theme.FocusedText : Theme.Text)" />
+                    @if (item.Option.Description is { } description)
+                    {
+                        <TuiText Value="@string.Join(' ', description.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))"
+                                 Height="1" Fg="@(item.Index == Selected ? Theme.FocusedText : Theme.Subdued)" />
+                    }
+                </Box>
+            }
+        </ScrollBox>
+    </Box>
+    <TuiText Value="@string.Join('\n', Enumerable.Repeat("┃", Rows))" Width="1" Fg="@Border" />
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public ComposerAnchor Anchor { get; set; } = new(0, 0, 1, 1);
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter, EditorRequired] public string Border { get; set; } = "";
+    [Parameter] public IReadOnlyList<SlashCommand> Options { get; set; } = [];
+    [Parameter] public int Selected { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+    [Parameter] public EventCallback<int> OnHighlight { get; set; }
+    private readonly TerminalScrollState _scroll = new() { AutoFollow = false };
+    private int Rows => Math.Min(10, Math.Min(Math.Max(1, Options.Count), Math.Max(1, Anchor.Y)));
+    private int LabelWidth => Math.Min(Math.Max(1, Anchor.Width - 4), Options.Select(option => option.Name.Length + 3).DefaultIfEmpty(1).Max());
+    protected override void OnParametersSet()
+    {
+        if (Options.ElementAtOrDefault(Selected) is { } selected) _scroll.Reveal(selected.Key);
+    }
+    private Task Choose(int index, TerminalPointerEventArgs args) { args.Handled = true; return OnSelect.InvokeAsync(index); }
+}

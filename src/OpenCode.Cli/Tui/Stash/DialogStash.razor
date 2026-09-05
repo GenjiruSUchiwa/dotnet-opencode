@@ -1,0 +1,14 @@
+@namespace OpenCode.Cli.Tui.Stash
+
+<DialogSelect T="int" Title="Stash" Theme="Colors" Options="Options" Actions="Actions"
+              Loading="@(!_snapshot.Loaded)" Locked="_busy" OnSelect="SelectAsync" OnMove="Moved" OnFilter="Filtered"
+              OnClose="OnClose" ResolveCommand="ResolveKey" TerminalHeight="TerminalHeight" PreserveSelection="true">
+    <Footer>
+        @if ((_error ?? _snapshot.Error) is { } error)
+        { <TuiText Value="@error" Fg="@Theme.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+        else if (_snapshot.Dirty)
+        { <TuiText Value="Stash changes are not yet saved to disk." Fg="@Theme.Subdued.Hex" /> }
+        else if (_deleting is not null)
+        { <TuiText Value="Delete this stashed prompt?" Fg="@Theme.ActionText(ThemeActionVariant.Destructive, ThemeActionState.Focused).Hex" /> }
+    </Footer>
+</DialogSelect>

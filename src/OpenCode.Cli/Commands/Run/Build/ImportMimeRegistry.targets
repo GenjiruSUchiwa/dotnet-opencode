@@ -1,0 +1,18 @@
+<Project>
+  <!-- Explicit regeneration only: imported with CustomBeforeMicrosoftCommonTargets
+       on the permitted full CLI build. Normal builds compile the generated .cs. -->
+  <UsingTask TaskName="ImportRunMimeRegistry" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task>
+      <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
+      <Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)ImportMimeRegistry.cs.txt" />
+    </Task>
+  </UsingTask>
+  <Target Name="ImportSourceRunMimeRegistry" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'OpenCode.Cli'">
+    <Error Condition="'$(RunMimeSourceRoot)' == ''" Text="RunMimeSourceRoot must explicitly select the reviewed mime-types node_modules source directory." />
+    <ImportRunMimeRegistry SourceRoot="$(RunMimeSourceRoot)" Output="$(MSBuildProjectDirectory)/Commands/Run/RunMimeRegistry.Generated.cs" />
+    <ItemGroup>
+      <Compile Remove="Commands/Run/RunMimeRegistry.Generated.cs;$(MSBuildProjectDirectory)/Commands/Run/RunMimeRegistry.Generated.cs" />
+      <Compile Include="$(MSBuildProjectDirectory)/Commands/Run/RunMimeRegistry.Generated.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

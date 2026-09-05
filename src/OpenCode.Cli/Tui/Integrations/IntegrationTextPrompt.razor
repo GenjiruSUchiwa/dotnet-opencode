@@ -1,0 +1,67 @@
+@namespace OpenCode.Cli.Tui.Integrations
+@implements IDisposable
+
+<Modal Size="ModalSize.Medium" OnClose="OnClose" Background="@Theme.Background" Backdrop="@Theme.Backdrop">
+    <Box PaddingX="2" PaddingBottom="1" Gap="1">
+        <Box Direction="TuiFlexDirection.Row">
+            <TuiText Value="@Title" Fg="@Theme.Text" Bold="true" Grow="1" />
+            <TuiText Value="esc" Fg="@Theme.Subdued" OnClick="CloseClick" />
+        </Box>
+        @if (Description is not null) { <TuiText Value="@Description" Fg="@Theme.Subdued" /> }
+        <Input Value="@(Secret ? new string('•', _editor.Text.Length) : _editor.Text)" Cursor="_editor.Cursor"
+               SelectionAnchor="_editor.SelectionAnchor" Placeholder="@Placeholder" Fg="@Theme.InputText"
+               Bg="@Theme.InputBackground" PlaceholderFg="@Theme.Subdued" FocusKey="integration-prompt" MaxHeight="3"
+               OnKeyDown="Key" OnPaste="Paste" />
+        <TuiText Value="@(_busy ? "Sending…" : "enter confirm · esc cancel")" Fg="@Theme.Subdued" />
+        @if (_error is not null) { <TuiText Value="@_error" Fg="@ErrorColor" /> }
+    </Box>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter, EditorRequired] public string ErrorColor { get; set; } = null!;
+    [Parameter] public string Title { get; set; } = "Connect";
+    [Parameter] public string Placeholder { get; set; } = "";
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string InitialValue { get; set; } = "";
+    [Parameter] public bool Secret { get; set; }
+    [Parameter] public int TerminalWidth { get; set; } = 80;
+    [Parameter, EditorRequired] public Func<string, CancellationToken, Task> Submit { get; set; } = null!;
+    [Parameter] public Func<CancellationToken, Task<string?>>? ReadClipboard { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private readonly TerminalFormEditor _editor = new();
+    private bool _busy;
+    private string? _error;
+    protected override void OnInitialized() => _editor.Reset(InitialValue);
+
+    private async Task Key(TerminalKeyEventArgs args)
+    {
+        args.Handled = true;
+        if (_busy) return;
+        if (args.Key.Key == ConsoleKey.Enter)
+        {
+            _busy = true;
+            _error = null;
+            try { await Submit(_editor.Text, args.CancellationToken); }
+            catch (Exception error) { _error = error.Message; }
+            finally { _busy = false; }
+            return;
+        }
+        if (args.Key.Modifiers.HasFlag(ConsoleModifiers.Control) && args.Key.Key == ConsoleKey.V)
+        {
+            if (ReadClipboard is null) { _error = "Clipboard access is not connected."; return; }
+            try
+            {
+                var value = await ReadClipboard(args.CancellationToken);
+                if (value is not null) _editor.Paste(SingleLine(value));
+            }
+            catch (Exception error) { _error = error.Message; }
+            return;
+        }
+        _editor.Handle(args.Key, args.Measure(Secret ? new string('•', _editor.Text.Length) : _editor.Text, Math.Max(1, Math.Min(54, TerminalWidth - 6))));
+    }
+    private void Paste(TerminalPasteEventArgs args) { args.Handled = true; if (!_busy) _editor.Paste(SingleLine(args.Text)); }
+    private static string SingleLine(string value) => string.Concat(value.Where(character => !char.IsControl(character)));
+    private async Task CloseClick(TerminalPointerEventArgs args) { args.Handled = true; await OnClose.InvokeAsync(); }
+    public void Dispose() => _editor.Reset("");
+}

@@ -1,0 +1,11 @@
+[extend]
+useDefault = true
+
+# This is a public upstream migration identity, not an API credential.
+# Keep the allowance restricted to the exact value and declaration file.
+[[allowlists]]
+description = "Canonical upstream migration ID in the credential schema catalog"
+condition = "AND"
+paths = ['''(^|/)src/OpenCode\.Core/Database/Migrations/SourceMigrationCatalog\.cs$''']
+regexTarget = "secret"
+regexes = ['''^20260611192811_lush_chimera$''']

@@ -1,0 +1,40 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+
+<Box Border="@(Answers is null ? null : "left")" BorderFg="@Theme.Border" PaddingLeft="1">
+    <TuiText Value="@(Answers is not null ? "# Questions" : Questions.Count > 0 ? $"→ Asked {Questions.Count} question{(Questions.Count == 1 ? "" : "s")}" : "→ Asking questions…")"
+             Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+    @if (Expanded && Answers is not null)
+    {
+        <Box Gap="1">
+            @for (var index = 0; index < Questions.Count; index++)
+            {
+                var answer = Answers.ElementAtOrDefault(index);
+                <Box @key="index">
+                    <TuiText Value="@Questions[index]" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                    <TuiText Value="@(answer is { Count: > 0 } ? string.Join(", ", answer) : "(no answer)")"
+                             Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                </Box>
+            }
+        </Box>
+    }
+    @if (Expanded && Answers is null)
+    {
+        <ToolResultContent Part="Part" Theme="Theme" />
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public AssistantToolContent Part { get; set; } = null!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public bool Expanded { get; set; }
+    private IReadOnlyList<string> Questions = [];
+    private IReadOnlyList<IReadOnlyList<string>>? Answers;
+    private ToolState? _previous;
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_previous, Part.State)) return;
+        _previous = Part.State;
+        Questions = ToolResultData.Questions(ToolResultData.Input(Part));
+        Answers = ToolResultData.Answers(ToolResultData.Metadata(Part));
+    }
+}

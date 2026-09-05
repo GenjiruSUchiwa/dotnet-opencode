@@ -1,359 +1,418 @@
 namespace OpenCode.Cli.Tui;
 
-using System.Text;
+using System.Runtime.CompilerServices;
+using Microsoft.AspNetCore.Components;
 using OpenCode.Client;
-using OpenCode.Sdk;
-using OpenCode.Server;
+using OpenCode.Protocol.Groups;
+using OpenCode.Cli.Tui.Components;
+using OpenCode.Cli.Tui.Sessions;
+using OpenCode.Cli.Tui.Permissions;
+using OpenCode.Cli.Tui.Forms;
+using OpenCode.Cli.Tui.Layout;
+using OpenCode.Cli.Tui.Theme;
+using OpenCode.Cli.Tui.Settings;
+using OpenCode.Cli.Tui.MessageActions;
+using OpenCode.Cli.Tui.Commands;
+using OpenCode.Cli.Tui.Images;
+using OpenCode.Cli.Tui.Skills;
+using OpenCode.Cli.Tui.Attachments;
+using OpenCode.Cli.Tui.Activities;
+using OpenCode.Cli.Tui.Models;
+using OpenCode.Cli.Tui.Recovery;
+using OpenTui.Blazor.Nodes;
+using OpenTui.Blazor.TextMarks;
+using OpenCode.Cli.Tui.Tabs;
+using OpenCode.Schema;
+using OpenTui.Blazor;
+using OpenTui.Blazor.Clipboard;
+using OpenTui.Blazor.Code;
 
-public sealed class InteractiveTui
+public static class InteractiveTui
 {
-    private static readonly string[] LogoLeft =
-    [
-        "                   ",
-        "█▀▀█ █▀▀█ █▀▀█ █▀▀▄",
-        "█__█ █__█ █^^^ █__█",
-        "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀~~▀"
-    ];
-
-    private static readonly string[] LogoRight =
-    [
-        "             ▄     ",
-        "█▀▀▀ █▀▀█ █▀▀█ █▀▀█",
-        "█___ █__█ █__█ █^^^",
-        "▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀"
-    ];
-
-    public static async Task RunAsync()
+    public static async Task RunAsync(ServiceEndpoint? explicitServer = null, TimeProvider? clock = null)
     {
-        Console.OutputEncoding = Encoding.UTF8;
+        clock ??= TimeProvider.System;
+        var directory = Directory.GetCurrentDirectory();
+        var themeCatalog = new ThemeCatalog();
+        var settingsStore = new CliSettingsStore();
+        var settings = new CliSettingsController(settingsStore);
+        var themeSettings = CliThemeSettings.FromConfig(await settingsStore.ReadAsync());
+        themeCatalog.SetCustom(await ThemeDiscovery.DiscoverAsync(ThemeDiscovery.ConfigDirectories(CliThemeSettings.GlobalConfigDirectory(), directory)));
+        using var themes = new ThemeState(themeCatalog, themeSettings);
+        themes.MarkReady();
+        var keybindings = await ClientKeybindSettings.LoadAsync(CancellationToken.None);
+        var modelPreferences = new ModelPreferenceService(clock: clock);
+        string? modelPreferencesError = null;
+        try { await modelPreferences.LoadAsync(); }
+        catch (Exception exception) { modelPreferencesError = "Could not load model preferences: " + exception.Message; }
+        var tabs = new SessionTabStorage(directory, clock: clock);
+        ServiceEndpoint? endpoint = null;
+        ServerReadinessClient? readiness = null;
+        SessionClientAdapter? adapter = null;
+        SessionHttpClient? api = null;
+        AppCatalog? catalog = null;
+        SessionPresentation? presentation = null;
+        AgentId? creationAgent = null;
+        ModelRef? creationModel = null;
+        IReadOnlySet<SessionId> activeSessions = new HashSet<SessionId>();
+        IReadOnlyList<SessionInfo> sessionCache = [];
+        var imageLoaders = new List<ImageSourceLoader>();
 
-        // Enter alternate terminal buffer
-        Console.Write("\x1b[?1049h\x1b[?25l");
+        async Task<PromptConfiguration> ReadReadiness(SessionInfo? session, CancellationToken cancellationToken)
+        {
+            var capabilities = await readiness!.ReadAsync(cancellationToken);
+            if (catalog is null || presentation?.Location != (session?.Location ?? new LocationRef(directory)))
+                await LoadCatalogAt(session?.Location ?? new LocationRef(directory), cancellationToken);
+            IReadOnlyList<McpServer> mcp = [];
+            string? mcpError = null;
+            try { mcp = (await api!.ListMcpServersAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)).Data; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { mcpError = SessionClientAdapter.Describe(exception); }
+            IReadOnlyList<CommandInfo> commands = [];
+            string? commandError = null;
+            try { commands = (await api!.ListCommandsAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)).Data; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { commandError = SessionClientAdapter.Describe(exception); }
+            SkillCatalogSnapshot? skills = null;
+            string? skillError = null;
+            try { skills = new(await api!.ListSkillsAsync(session?.Location.Directory ?? directory, session?.Location.WorkspaceId?.Value, cancellationToken)); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { skillError = SessionClientAdapter.Describe(exception); }
+            presentation = new(session, session?.Location ?? new LocationRef(directory), catalog?.Models ?? [], mcp, mcpError,
+                catalog?.Agents, catalog?.Providers, commands, commandError, skills, skillError);
+            ModelInfo? defaultModel = null;
+            if (session?.Model is null && api is not null)
+            {
+                try { defaultModel = (await api.DefaultModelAsync(session?.Location.Directory ?? directory, ct: cancellationToken)).Data; }
+                catch (SessionApiException) { }
+                catch (SessionProtocolException) { }
+            }
+            var location = session?.Location.Directory ?? directory;
+            var agents = catalog?.Agents ?? (api is not null ? (await api.ListAgentsAsync(location, ct: cancellationToken)).Data : []);
+            // Native AgentCatalog places the configured selectable default first;
+            // ResolveAsync(null) uses this same order. Do not invent a local agent.
+            var agent = session?.Agent is { } selectedAgent ? agents.FirstOrDefault(item => item.Id.Value == selectedAgent)
+                : agents.FirstOrDefault(item => !item.Hidden && item.Mode != AgentMode.Subagent);
+            var creationFallback = defaultModel is null ? null : new ModelRef(defaultModel.ProviderId.Value, defaultModel.Id.Value);
+            var selected = session?.Model ?? (session is null ? agent?.Model ?? creationFallback : null);
+            var model = selected is { } selectedModel
+                ? catalog?.Models.FirstOrDefault(item => item.ProviderId.Value == selectedModel.ProviderId && item.Id.Value == selectedModel.Id)
+                : defaultModel;
+            var providerId = selected?.ProviderId ?? model?.ProviderId.Value;
+            var provider = catalog?.Providers.FirstOrDefault(item => item.Id.Value == providerId);
+            var reason = !capabilities.CanExecute ? capabilities.UnavailableReason ?? "Server execution is unavailable."
+                : !capabilities.Instructions ? "The server does not provide native instructions; no degraded execution mode was selected." : null;
+            var uri = new Uri(endpoint!.Url);
+            return new(agent?.Name ?? session?.Agent, model?.Name ?? selected?.Id, provider?.Name ?? providerId,
+                selected?.Variant, ExecutionError: reason, Connection: $"Server {uri.Host}:{uri.Port}",
+                SessionTitle: session?.Title, SessionId: session?.Id,
+                ModelSelection: session?.Model, AgentSelection: agent?.Id,
+                ChildSession: session?.ParentId is not null, AgentModel: agent?.Model, CreationFallback: creationFallback,
+                Directory: location);
+        }
+
+        async Task<PromptConfiguration> Reload(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var selected = await ServiceDaemon.EnsureWithOptionsAsync(new ServiceStartOptions { Server = explicitServer, Clock = clock }, cancellationToken);
+                if (endpoint != selected || adapter is null)
+                {
+                    var sessionId = adapter?.SessionId;
+                    if (adapter is not null) await adapter.DisposeAsync();
+                    readiness?.Dispose();
+                    api?.Dispose();
+                    endpoint = selected;
+                    readiness = new(selected);
+                    api = new(selected);
+                    catalog = null;
+                    adapter = new(selected, ReadReadiness, () => new SessionCreateInput(Location: new LocationRef(directory),
+                        Agent: creationAgent?.Value, Model: creationModel), sessionId, clock: clock);
+                }
+                return await adapter.PrepareAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception)
+            {
+                return new(null, null, null, null, ExecutionError: SessionClientAdapter.Describe(exception));
+            }
+        }
+
+        async Task<SessionHttpClient> RequireApi(CancellationToken cancellationToken)
+        {
+            if (api is not null) return api;
+            var configuration = await Reload(cancellationToken);
+            return api ?? throw new InvalidOperationException(configuration.ExecutionError ?? "The selected server is unavailable.");
+        }
+
+        Task<AppCatalog> LoadCatalog(CancellationToken cancellationToken) =>
+            LoadCatalogAt(adapter?.CurrentSession?.Location ?? new LocationRef(directory), cancellationToken);
+
+        async Task<AppCatalog> LoadCatalogAt(LocationRef location, CancellationToken cancellationToken)
+        {
+            var client = await RequireApi(cancellationToken);
+            var models = client.ListModelsAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken);
+            var providers = client.ListProvidersAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken);
+            var agents = client.ListAgentsAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken);
+            await Task.WhenAll(models, providers, agents);
+            ModelInfo? fallback = null;
+            try { fallback = (await client.DefaultModelAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken)).Data; }
+            catch (SessionProtocolException) { }
+            IReadOnlyList<IntegrationInfo>? integrations = null;
+            string? integrationError = null;
+            try { integrations = (await client.ListIntegrationsAsync(location.Directory, location.WorkspaceId?.Value, cancellationToken)).Data; }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception exception) { integrationError = "Could not load integrations: " + SessionClientAdapter.Describe(exception); }
+            return catalog = new((await models).Data, (await providers).Data, (await agents).Data, fallback, integrations, integrationError);
+        }
+
+        async Task<SessionPickerPage> LoadSessions(SessionPickerQuery query, CancellationToken cancellationToken)
+        {
+            var client = await RequireApi(cancellationToken);
+            var page = await client.ListAsync(new SessionListQuery
+            {
+                Limit = query.Limit, Order = SessionOrder.Descending, RootOnly = true, Search = query.Search,
+                Cursor = query.Cursor, Directory = query.AllProjects ? null : adapter?.CurrentSession?.Location.Directory ?? directory
+            }, cancellationToken);
+            try { activeSessions = (await client.ActiveAsync(cancellationToken)).Data.Keys.Select(SessionId.FromExisting).ToHashSet(); }
+            catch (SessionApiException) { activeSessions = new HashSet<SessionId>(); }
+            sessionCache = sessionCache.Concat(page.Data).GroupBy(session => session.Id).Select(group => group.Last()).ToArray();
+            return new(page.Data, page.Cursor.Next);
+        }
+
+        async IAsyncEnumerable<SessionResponseSnapshot> Prompt(string prompt, [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            var current = adapter ?? throw new InvalidOperationException("The server is not connected. Reload configuration to reconnect.");
+            await foreach (var update in current.PromptAsync(prompt, cancellationToken)) yield return update;
+        }
 
         try
         {
-            await ServiceDaemon.EnsureAsync(port: ServerHost.DefaultPort);
-            await using var client = await OpenCodeClient.CreateAsync();
-
-            var currentInput = new StringBuilder();
-            var history = new List<(string Prompt, string Response)>();
-            var cwd = Directory.GetCurrentDirectory();
-
-            int lastWidth = -1;
-            int lastHeight = -1;
-            TerminalCanvas? canvas = null;
-
-            while (true)
+            // One lazy parser/cache for both Markdown fences and tool diff hunks. Host/component
+            // disposal runs first, so borrowed capture requests drain before the provider retires.
+            await using var syntax = new TreeSitterHighlighter(clock);
+            await using var host = new OpenTuiHost(clock: clock);
+            var recoveryDirectories = new RecoveryDirectoryClient(RequireApi);
+            SettingsRuntimeBindings.RegisterInteraction(settings, host.Interaction);
+            await host.RunAsync<OpenCodeApp>(ParameterView.FromDictionary(new Dictionary<string, object?>
             {
-                int width = Math.Max(40, Console.WindowWidth);
-                int height = Math.Max(12, Console.WindowHeight);
-
-                // Handle resize or initial setup
-                if (width != lastWidth || height != lastHeight || canvas is null)
+                [nameof(OpenCodeApp.NetworkPrompt)] = (Func<string, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>)Prompt,
+                [nameof(OpenCodeApp.NetworkPromptInput)] = (Func<SessionId?, SessionPromptInput, CancellationToken, IAsyncEnumerable<SessionResponseSnapshot>>)((origin, input, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).PromptAsync(origin, input, token)),
+                [nameof(OpenCodeApp.ReadAdmissionAvailability)] = (Func<SessionId?, SessionPromptInput?, SessionAdmissionAvailability>)((origin, input) =>
+                    adapter?.CanAdmit(origin, input) ?? new(false, "The server is not connected.", [])),
+                [nameof(OpenCodeApp.ReloadConfiguration)] = (Func<CancellationToken, Task<PromptConfiguration>>)Reload,
+                [nameof(OpenCodeApp.RequireSessionClient)] = (Func<CancellationToken, Task<SessionHttpClient>>)RequireApi,
+                [nameof(OpenCodeApp.ReadSessionClient)] = (Func<SessionHttpClient?>)(() => api),
+                [nameof(OpenCodeApp.ReadManagementRevision)] = (Func<LocationRef, ManagementRevision>)(location =>
+                    adapter?.ReadManagementRevision(location) ?? default),
+                [nameof(OpenCodeApp.ReloadOnStart)] = true,
+                [nameof(OpenCodeApp.Keybindings)] = keybindings,
+                [nameof(OpenCodeApp.Themes)] = themes,
+                [nameof(OpenCodeApp.TranscriptCodeHighlighter)] = syntax,
+                [nameof(OpenCodeApp.ApplicationThemeCatalog)] = themeCatalog,
+                [nameof(OpenCodeApp.ModelPreferenceState)] = modelPreferences,
+                [nameof(OpenCodeApp.ModelPreferenceLoadError)] = modelPreferencesError,
+                [nameof(OpenCodeApp.LoadStatusMcp)] = (Func<LocationRef, CancellationToken, Task<LocationResponse<IReadOnlyList<McpServer>>>>)(async (location, token) =>
+                    await (await RequireApi(token)).ListMcpServersAsync(location.Directory, location.WorkspaceId?.Value, token)),
+                [nameof(OpenCodeApp.Clipboard)] = host.Clipboard,
+                [nameof(OpenCodeApp.ReadPromptClipboard)] = (Func<ClipboardReadRequest, CancellationToken, Task<ClipboardReadResult>>)host.ReadClipboardAsync,
+                [nameof(OpenCodeApp.ApplyRenderColors)] = (Action<TerminalRenderColors>)(colors => host.Colors = colors),
+                [nameof(OpenCodeApp.InlineTextMarksSupported)] = true,
+                [nameof(OpenCodeApp.ReadPromptMarkMetrics)] = (Func<TerminalTextMarkMetrics?>)(() => TerminalTextMarkMetrics.FromInput(host.Renderer.RootNode, "prompt")),
+                [nameof(OpenCodeApp.FocusComponent)] = (Func<string, bool>)host.Renderer.Focus,
+                [nameof(OpenCodeApp.ReadComposerAnchor)] = (Func<ComposerAnchor?>)(() => FindComposerAnchor(host.Renderer.RootNode)),
+                [nameof(OpenCodeApp.CreateImageLoader)] = (Func<LocationRef, CancellationToken, ImageSourceLoader>)((location, lifetime) =>
                 {
-                    lastWidth = width;
-                    lastHeight = height;
-                    canvas = new TerminalCanvas(width, height);
-                    Console.Clear();
-                }
-
-                RenderScreen(canvas, currentInput.ToString(), history, cwd);
-                canvas.Flush();
-
-                // Position cursor inside input card if on home screen
-                if (history.Count == 0 && height >= 14)
-                {
-                    int cardWidth = Math.Min(75, Math.Max(36, width - 4));
-                    int cardX = Math.Max(2, (width - cardWidth) / 2);
-                    int promptY = height < 18 ? 4 : 14;
-                    int maxInputVisible = cardWidth - 6;
-
-                    int cursorOffset = Math.Min(currentInput.Length, maxInputVisible);
-                    Console.Write($"\x1b[{promptY + 1};{cardX + 3 + cursorOffset}H\x1b[?25h");
-                }
-
-                // Poll for key with non-blocking window resize detection
-                while (!Console.KeyAvailable)
-                {
-                    if (Console.WindowWidth != lastWidth || Console.WindowHeight != lastHeight)
+                    var client = api;
+                    var basis = new Uri(FileReference.FileUri(location.Directory, "").TrimEnd('/') + "/");
+                    var loader = new ImageSourceLoader(new ImageSourceAccess(OpenMedia: async (source, token) =>
                     {
-                        // Window resized! Break out of polling loop to redraw immediately
-                        break;
-                    }
-                    await Task.Delay(30);
-                }
-
-                if (!Console.KeyAvailable)
+                        var uri = Uri.TryCreate(source, UriKind.Absolute, out var absolute) ? absolute : new Uri(basis, source);
+                        if (!uri.IsFile) return null; // No anonymous HTTP or local-file permission fallback.
+                        if (!basis.IsBaseOf(uri)) throw new UnauthorizedAccessException("Image is outside the selected server location.");
+                        if (client is null) throw new InvalidOperationException("The server image source is not connected.");
+                        using var request = CancellationTokenSource.CreateLinkedTokenSource(token, lifetime);
+                        var file = new UriBuilder(uri) { Query = "", Fragment = "" }.Uri;
+                        var relative = Uri.UnescapeDataString(basis.MakeRelativeUri(file).OriginalString);
+                        return new MemoryStream(await client.ReadFileAsync(relative, location.Directory, location.WorkspaceId?.Value, request.Token), writable: false);
+                    }));
+                    imageLoaders.Add(loader);
+                    return loader;
+                }),
+                [nameof(OpenCodeApp.FindPromptFiles)] = (Func<LocationRef, FileSystemFindInput, CancellationToken, Task<LocationResponse<IReadOnlyList<FileSystemEntry>>>>)(async (location, input, token) =>
+                    await (await RequireApi(token)).FindFilesAsync(input, location.Directory, location.WorkspaceId?.Value, token)),
+                [nameof(OpenCodeApp.AdmitCommand)] = (Func<CommandSubmission, Func<SessionInfo, Task>, CancellationToken, Task<SessionInfo>>)(async (submission, ready, token) =>
                 {
-                    continue;
-                }
-
-                var key = Console.ReadKey(intercept: true);
-
-                if (key.Key == ConsoleKey.Escape || (key.Modifiers.HasFlag(ConsoleModifiers.Control) && key.Key == ConsoleKey.C))
+                    await RequireApi(token);
+                    return await adapter!.ExecuteObservedCommandAsync(submission, ready, token);
+                }),
+                [nameof(OpenCodeApp.CopyFormLink)] = (Func<string, CancellationToken, Task>)host.Clipboard.WriteTextAsync,
+                [nameof(OpenCodeApp.StageMessageRevert)] = (Func<MessageTarget, CancellationToken, Task<SessionRevert>>)(async (target, token) =>
+                    (await (await RequireApi(token)).StageRevertAsync(target.SessionId, target.MessageId, ct: token)).Data),
+                [nameof(OpenCodeApp.ForkBeforeMessage)] = (Func<MessageTarget, CancellationToken, Task<SessionInfo>>)(async (target, token) =>
+                    (await (await RequireApi(token)).ForkAsync(target.SessionId, new ForkRequestBoundaryBefore(target.MessageId), token)).Data),
+                [nameof(OpenCodeApp.ReconcileMessageTarget)] = (Func<MessageTarget, CancellationToken, Task>)(async (target, token) =>
                 {
-                    break;
-                }
-
-                if (key.Key == ConsoleKey.Backspace)
+                    var current = adapter ?? throw new InvalidOperationException("The server is not connected.");
+                    var observation = await current.RefreshObservationAsync(target.SessionId, token);
+                    if (observation.Error is not null) throw new InvalidOperationException(observation.Error);
+                }),
+                [nameof(OpenCodeApp.CreateThemePersistence)] = (Func<ThemeState, Action<Exception>, ThemeSettingsPersistence>)((state, report) =>
+                    new ThemeSettingsPersistence(settings, settingsStore, themeCatalog, state, report)),
+                [nameof(OpenCodeApp.Settings)] = settings,
+                [nameof(OpenCodeApp.LoadTabs)] = (Func<CancellationToken, Task<SessionTabLayout>>)tabs.LoadAsync,
+                [nameof(OpenCodeApp.SaveTabs)] = (Func<SessionTabLayout, SessionTabLayout, CancellationToken, Task>)tabs.SaveAsync,
+                [nameof(OpenCodeApp.ReadTabActivity)] = (Func<IReadOnlyDictionary<SessionId, SessionTabActivity>>)(() => adapter?.TabActivity
+                    ?? System.Collections.Immutable.ImmutableDictionary<SessionId, SessionTabActivity>.Empty),
+                [nameof(OpenCodeApp.OpenTabSession)] = (Func<SessionId, CancellationToken, Task<PromptConfiguration>>)(async (sessionId, token) =>
                 {
-                    if (currentInput.Length > 0)
-                    {
-                        currentInput.Remove(currentInput.Length - 1, 1);
-                    }
-                    continue;
-                }
-
-                if (key.Key == ConsoleKey.Enter)
+                    await RequireApi(token);
+                    return await adapter!.OpenSessionAsync(sessionId, token);
+                }),
+                [nameof(OpenCodeApp.LoadCatalog)] = (Func<CancellationToken, Task<AppCatalog>>)LoadCatalog,
+                [nameof(OpenCodeApp.ConfigureNewSession)] = (Action<AgentId?, ModelRef?>)((agent, model) =>
                 {
-                    var promptText = currentInput.ToString().Trim();
-                    if (string.IsNullOrEmpty(promptText)) continue;
-
-                    currentInput.Clear();
-
-                    // Switch to inline streaming view
-                    Console.Write("\x1b[?25h\x1b[0m\n\n");
-                    Console.ForegroundColor = ConsoleColor.Cyan;
-                    Console.WriteLine($"You: {promptText}\n");
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.Write("Assistant: ");
-
-                    var responseBuilder = new StringBuilder();
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-
-                    try
-                    {
-                        await foreach (var chunk in client.AskAsync(promptText, ct: cts.Token))
-                        {
-                            Console.Write(chunk);
-                            responseBuilder.Append(chunk);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"\n[Error: {ex.Message}]");
-                    }
-
-                    Console.ResetColor();
-                    Console.WriteLine("\n\nPress any key to return to prompt box...");
-                    Console.ReadKey(intercept: true);
-
-                    history.Add((promptText, responseBuilder.ToString()));
-                    continue;
-                }
-
-                if (!char.IsControl(key.KeyChar))
+                    creationAgent = agent;
+                    creationModel = model;
+                }),
+                [nameof(OpenCodeApp.ChangeModel)] = (Func<ModelRef, CancellationToken, Task<PromptConfiguration>>)(async (model, token) =>
                 {
-                    currentInput.Append(key.KeyChar);
-                }
-            }
+                    await RequireApi(token);
+                    if (adapter!.SessionId is null) await adapter.CreateSessionAsync(token, model, creationAgent);
+                    else await adapter.SwitchModelAsync(model, token);
+                    return await adapter.PrepareAsync(token);
+                }),
+                [nameof(OpenCodeApp.ChangeAgent)] = (Func<AgentId, CancellationToken, Task<PromptConfiguration>>)(async (agent, token) =>
+                {
+                    await RequireApi(token);
+                    if (adapter!.SessionId is null) await adapter.CreateSessionAsync(token, creationModel, agent);
+                    else await adapter.SwitchAgentAsync(agent, token);
+                    return await adapter.PrepareAsync(token);
+                }),
+                [nameof(OpenCodeApp.LoadSessions)] = (Func<SessionPickerQuery, CancellationToken, Task<SessionPickerPage>>)LoadSessions,
+                [nameof(OpenCodeApp.ReadSessionCache)] = (Func<IReadOnlyList<SessionInfo>>)(() => sessionCache),
+                [nameof(OpenCodeApp.ReportSessionViewed)] = (Func<SessionId, double, CancellationToken, Task>)(async (id, idle, token) =>
+                {
+                    await (await RequireApi(token)).ViewAsync(id, idle, token);
+                    sessionCache = sessionCache.Select(session => session.Id == id
+                        ? session with { Time = session.Time with { Viewed = DateTimeOffset.FromUnixTimeMilliseconds(checked((long)idle)) } } : session).ToArray();
+                }),
+                [nameof(OpenCodeApp.RenameSession)] = (Func<SessionId, string, CancellationToken, Task>)(async (id, title, token) =>
+                {
+                    await (await RequireApi(token)).RenameAsync(id, title, token);
+                    sessionCache = sessionCache.Select(session => session.Id == id ? session with { Title = title } : session).ToArray();
+                }),
+                [nameof(OpenCodeApp.DeleteSession)] = (Func<SessionId, CancellationToken, Task>)(async (id, token) =>
+                {
+                    await (await RequireApi(token)).DeleteAsync(id, token);
+                    adapter?.ForgetDeletedSession(id);
+                    sessionCache = sessionCache.Where(session => session.Id != id).ToArray();
+                }),
+                [nameof(OpenCodeApp.ReadActiveSessions)] = (Func<IReadOnlySet<SessionId>>)(() => activeSessions),
+                [nameof(OpenCodeApp.ReadPermissions)] = (Func<IReadOnlyList<PermissionRequest>>)(() => adapter?.Permissions ?? []),
+                [nameof(OpenCodeApp.ReadPersistentPermissionGrants)] = (Func<bool>)(() => adapter?.PersistentPermissionGrants == true),
+                [nameof(OpenCodeApp.ReadForms)] = (Func<SessionFormSnapshot?>)(() => adapter?.Forms),
+                [nameof(OpenCodeApp.ReadSessionObservation)] = (Func<SessionId, SessionObservationSnapshot?>)(id => adapter?.ReadObservation(id)),
+                [nameof(OpenCodeApp.ReadActivityFeed)] = (Func<ActivityFeedSnapshot?>)(() => adapter?.ActivityFeed),
+                [nameof(OpenCodeApp.LoadActivityFamily)] = (Func<SessionId, CancellationToken, Task<IReadOnlyList<SessionInfo>>>)(async (id, token) =>
+                {
+                    await RequireApi(token);
+                    return await adapter!.LoadActivityFamilyAsync(id, token);
+                }),
+                [nameof(OpenCodeApp.ObserveActivitySession)] = (Func<SessionId, CancellationToken, Task<SessionObservationSnapshot>>)((id, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).ObserveSessionAsync(id, token)),
+                [nameof(OpenCodeApp.MergeActivityShell)] = (Action<LocatedShell, long?>)((shell, revision) => adapter?.MergeActivityShell(shell, revision)),
+                [nameof(OpenCodeApp.RemoveActivityShell)] = (Action<LocationRef, ShellId, long?>)((location, id, revision) => adapter?.RemoveActivityShell(location, id, revision)),
+                [nameof(OpenCodeApp.RunSessionShell)] = (Func<SessionShellSubmission, Func<SessionInfo, Task>, CancellationToken, Task>)(async (submission, ready, token) =>
+                {
+                    await RequireApi(token);
+                    await adapter!.ExecuteObservedShellAsync(submission, ready, token);
+                }),
+                [nameof(OpenCodeApp.ReadRecoveryFeed)] = (Func<SessionFeedSnapshot?>)(() => adapter?.Feed),
+                [nameof(OpenCodeApp.LoadRecoveryDirectories)] = (Func<ProjectId, LocationRef, CancellationToken, Task<RecoveryDirectoryPage>>)recoveryDirectories.WorktreesAsync,
+                [nameof(OpenCodeApp.BrowseRecoveryDirectory)] = (Func<LocationRef, CancellationToken, Task<RecoveryDirectoryPage>>)recoveryDirectories.ChildrenAsync,
+                [nameof(OpenCodeApp.SubmitRecoveryMove)] = (Func<SessionId, LocationRef, InboxDeliveryMode?, CancellationToken, Task<SessionMoveSnapshot>>)((id, destination, delivery, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).MoveSessionAsync(id, destination, delivery, token)),
+                [nameof(OpenCodeApp.RetryRecoveryFeed)] = (Func<CancellationToken, Task>)(token =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).RetryConnectionAsync(token)),
+                [nameof(OpenCodeApp.ReloadRecoverySession)] = (Func<SessionId, CancellationToken, Task<SessionObservationSnapshot>>)((id, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).ReloadSessionAsync(id, token)),
+                [nameof(OpenCodeApp.MutateInbox)] = (Func<SessionId, MessageId, PendingInputAction, CancellationToken, Task>)(async (id, item, action, token) =>
+                {
+                    var client = await RequireApi(token);
+                    if (action == PendingInputAction.Steer) await client.SteerInboxAsync(id, item, token);
+                    else if (action == PendingInputAction.Queue) await client.QueueInboxAsync(id, item, token);
+                    else await client.CancelInboxAsync(id, item, token);
+                }),
+                [nameof(OpenCodeApp.RefreshInbox)] = (Func<SessionId, CancellationToken, Task>)(async (id, token) =>
+                {
+                    var current = adapter ?? throw new InvalidOperationException("The server is not connected.");
+                    var snapshot = await current.RefreshObservationAsync(id, token);
+                    if (snapshot.Error is not null) throw new InvalidOperationException(snapshot.Error);
+                }),
+                [nameof(OpenCodeApp.ReadDeletedTabSessions)] = (Func<IReadOnlySet<SessionId>>)(() => adapter?.DeletedSessions ?? new HashSet<SessionId>()),
+                [nameof(OpenCodeApp.InterruptObservedSession)] = (Func<SessionId, CancellationToken, Task>)((id, token) =>
+                    (adapter ?? throw new InvalidOperationException("The server is not connected.")).InterruptSessionAsync(id, token)),
+                [nameof(OpenCodeApp.OpenFormLink)] = (Func<string, CancellationToken, Task>)FormExternalActions.OpenAsync,
+                [nameof(OpenCodeApp.ReadPresentation)] = (Func<SessionPresentation?>)(() => presentation),
+                [nameof(OpenCodeApp.RefreshForms)] = (Func<CancellationToken, Task>)(async token =>
+                {
+                    await RequireApi(token);
+                    await adapter!.RefreshCurrentFormsAsync(token);
+                }),
+                [nameof(OpenCodeApp.ReplyForm)] = (Func<FormReplyRequest, CancellationToken, Task>)(async (request, token) =>
+                {
+                    var current = adapter ?? throw new InvalidOperationException("The server is not connected.");
+                    await current.ReplyFormAsync(request, token);
+                }),
+                [nameof(OpenCodeApp.CancelForm)] = (Func<FormCancelRequest, CancellationToken, Task>)(async (request, token) =>
+                {
+                    var current = adapter ?? throw new InvalidOperationException("The server is not connected.");
+                    await current.CancelFormAsync(request, token);
+                }),
+                [nameof(OpenCodeApp.RefreshPermissions)] = (Func<CancellationToken, Task>)(token => adapter?.RefreshCurrentPermissionsAsync(token) ?? Task.CompletedTask),
+                [nameof(OpenCodeApp.ReplyPermission)] = (Func<PermissionDecision, CancellationToken, Task>)(async (decision, token) =>
+                {
+                    var current = adapter ?? throw new InvalidOperationException("The server is not connected.");
+                    await current.ReplyPermissionAsync(decision.SessionId, decision.RequestId, decision.Reply, decision.Feedback, token);
+                }),
+                [nameof(OpenCodeApp.OpenSession)] = (Func<SessionInfo, CancellationToken, Task<PromptConfiguration>>)(async (session, token) =>
+                {
+                    await RequireApi(token);
+                    return await adapter!.OpenSessionAsync(session.Id, token);
+                }),
+                [nameof(OpenCodeApp.CreateSession)] = (Func<CancellationToken, Task<PromptConfiguration>>)(async token =>
+                {
+                    await RequireApi(token);
+                    await adapter!.CreateSessionAsync(token);
+                    return await adapter.PrepareAsync(token);
+                }),
+                [nameof(OpenCodeApp.CurrentDirectory)] = directory,
+                [nameof(OpenCodeApp.ExecutionError)] = "Server connection has not been established.",
+                [nameof(OpenCodeApp.Version)] = typeof(InteractiveTui).Assembly.GetName().Version?.ToString(3) ?? "unknown",
+                [nameof(OpenCodeApp.NewConversation)] = (Func<CancellationToken, Task>)(token =>
+                {
+                    token.ThrowIfCancellationRequested();
+                    adapter?.NewConversation();
+                    return Task.CompletedTask;
+                })
+            }), title: "opencode-dotnet");
         }
         finally
         {
-            // Exit alternate buffer and show cursor
-            Console.Write("\x1b[?25h\x1b[?1049l\x1b[0m");
+            foreach (var loader in imageLoaders) loader.Dispose();
+            try { if (adapter is not null) await adapter.DisposeAsync(); }
+            finally { readiness?.Dispose(); api?.Dispose(); }
         }
     }
 
-    private static void RenderScreen(
-        TerminalCanvas canvas,
-        string currentInput,
-        List<(string Prompt, string Response)> history,
-        string cwd)
+    private static ComposerAnchor? FindComposerAnchor(TuiNode node)
     {
-        canvas.Clear(RgbColor.Black);
-
-        // 1. Draw Wordmark (only if terminal has sufficient height)
-        int logoWidth = 40;
-        int logoX = Math.Max(2, (canvas.Width - logoWidth) / 2);
-        int logoY = 6;
-
-        if (canvas.Height >= 18)
-        {
-            // Subtle "dotnet" above wordmark in official .NET blurple (#7B61FF)
-            string dotnetHeader = "d  o  t  n  e  t";
-            int dotnetX = logoX + (logoWidth - dotnetHeader.Length) / 2;
-            canvas.DrawString(dotnetX, logoY - 1, dotnetHeader, RgbColor.DotnetBlurple, bold: true);
-
-            // Responsive wordmark rendering
-            if (canvas.Width < 45)
-            {
-                // Collapse vertically if width is narrow
-                for (int row = 1; row < 4; row++)
-                {
-                    DrawLogoLine(canvas, Math.Max(2, (canvas.Width - 19) / 2), logoY + row - 1, LogoRight[row], RgbColor.White, RgbColor.DarkGray, bold: true);
-                }
-            }
-            else
-            {
-                // Full dual-tone wordmark
-                for (int row = 0; row < 4; row++)
-                {
-                    DrawLogoLine(canvas, logoX, logoY + row, LogoLeft[row], RgbColor.Gray, RgbColor.Charcoal, bold: false);
-                    DrawLogoLine(canvas, logoX + 20, logoY + row, LogoRight[row], RgbColor.White, RgbColor.DarkGray, bold: true);
-                }
-            }
-        }
-
-        // 2. Draw Center Prompt Input Card
-        int cardWidth = Math.Min(75, Math.Max(36, canvas.Width - 4));
-        int cardX = Math.Max(2, (canvas.Width - cardWidth) / 2);
-        int cardY = canvas.Height >= 18 ? 13 : 3;
-        int cardHeight = 4;
-
-        if (cardY + cardHeight + 2 < canvas.Height)
-        {
-            // Elevated card background
-            canvas.FillRect(cardX + 1, cardY, cardWidth - 1, cardHeight, RgbColor.CardBg);
-
-            // Left accent blue bar
-            for (int y = cardY; y < cardY + cardHeight; y++)
-            {
-                canvas.DrawChar(cardX, y, '┃', RgbColor.AccentBlue, RgbColor.Black, bold: true);
-            }
-            canvas.DrawChar(cardX, cardY + cardHeight, '╹', RgbColor.AccentBlue, RgbColor.Black, bold: true);
-
-            // Bottom shadow line
-            for (int x = cardX + 1; x < cardX + cardWidth; x++)
-            {
-                canvas.DrawChar(x, cardY + cardHeight, '▀', RgbColor.CardBg, RgbColor.Black);
-            }
-
-            // Input Text with Horizontal Windowing / Scrolling (Prevents card overflow)
-            int maxVisibleChars = Math.Max(10, cardWidth - 6);
-            string displayText;
-            RgbColor displayColor;
-
-            if (string.IsNullOrEmpty(currentInput))
-            {
-                displayText = "Ask anything… \"Fix a TODO in the codebase\"";
-                displayColor = RgbColor.Gray;
-            }
-            else
-            {
-                if (currentInput.Length > maxVisibleChars)
-                {
-                    displayText = currentInput[^maxVisibleChars..];
-                }
-                else
-                {
-                    displayText = currentInput;
-                }
-                displayColor = RgbColor.PureWhite;
-            }
-
-            canvas.DrawString(cardX + 3, cardY + 1, displayText, displayColor, RgbColor.CardBg, maxWidth: maxVisibleChars);
-
-            // Badge line inside card
-            int badgeMaxWidth = cardWidth - 6;
-            string badgeText = "Build · Gemini 3.7 Flash";
-            if (badgeText.Length <= badgeMaxWidth)
-            {
-                canvas.DrawString(cardX + 3, cardY + 2, "Build", RgbColor.AccentBlue, RgbColor.CardBg);
-                canvas.DrawString(cardX + 9, cardY + 2, "·", RgbColor.Gray, RgbColor.CardBg);
-                canvas.DrawString(cardX + 11, cardY + 2, "Gemini 3.7 Flash", RgbColor.Gray, RgbColor.CardBg);
-            }
-
-            // 3. Sub-Card Metadata (Overlap protected)
-            int metaY = cardY + cardHeight + 1;
-            int keybindTotalWidth = 28;
-
-            if (cardWidth >= keybindTotalWidth + 20)
-            {
-                int maxPathWidth = Math.Max(5, cardWidth - keybindTotalWidth - 3);
-                var truncCwd = TruncatePath(cwd, maxPathWidth);
-                canvas.DrawString(cardX, metaY, truncCwd, RgbColor.Gray, maxWidth: maxPathWidth);
-
-                int keybindX = cardX + cardWidth - keybindTotalWidth;
-                canvas.DrawString(keybindX, metaY, "shift+tab", RgbColor.White, bold: true);
-                canvas.DrawString(keybindX + 10, metaY, "agents", RgbColor.Gray);
-                canvas.DrawString(keybindX + 18, metaY, "ctrl+p", RgbColor.White, bold: true);
-                canvas.DrawString(keybindX + 25, metaY, "commands", RgbColor.Gray);
-            }
-            else if (cardWidth >= keybindTotalWidth)
-            {
-                canvas.DrawString(cardX, metaY, "shift+tab", RgbColor.White, bold: true);
-                canvas.DrawString(cardX + 10, metaY, "agents", RgbColor.Gray);
-                canvas.DrawString(cardX + 18, metaY, "ctrl+p", RgbColor.White, bold: true);
-                canvas.DrawString(cardX + 25, metaY, "commands", RgbColor.Gray);
-            }
-        }
-
-        // 4. Bottom Footer Status Bar (1 row at bottom, responsive overlap protected)
-        int footerY = canvas.Height - 1;
-        canvas.FillRect(0, footerY, canvas.Width, 1, RgbColor.BottomBarBg);
-
-        int fx = 1;
-        canvas.DrawChar(fx, footerY, '✓', RgbColor.SuccessGreen, RgbColor.BottomBarBg);
-        canvas.DrawString(fx + 2, footerY, "Server", RgbColor.Gray, RgbColor.BottomBarBg);
-        fx += 10;
-
-        if (canvas.Width >= 55)
-        {
-            canvas.DrawChar(fx, footerY, '○', RgbColor.Gray, RgbColor.BottomBarBg);
-            canvas.DrawString(fx + 2, footerY, "UI", RgbColor.Gray, RgbColor.BottomBarBg);
-            fx += 6;
-        }
-
-        if (canvas.Width >= 70)
-        {
-            canvas.DrawString(fx, footerY, "Theme", RgbColor.Gray, RgbColor.BottomBarBg);
-            fx += 7;
-            canvas.DrawString(fx, footerY, "Tools", RgbColor.Gray, RgbColor.BottomBarBg);
-            fx += 7;
-        }
-
-        if (canvas.Width >= 85)
-        {
-            canvas.DrawString(fx, footerY, "Experiments", RgbColor.Gray, RgbColor.BottomBarBg);
-        }
-
-        string version = "10.0.0-opencode-dotnet";
-        if (canvas.Width >= fx + version.Length + 4)
-        {
-            canvas.DrawString(canvas.Width - version.Length - 2, footerY, version, RgbColor.Gray, RgbColor.BottomBarBg);
-        }
-    }
-
-    private static void DrawLogoLine(
-        TerminalCanvas canvas,
-        int startX,
-        int y,
-        string line,
-        RgbColor fg,
-        RgbColor shadow,
-        bool bold)
-    {
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '_')
-            {
-                canvas.DrawChar(startX + i, y, ' ', fg, bg: shadow, bold);
-            }
-            else if (c == '^')
-            {
-                canvas.DrawChar(startX + i, y, '▀', fg, bg: shadow, bold);
-            }
-            else if (c == '~')
-            {
-                canvas.DrawChar(startX + i, y, '▀', shadow, bold: bold);
-            }
-            else if (c == ',')
-            {
-                canvas.DrawChar(startX + i, y, '▄', shadow, bold: bold);
-            }
-            else
-            {
-                canvas.DrawChar(startX + i, y, c, fg, bold: bold);
-            }
-        }
-    }
-
-    private static string TruncatePath(string path, int max)
-    {
-        if (path.Length <= max) return path;
-        return "..." + path[^(max - 3)..];
+        if (node.FocusKey == "command-composer" && node.LayoutWidth > 0 && node.LayoutHeight > 0)
+            return new(node.X, node.Y, node.LayoutWidth, node.LayoutHeight);
+        foreach (var child in node.LayoutChildren)
+            if (FindComposerAnchor(child) is { } anchor) return anchor;
+        return null;
     }
 }

@@ -1,0 +1,81 @@
+@namespace OpenCode.Cli.Tui.SystemDialogs
+@implements IDisposable
+@using System.Collections.Immutable
+@using System.Text
+
+<Modal Background="@Theme.Background.Hex" Backdrop="@Backdrop" OnClose="OnClose">
+    <Box PaddingX="2" PaddingBottom="1" Gap="1" FocusKey="dialog-status" OnKeyDown="Key">
+        <Box Direction="TuiFlexDirection.Row" Height="1">
+            <TuiText Value="Status" Fg="@Theme.Text.Hex" Bold="true" Grow="1" Height="1" />
+            <TuiText Value="esc" Fg="@Theme.Subdued.Hex" Height="1" OnClick="CloseClick" />
+        </Box>
+        @if (Error is not null)
+        {
+            <TuiText Value="MCP status unavailable" Fg="@Theme.Color("text.feedback.error.default").Hex" Bold="true" />
+            <TuiText Value="@Error" Fg="@Theme.Subdued.Hex" WrapMode="NativeTextWrapMode.Word" />
+        }
+        else if (Mcp is null)
+        {
+            <TuiText Value="@(Loading ? "Loading MCP status…" : "MCP status has not been loaded.")" Fg="@Theme.Subdued.Hex" />
+        }
+        else if (Mcp.Count == 0)
+        {
+            <TuiText Value="No MCP servers" Fg="@Theme.Text.Hex" />
+        }
+        else
+        {
+            <TuiText Value="@($"{Mcp.Count} MCP server{(Mcp.Count == 1 ? "" : "s")}")" Fg="@Theme.Text.Hex" />
+            <Box Height="Math.Max(1, Math.Min(Mcp.Count * 2, TerminalHeight - 7))">
+                <ScrollBox State="_scroll">
+                    @foreach (var item in Mcp)
+                    {
+                        <Box @key="item.Name" Direction="TuiFlexDirection.Row" Gap="1">
+                            <TuiText Value="•" Width="1" Fg="@StatusColor(item.Status)" />
+                            <TuiText Runs="StatusRuns(item)" Grow="1" WrapMode="NativeTextWrapMode.Word" />
+                        </Box>
+                    }
+                </ScrollBox>
+            </Box>
+        }
+    </Box>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter, EditorRequired] public string Backdrop { get; set; } = null!;
+    [Parameter] public IReadOnlyList<McpServer>? Mcp { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback OnClose { get; set; }
+    private readonly TerminalScrollState _scroll = new() { AutoFollow = false };
+
+    private string StatusColor(McpStatus status) => status switch
+    {
+        McpConnectedStatus => Theme.Color("text.feedback.success.default").Hex,
+        McpFailedStatus => Theme.Color("text.feedback.error.default").Hex,
+        McpNeedsAuthStatus => Theme.Color("text.feedback.warning.default").Hex,
+        _ => Theme.Subdued.Hex
+    };
+    private static string StatusText(McpStatus status) => status switch
+    {
+        McpConnectedStatus => "Connected", McpFailedStatus failed => failed.Error,
+        McpDisabledStatus => "Disabled in configuration", McpNeedsAuthStatus => "Needs authentication",
+        McpPendingStatus => "pending", _ => "Unknown MCP status"
+    };
+    private ImmutableArray<NativeTextRun> StatusRuns(McpServer server) =>
+    [new(Encoding.UTF8.GetBytes(server.Name), Theme.Text.Native, Attributes: 1u),
+        new(Encoding.UTF8.GetBytes(" " + StatusText(server.Status)), Theme.Subdued.Native)];
+    private Task CloseClick(TerminalPointerEventArgs args) { args.Handled = true; return OnClose.InvokeAsync(); }
+    private async Task Key(TerminalKeyEventArgs args)
+    {
+        args.Handled = true;
+        if (args.Key.Key == ConsoleKey.Escape || args.Key.Key == ConsoleKey.C && args.Key.Modifiers.HasFlag(ConsoleModifiers.Control))
+        { await OnClose.InvokeAsync(); return; }
+        if (args.Key.Key == ConsoleKey.UpArrow) _scroll.ScrollBy(-1);
+        if (args.Key.Key == ConsoleKey.DownArrow) _scroll.ScrollBy(1);
+        if (args.Key.Key == ConsoleKey.PageUp) _scroll.ScrollBy(-Math.Max(1, _scroll.ViewportHeight));
+        if (args.Key.Key == ConsoleKey.PageDown) _scroll.ScrollBy(Math.Max(1, _scroll.ViewportHeight));
+    }
+    public void Dispose() => _scroll.Detach();
+}

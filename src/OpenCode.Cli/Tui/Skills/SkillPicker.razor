@@ -1,0 +1,32 @@
+@namespace OpenCode.Cli.Tui.Skills
+
+@if (_loading || _error is not null)
+{
+    <Modal Size="ModalSize.Large" Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="CloseAsync">
+        <Box PaddingLeft="4" PaddingRight="4" PaddingBottom="1" Gap="1">
+            <TuiText Value="Skills" Fg="@Theme.Text" Bold="true" />
+            @if (_error is not null)
+            {
+                <TuiText Value="Could not load skills" Fg="@ErrorColor" Bold="true" />
+                <TuiText Value="@_error" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+                <TuiText Value="Close and reopen Skills to try again." Fg="@Theme.Subdued" />
+            }
+            else { <TuiText Value="Loading skills…" Fg="@Theme.Subdued" /> }
+        </Box>
+    </Modal>
+}
+else if (_catalog?.Skills.Count == 0)
+{
+    <Modal Size="ModalSize.Large" Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="CloseAsync">
+        <Box PaddingLeft="4" PaddingRight="4" PaddingBottom="1" Gap="1">
+            <TuiText Value="Skills" Fg="@Theme.Text" Bold="true" />
+            <TuiText Value="No skills available" Fg="@Theme.Subdued" />
+        </Box>
+    </Modal>
+}
+else
+{
+    <DialogSelect T="SkillId?" Title="Skills" Theme="Theme" Size="ModalSize.Large" TerminalHeight="TerminalHeight"
+                  Options="Options" OnSelect="SelectedAsync" OnMove="Focused" OnClose="CloseAsync"
+                  ResolveCommand="ResolveCommand" Error="@_selectionError" RenderFilter="true" PreserveSelection="true" />
+}

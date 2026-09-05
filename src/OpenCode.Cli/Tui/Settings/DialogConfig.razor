@@ -1,0 +1,70 @@
+@namespace OpenCode.Cli.Tui.Settings
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Cli.Tui.Dialogs
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+@implements IDisposable
+
+<DialogSelect T="string" Title="Settings" Theme="Theme" Options="@(Controller.Loaded ? Controller.Options : [])"
+              Current="@InitialSelection" HasCurrent="true" PreserveSelection="true" FilterThreshold="0.7"
+              Loading="@(!Controller.Loaded && _loadError is null)" Error="@(_loadError ?? Controller.Error)"
+              TerminalHeight="TerminalHeight" OnSelect="Change" OnMove="Moved" BeforeKey="Key" OnClose="OnClose">
+    <Footer>
+        <Box Direction="TuiFlexDirection.Row" Gap="1" Height="1">
+            <TuiText Value="←/→" Fg="@Theme.Text" Bold="true" Height="1" />
+            <TuiText Value="change" Fg="@Theme.Subdued" Height="1" />
+        </Box>
+    </Footer>
+</DialogSelect>
+
+@code {
+    [Parameter, EditorRequired] public CliSettingsController Controller { get; set; } = null!;
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter] public string? Current { get; set; }
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback OnClose { get; set; }
+    private readonly CancellationTokenSource _lifetime = new();
+    private CliSettingsController? _subscribed;
+    private string? _selected;
+    private string? _loadError;
+    private bool _loading;
+    private string? InitialSelection => Controller.PaletteSettings.Any(setting => setting.Id == Current)
+        ? Current : Controller.PaletteSettings.FirstOrDefault()?.Id;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(_subscribed, Controller))
+        {
+            if (_subscribed is not null) _subscribed.Changed -= Refresh;
+            _subscribed = Controller;
+            Controller.Changed += Refresh;
+            _selected = InitialSelection;
+        }
+        if (Controller.Loaded || _loading || _loadError is not null) return;
+        _loading = true;
+        try { await Controller.LoadAsync(_lifetime.Token); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception exception) { _loadError = exception.Message; }
+        finally { _loading = false; }
+    }
+
+    private void Refresh() => StateHasChanged();
+    private void Moved(string id) => _selected = id;
+    private async Task Change(string id)
+    {
+        _selected = id;
+        await Controller.ChangeAsync(id, 1, _lifetime.Token);
+    }
+    private async Task<bool> Key(ConsoleKeyInfo key)
+    {
+        if (key.Key is not (ConsoleKey.LeftArrow or ConsoleKey.RightArrow) || key.Modifiers != 0) return false;
+        if ((_selected ?? InitialSelection) is { } id) await Controller.ChangeAsync(id, key.Key == ConsoleKey.LeftArrow ? -1 : 1, _lifetime.Token);
+        return true;
+    }
+    public void Dispose()
+    {
+        if (_subscribed is not null) _subscribed.Changed -= Refresh;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

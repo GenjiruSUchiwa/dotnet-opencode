@@ -1,0 +1,79 @@
+@namespace OpenCode.Cli.Tui.Components
+@using OpenCode.Cli.Tui.Tabs
+@using OpenTui.Native
+@using OpenTui.Blazor.Nodes
+
+<Box Direction="@(Vertical ? TuiFlexDirection.Column : TuiFlexDirection.Row)" Width="@(Vertical ? RailWidth : TerminalWidth)"
+     Height="@(Vertical ? TerminalHeight : 1)" PaddingTop="@(Vertical && !Items.Any(tab => tab.SessionId is not null) ? 1 : 0)" Bg="@Theme.Background"
+     OnPointerMove="Drag" OnPointerUp="Release" OnPointerLeave="LeaveStrip" OnWheel="Wheel">
+    @if (!Vertical && _layout.Before > 0)
+    {
+        <TuiText Value="@($"‹{_layout.Before} ")" Width="@AdaptiveSessionTabs.OverflowWidth(_layout.Before)" Height="1"
+                 Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.None" OnClick="Before" />
+    }
+    @foreach (var item in Visible())
+    {
+        var tab = item.Tab;
+        var status = Status(tab);
+        var titleWidth = TitleWidth(tab, item.Width);
+        var background = Background(tab);
+        @if (Vertical)
+        {
+            <TuiText Runs="@_separators[tab.Key].Runs(RailWidth, Theme)" Width="RailWidth" Height="1"
+                     WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+        }
+        <Box @key="tab.Key" Direction="TuiFlexDirection.Column" Width="item.Width" Height="@(Vertical ? 2 : 1)" Bg="@background"
+             OnPointerEnter="() => Enter(tab, titleWidth)" OnPointerLeave="() => Leave(tab)" OnPointerDown="args => Down(tab, args)">
+            <Box Direction="TuiFlexDirection.Row" Height="1">
+                <TuiText Runs="@_text.Runs(Indicator(tab).PadLeft(NumberWidth) + " ", Math.Min(item.Width, NumberWidth + 1), 0, MarkerColor(tab), background,
+                             tab.Key == Selected, false, false, false, column => PulseCell(tab, item.Width, column))"
+                         Width="@Math.Min(item.Width, NumberWidth + 1)" Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                <TuiText Runs="@TitleRuns(tab, item.Width, titleWidth)"
+                         Width="titleWidth" Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                @if (_hovered == tab.Key && item.Width >= 2)
+                {
+                    <Box Position="TuiPosition.Absolute" Right="1" Top="0" Width="1" Height="1">
+                        <TuiText Value="✕" Width="1" Height="1" Fg="@Theme.Subdued" OnPointerDown="args => CloseDown(tab, args)" OnClick="args => Close(tab, args)" />
+                    </Box>
+                }
+            </Box>
+            @if (Vertical)
+            {
+                <Box Direction="TuiFlexDirection.Row" PaddingLeft="@(NumberWidth + 1)" Height="1">
+                    <TuiText Runs="@_text.Runs(tab.Detail ?? "", titleWidth, 0, Theme.Subdued, background, false, false, false, true,
+                                 column => PulseCell(tab, Math.Min(10, item.Width), column, true), NumberWidth + 1)"
+                             Width="titleWidth" Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+                </Box>
+            }
+        </Box>
+    }
+    @if (Vertical && Visible().LastOrDefault().Tab is { } last)
+    {
+        @if (last.Key == _bottomKey && _bottomSeparator is { } bottom)
+        {
+            <TuiText Runs="@bottom.Runs(RailWidth, Theme, true)" Width="RailWidth" Height="1"
+                     WrapMode="NativeTextWrapMode.None" PointerEvents="false" />
+        }
+        else
+        {
+            <Box Height="1" />
+        }
+    }
+    @if (!Vertical && _layout.After > 0)
+    {
+        <TuiText Value="@($" {_layout.After}›")" Width="@AdaptiveSessionTabs.OverflowWidth(_layout.After)" Height="1"
+                 Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.None" OnClick="After" />
+    }
+    @if (ShowPlus)
+    {
+        <TuiText Value="@(Vertical ? " + New session" : " + ")" Width="@(Vertical ? RailWidth : 3)" Height="1"
+                 Fg="@Theme.Subdued" OnClick="Add" OnPointerDown="AddDown" />
+    }
+    @if (Vertical && Items.FirstOrDefault(tab => tab.Key == Selected && tab.SessionId is null) is { } home)
+    {
+        <Box Direction="TuiFlexDirection.Row" Height="1" Width="RailWidth" Bg="@Theme.Selected" OnPointerEnter="() => Enter(home, RailWidth - 4)" OnPointerLeave="() => Leave(home)">
+            <TuiText Value=" + New session" Grow="1" Height="1" Fg="@Theme.Text" Bold="true" PointerEvents="false" />
+            @if (_hovered == home.Key) { <TuiText Value="×" Width="2" Height="1" Fg="@Theme.Subdued" OnClick="args => Close(home, args)" /> }
+        </Box>
+    }
+</Box>

@@ -1,0 +1,39 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using OpenTui.Native
+
+<Box Border="left" BorderFg="@Theme.Border" Bg="@Theme.ElevatedBackground" PaddingX="1" PaddingTop="1" PaddingBottom="1">
+    <TuiText Value="@Preview" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+    @if (!Expanded && Preview.Length < Content.Length)
+    {
+        <TuiText Value="… expand this row for full output" Fg="@Theme.Subdued" />
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public string? Command { get; set; }
+    [Parameter] public string? Workdir { get; set; }
+    [Parameter] public string Output { get; set; } = "";
+    [Parameter] public bool Running { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    private string Content => string.Join("\n\n", new[]
+    {
+        Command is null ? "Writing command…" : (Running ? "" : "$ ") +
+            (Workdir is { Length: > 0 } && Workdir != "." ? $"cd {Workdir} && " : "") + Command,
+        Output.Trim()
+    }.Where(value => value.Length > 0));
+    private string Preview
+    {
+        get
+        {
+            if (Expanded) return Content;
+            var lines = string.Join('\n', Content.Split('\n').Take(10));
+            var limit = 10 * Math.Max(20, Width - 6);
+            // Do not split a UTF-16 surrogate pair at the character budget.
+            var end = Math.Min(lines.Length, limit);
+            if (end > 0 && end < lines.Length && char.IsHighSurrogate(lines[end - 1])) end--;
+            return lines[..end];
+        }
+    }
+}

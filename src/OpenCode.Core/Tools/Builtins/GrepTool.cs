@@ -2,86 +2,59 @@ namespace OpenCode.Core.Tools.Builtins;
 
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using OpenCode.Schema;
 
-/// <summary>
-/// 1:1 port of packages/core/src/tool/plugin/grep.ts
-/// </summary>
-public sealed class GrepTool : ITool
+public sealed class GrepTool(ToolFilePolicy? policy = null, RipgrepProcess? ripgrep = null)
 {
+    public ToolInfo Create() => ToolInfo.FromJson(Name, Description, InputSchema, ExecuteAsync, BuiltinToolSchemas.Grep, new ToolOptions(CodeMode: false));
     public string Name => "grep";
-
-    public string Description =>
-        "Search file contents using regular expressions. Use it to locate specific code, symbols, or text patterns, and narrow searches with `path` or `include`. Returns matching file paths, line numbers, and line previews.";
-
-    public JsonElement InputSchema => JsonDocument.Parse("""
+    public string Description => "Search file contents using ripgrep regular expressions, with optional path and include glob filters.";
+    public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
     {
-        "type": "object",
-        "properties": {
-            "pattern": { "type": "string", "description": "Regular expression to search for in file contents (ripgrep syntax)" },
-            "path": { "type": "string", "description": "File or directory to search. Defaults to the current working directory." },
-            "include": { "type": "string", "description": "Glob pattern to filter files (for example, \"*.js\" or \"*.{ts,tsx}\")" },
-            "limit": { "type": "integer", "description": "Maximum number of matching lines to return (default: 100)" }
+        type = "object",
+        properties = new
+        {
+            pattern = new { type = "string", minLength = 1 }, path = new { type = "string" },
+            include = new { type = "string" }, limit = new { type = "integer", minimum = 1 }
         },
-        "required": ["pattern"]
-    }
-    """).RootElement;
+        required = new[] { "pattern" }
+    });
 
     public async Task<ToolExecutionResult> ExecuteAsync(JsonElement input, ToolContext context, CancellationToken ct = default)
     {
-        var pattern = input.GetProperty("pattern").GetString()!;
-        var searchPath = input.TryGetProperty("path", out var pProp) && !string.IsNullOrEmpty(pProp.GetString())
-            ? pProp.GetString()!
-            : Directory.GetCurrentDirectory();
-
-        var limit = input.TryGetProperty("limit", out var limProp) ? limProp.GetInt32() : 100;
-        if (limit < 1) limit = 100;
-
-        var regex = new Regex(pattern, RegexOptions.Compiled | RegexOptions.Multiline);
-        var sb = new StringBuilder();
-        int totalMatches = 0;
-
-        IEnumerable<string> files;
-        if (File.Exists(searchPath))
+        var args = new ToolInput(input);
+        var pattern = args.String("pattern");
+        if (pattern.Length == 0) throw new ToolExecutionException("Pattern must not be empty");
+        var path = args.OptionalString("path") ?? ".";
+        var include = args.OptionalString("include");
+        var limit = args.Integer("limit", 100, 1, int.MaxValue - 1);
+        if (policy is null || ripgrep is null) throw new NotSupportedException("grep requires Location, permission and ripgrep services.");
+        var target = await policy.ResolveAsync(path, null, context, ct);
+        await policy.AssertAsync(Name, [pattern], ["*"], context,
+            new Dictionary<string, object> { ["root"] = ".", ["path"] = path, ["include"] = include ?? "", ["limit"] = limit }, ct);
+        var directory = Directory.Exists(target.Absolute);
+        if (!directory && !File.Exists(target.Absolute)) throw new ToolExecutionException($"Search path does not exist: {path}");
+        var cwd = directory ? target.Absolute : Path.GetDirectoryName(target.Absolute)!;
+        var rows = await ripgrep.GrepAsync(cwd, pattern, directory ? null : Path.GetFileName(target.Absolute), include, limit + 1, ct);
+        var matches = rows.Take(limit).Select(row => row with
         {
-            files = [searchPath];
-        }
-        else if (Directory.Exists(searchPath))
+            Entry = row.Entry with { Path = Path.GetRelativePath(policy.Location.Directory, Path.GetFullPath(row.Entry.Path, cwd)) }
+        }).ToArray();
+        var truncated = rows.Count > limit;
+        var text = new StringBuilder(matches.Length == 0 ? "No matches found" : $"Found {matches.Length} matches");
+        string? current = null;
+        foreach (var match in matches)
         {
-            files = Directory.EnumerateFiles(searchPath, "*", SearchOption.AllDirectories)
-                .Where(f => !f.Contains(".git") && !f.Contains("bin") && !f.Contains("obj") && !f.Contains("node_modules"));
-        }
-        else
-        {
-            throw new DirectoryNotFoundException($"Directory or file not found: {searchPath}");
-        }
-
-        foreach (var file in files)
-        {
-            if (ct.IsCancellationRequested || totalMatches >= limit) break;
-
-            try
+            if (current != match.Entry.Path)
             {
-                var lines = await File.ReadAllLinesAsync(file, Encoding.UTF8, ct);
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    if (regex.IsMatch(lines[i]))
-                    {
-                        totalMatches++;
-                        sb.AppendLine($"{file}:{i + 1}: {lines[i]}");
-                        if (totalMatches >= limit) break;
-                    }
-                }
+                text.AppendLine().AppendLine().Append(Path.GetFullPath(match.Entry.Path, policy.Location.Directory)).Append(':');
+                current = match.Entry.Path;
             }
-            catch { }
+            var previewLength = Math.Min(2000, match.Text.Length);
+            if (previewLength < match.Text.Length && char.IsHighSurrogate(match.Text[previewLength - 1])) previewLength--;
+            text.AppendLine().Append($"  Line {match.Line}: {match.Text[..previewLength]}{(previewLength < match.Text.Length ? "..." : "")}");
         }
-
-        if (totalMatches == 0)
-        {
-            return new ToolExecutionResult($"No matches found for pattern '{pattern}'.");
-        }
-
-        return new ToolExecutionResult(sb.ToString().TrimEnd());
+        if (truncated) text.Append($"\n\n(Results are truncated: showing first {matches.Length} results. Consider using a more specific path or pattern.)");
+        return new(text.ToString(), matches, new Dictionary<string, object> { ["matches"] = matches.Length, ["truncated"] = truncated });
     }
 }

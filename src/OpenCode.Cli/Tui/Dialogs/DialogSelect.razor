@@ -1,0 +1,91 @@
+@namespace OpenCode.Cli.Tui.Dialogs
+@typeparam T
+@using OpenTui.Blazor
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+@using OpenTui.Native
+
+<Modal Size="Size" OnClose="OnClose" Background="@Theme.Background" Backdrop="@Theme.Backdrop">
+    <Box Gap="1" PaddingBottom="1" FocusKey="@(RenderFilter ? null : "dialog-select")"
+         OnKeyDown="@(RenderFilter ? default : EventCallback.Factory.Create<TerminalKeyEventArgs>(this, Key))">
+        <Box PaddingX="4">
+            <Box Direction="TuiFlexDirection.Row" Height="1">
+                <TuiText Value="@Title" Fg="@Theme.Text" Bold="true" Grow="1" Height="1" />
+                <TuiText Value="esc" Fg="@Theme.Subdued" Height="1" OnClick="CloseClick" />
+            </Box>
+            @if (RenderFilter)
+            {
+                <Box PaddingTop="1">
+                    <Input Value="@_query" Cursor="_cursor" Placeholder="@Placeholder" FocusKey="dialog-select-filter"
+                           Fg="@Theme.InputText" Bg="@Theme.InputBackground" PlaceholderFg="@Theme.Subdued"
+                           OnKeyDown="Key" OnPaste="Paste" OnPointerDown="PositionCursor" OnPointerMove="PositionCursor" />
+                </Box>
+            }
+        </Box>
+        @if ((_error ?? Error) is { } error)
+        {
+            <Box PaddingX="4"><TuiText Value="@error" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" /></Box>
+        }
+        @if (_filtered.Count == 0)
+        {
+            <Box PaddingX="4"><TuiText Value="@(Loading ? "Loading..." : _query.Length > 0 ? "No results found" : "No items available")" Fg="@Theme.Subdued" /></Box>
+        }
+        else
+        {
+            <Box Height="ListHeight" PaddingX="1">
+                <ScrollBox State="_scroll">
+                    @foreach (var group in Groups)
+                    {
+                        @if (group.Key.Length > 0)
+                        {
+                            <Box PaddingLeft="3" PaddingTop="@(group.Key == Groups[0].Key ? 0 : 1)">
+                                <TuiText Value="@group.Key" Fg="@Theme.Category" Bold="true" Height="1" />
+                            </Box>
+                        }
+                        @foreach (var option in group)
+                        {
+                            var active = !_busy && !Locked && Selected is { } selected && EqualityComparer<T>.Default.Equals(option.Value, selected.Value);
+                            var current = HasCurrent && EqualityComparer<T>.Default.Equals(option.Value, Current);
+                            var color = active && _action is null ? Theme.FocusedText : current ? Theme.SelectedText : Theme.Text;
+                            var footer = Flat && _query.Length > 0 ? option.SearchFooter ?? option.Category ?? option.Footer : option.Footer;
+                            <Box @key="option.Value" OnPointerMove="@(args => Hover(option, args))" OnPointerDown="@(args => SelectPointer(option, args))"
+                                 OnClick="@(args => Click(option, args))">
+                                <Box Direction="TuiFlexDirection.Row" PaddingLeft="@(current ? 1 : 3)" PaddingRight="3" Gap="1"
+                                     Bg="@(active ? Theme.FocusedBackground : null)" Height="1">
+                                    @if (current) { <TuiText Value="●" Width="1" Fg="@color" Height="1" /> }
+                                    <Box Grow="1" PaddingLeft="3" Height="1">
+                                        <DialogOptionText Title="@option.Title" Description="@(option.Description == group.Key ? null : option.Description)"
+                                                          TextColor="@color" DescriptionColor="@(active ? color : Theme.Subdued)" Bold="@(active && _action is null)" />
+                                    </Box>
+                                    @if (!string.IsNullOrEmpty(footer)) { <TuiText Value="@footer" Fg="@(active ? color : Theme.Subdued)" Height="1" /> }
+                                </Box>
+                                @foreach (var detail in option.Details ?? [])
+                                {
+                                    <Box PaddingX="3"><TuiText Value="@detail" Fg="@Theme.Subdued" Height="1" /></Box>
+                                }
+                            </Box>
+                        }
+                    }
+                </ScrollBox>
+            </Box>
+        }
+        @if (Actions.Count > 0 || Footer is not null)
+        {
+            <Box Direction="TuiFlexDirection.Row" PaddingLeft="4" PaddingRight="2" Gap="2">
+                @Footer
+                @foreach (var action in Actions.Where(action => !action.Right && action.Label.Length > 0))
+                {
+                    <TuiText Value="@($"{action.Title} {action.Label}")" Fg="@(_action == action.Command ? Theme.FocusedText : Theme.Subdued)"
+                             Bg="@(_action == action.Command ? Theme.FocusedBackground : null)" Height="1" OnClick="@(args => RunAction(action, args))" />
+                }
+                <Box Grow="1" />
+                @foreach (var action in Actions.Where(action => action.Right && action.Label.Length > 0))
+                {
+                    <TuiText Value="@($"{action.Title} {action.Label}")" Fg="@(_action == action.Command ? Theme.FocusedText : Theme.Subdued)"
+                             Bg="@(_action == action.Command ? Theme.FocusedBackground : null)" Height="1" OnClick="@(args => RunAction(action, args))" />
+                }
+            </Box>
+        }
+        else { <Box Height="0" /> }
+    </Box>
+</Modal>

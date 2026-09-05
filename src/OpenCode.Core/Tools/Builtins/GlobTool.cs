@@ -1,62 +1,40 @@
 namespace OpenCode.Core.Tools.Builtins;
 
 using System.Text.Json;
-using Microsoft.Extensions.FileSystemGlobbing;
-using Microsoft.Extensions.FileSystemGlobbing.Abstractions;
 using OpenCode.Schema;
 
-/// <summary>
-/// 1:1 port of packages/core/src/tool/plugin/glob.ts
-/// </summary>
-public sealed class GlobTool : ITool
+public sealed class GlobTool(ToolFilePolicy? policy = null, RipgrepProcess? ripgrep = null)
 {
+    public ToolInfo Create() => ToolInfo.FromJson(Name, Description, InputSchema, ExecuteAsync, BuiltinToolSchemas.Glob, new ToolOptions(CodeMode: false));
     public string Name => "glob";
-
-    public string Description =>
-        "Search file paths using a glob pattern (examples: \"**/*.ts\", \"src/**/*.tsx\").";
-
-    public JsonElement InputSchema => JsonDocument.Parse("""
+    public string Description => "Search file paths using a glob pattern.";
+    public JsonElement InputSchema => JsonSerializer.SerializeToElement(new
     {
-        "type": "object",
-        "properties": {
-            "pattern": { "type": "string", "description": "Glob pattern to match files against" },
-            "path": { "type": "string", "description": "Directory to search. Defaults to the current working directory." },
-            "limit": { "type": "integer", "description": "Maximum number of matching files to return (default: 100)" }
-        },
-        "required": ["pattern"]
-    }
-    """).RootElement;
+        type = "object",
+        properties = new { pattern = new { type = "string" }, path = new { type = "string" }, limit = new { type = "integer", minimum = 1 } },
+        required = new[] { "pattern" }
+    });
 
-    public Task<ToolExecutionResult> ExecuteAsync(JsonElement input, ToolContext context, CancellationToken ct = default)
+    public async Task<ToolExecutionResult> ExecuteAsync(JsonElement input, ToolContext context, CancellationToken ct = default)
     {
-        var pattern = input.GetProperty("pattern").GetString()!;
-        var searchDir = input.TryGetProperty("path", out var pProp) && !string.IsNullOrEmpty(pProp.GetString())
-            ? pProp.GetString()!
-            : Directory.GetCurrentDirectory();
-
-        var limit = input.TryGetProperty("limit", out var limProp) ? limProp.GetInt32() : 100;
-        if (limit < 1) limit = 100;
-
-        if (!Directory.Exists(searchDir))
+        var args = new ToolInput(input);
+        var pattern = args.String("pattern");
+        var path = args.OptionalString("path");
+        if (path is null or "undefined" or "null") path = ".";
+        var limit = args.Integer("limit", 100, 1, int.MaxValue - 1);
+        if (policy is null || ripgrep is null) throw new NotSupportedException("glob requires Location, permission and ripgrep services.");
+        var target = await policy.ResolveAsync(path, ToolPathKind.Directory, context, ct);
+        await policy.AssertAsync(Name, [pattern], ["*"], context,
+            new Dictionary<string, object> { ["root"] = path, ["path"] = path, ["limit"] = limit }, ct);
+        if (!Directory.Exists(target.Absolute)) throw new ToolExecutionException($"Search path is not a directory: {path}");
+        var rows = await ripgrep.GlobAsync(target.Absolute, pattern, limit + 1, ct);
+        var entries = rows.Take(limit).Select(row => row with
         {
-            throw new DirectoryNotFoundException($"Directory not found: {searchDir}");
-        }
-
-        var matcher = new Matcher(StringComparison.OrdinalIgnoreCase);
-        matcher.AddInclude(pattern);
-        matcher.AddExclude("**/.git/**");
-        matcher.AddExclude("**/node_modules/**");
-        matcher.AddExclude("**/bin/**");
-        matcher.AddExclude("**/obj/**");
-
-        var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(searchDir)));
-        var files = result.Files.Take(limit).Select(f => Path.Combine(searchDir, f.Path)).ToArray();
-
-        if (files.Length == 0)
-        {
-            return Task.FromResult(new ToolExecutionResult("No files found matching pattern."));
-        }
-
-        return Task.FromResult(new ToolExecutionResult(string.Join("\n", files)));
+            Path = Path.GetRelativePath(policy.Location.Directory, Path.GetFullPath(row.Path, target.Absolute))
+        }).ToArray();
+        var truncated = rows.Count > limit;
+        var content = entries.Length == 0 ? "No files found" : string.Join('\n', entries.Select(entry => Path.GetFullPath(entry.Path, policy.Location.Directory)));
+        if (truncated) content += $"\n\n(Results are truncated: showing first {entries.Length} results. Consider using a more specific path or pattern.)";
+        return new(content, entries, new Dictionary<string, object> { ["count"] = entries.Length, ["truncated"] = truncated });
     }
 }

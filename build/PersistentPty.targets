@@ -1,0 +1,30 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenCode.Core'">
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)opencode-pty.assets.json" LogicalName="OpenCode.Pty.AssetPins.json" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'OpenCode.Server'">
+    <_OpenCodePtyBuildRoot>$(MSBuildProjectDirectory)/obj/native-build-tools</_OpenCodePtyBuildRoot>
+    <_OpenCodePtyBuildRoot Condition="'$(ArtifactsPath)' != ''">$([System.IO.Path]::GetFullPath('$(ArtifactsPath)/tools/pty', '$(MSBuildProjectDirectory)'))</_OpenCodePtyBuildRoot>
+  </PropertyGroup>
+  <UsingTask TaskName="PackagePersistentPty" AssemblyFile="$(_OpenCodePtyBuildRoot)/bin/OpenCode.Build.dll"
+             Condition="'$(MSBuildProjectName)' == 'OpenCode.Server'" />
+  <Target Name="PackagePinnedPersistentPty"
+          BeforeTargets="AssignTargetPaths"
+          Condition="'$(MSBuildProjectName)' == 'OpenCode.Server' and '$(OpenCodePackagePersistentPty)' == 'true'">
+    <PropertyGroup>
+      <_OpenCodePtyRid Condition="'$(OpenCodePtyRuntimeIdentifier)' != ''">$(OpenCodePtyRuntimeIdentifier)</_OpenCodePtyRid>
+      <_OpenCodePtyRid Condition="'$(_OpenCodePtyRid)' == '' and '$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_OpenCodePtyRid>
+      <_OpenCodePtyRid Condition="'$(_OpenCodePtyRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_OpenCodePtyRid>
+    </PropertyGroup>
+    <MSBuild Projects="$(MSBuildThisFileDirectory)OpenCode.Build/OpenCode.Build.csproj" Targets="Restore;Build"
+             RemoveProperties="RuntimeIdentifier;SelfContained;PublishAot;PublishSingleFile;OpenCodeExpectedBuildId"
+             Properties="OpenCodePackagePersistentPty=false;OutputPath=$(_OpenCodePtyBuildRoot)/bin/;IntermediateOutputPath=$(_OpenCodePtyBuildRoot)/obj/;MSBuildProjectExtensionsPath=$(_OpenCodePtyBuildRoot)/obj/;AppendTargetFrameworkToOutputPath=false;AppendRuntimeIdentifierToOutputPath=false" />
+    <PackagePersistentPty Pins="$(MSBuildThisFileDirectory)opencode-pty.assets.json" RuntimeIdentifier="$(_OpenCodePtyRid)"
+                          OutputDirectory="$([System.IO.Path]::GetFullPath('$(IntermediateOutputPath)native-pty/$(_OpenCodePtyRid)', '$(MSBuildProjectDirectory)'))" Archive="$(OpenCodePtyArchive)">
+      <Output TaskParameter="Files" ItemName="_OpenCodePtyFiles" />
+    </PackagePersistentPty>
+    <ItemGroup>
+      <Content Include="@(_OpenCodePtyFiles)" />
+    </ItemGroup>
+  </Target>
+</Project>

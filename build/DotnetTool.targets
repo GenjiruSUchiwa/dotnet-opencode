@@ -1,0 +1,45 @@
+<Project>
+  <PropertyGroup>
+    <_DotnetOpencodeRepository>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..'))</_DotnetOpencodeRepository>
+  </PropertyGroup>
+  <UsingTask TaskName="StageDotnetOpencodeServer" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task><Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)StageDotnetOpencodeServer.cs" /></Task>
+  </UsingTask>
+  <UsingTask TaskName="PrepareDotnetOpencodePackage" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task>
+      <Reference Include="$(MSBuildToolsPath)/Sdks/Microsoft.NET.Sdk/tools/net472/Newtonsoft.Json.dll" />
+      <Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)PrepareDotnetOpencodePackage.cs" />
+    </Task>
+  </UsingTask>
+  <Target Name="ImportDotnetOpencodeNativeNotices" BeforeTargets="PrepareForBuild" Condition="'$(OpenCodeToolOpenTuiSourceDirectory)' != ''">
+    <PrepareDotnetOpencodePackage RepositoryRoot="$(_DotnetOpencodeRepository)" PublishDirectory="$(MSBuildProjectDirectory)"
+         AssetsFile="$(ProjectAssetsFile)" SdkVersion="$(NETCoreSdkVersion)" ImportNativeOnly="true"
+         NativeSourceDirectory="$(OpenCodeToolOpenTuiSourceDirectory)" />
+  </Target>
+  <Target Name="StageDotnetOpencodeServerRuntime" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
+    <MSBuild Projects="$(MSBuildProjectDirectory)/../OpenCode.Server/OpenCode.Server.csproj" Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);TargetFramework=$(TargetFramework)"
+             RemoveProperties="PackAsTool;PackageId;PackageVersion;ToolCommandName;ToolCommandRunner;ToolEntryPoint">
+      <Output TaskParameter="TargetOutputs" ItemName="_DotnetOpencodeServerAssembly" />
+    </MSBuild>
+    <StageDotnetOpencodeServer ServerAssembly="@(_DotnetOpencodeServerAssembly)" CliDirectory="$(TargetDir)">
+      <Output TaskParameter="Files" ItemName="_DotnetOpencodeServerRuntime" />
+    </StageDotnetOpencodeServer>
+    <ItemGroup><FileWrites Include="@(_DotnetOpencodeServerRuntime)" /></ItemGroup>
+  </Target>
+  <Target Name="IncludeDotnetOpencodeServerInPublish" AfterTargets="ComputeFilesToPublish" DependsOnTargets="StageDotnetOpencodeServerRuntime">
+    <Error Condition="'$(PublishSingleFile)' == 'true' or '$(PublishTrimmed)' == 'true' or '$(PublishAot)' == 'true'"
+           Text="dotnet-opencode requires complete untrimmed multi-file CLI and Server deployments." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_DotnetOpencodeServerRuntime)">
+        <RelativePath>server/%(_DotnetOpencodeServerRuntime.ToolRelativePath)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <Target Name="PrepareDotnetOpencodeToolPackage" AfterTargets="Publish" Condition="'$(PackAsTool)' == 'true'">
+    <PrepareDotnetOpencodePackage RepositoryRoot="$(_DotnetOpencodeRepository)" PublishDirectory="$([System.IO.Path]::GetFullPath('$(PublishDir)', '$(MSBuildProjectDirectory)'))"
+         AssetsFile="$(ProjectAssetsFile)" SdkVersion="$(NETCoreSdkVersion)"
+         NativeSourceDirectory="$(OpenCodeToolOpenTuiSourceDirectory)" />
+  </Target>
+</Project>

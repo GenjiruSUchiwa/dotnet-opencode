@@ -1,0 +1,47 @@
+{
+  "package": "@opentui/core-win32-x64",
+  "version": "0.5.9",
+  "runtime": "win-x64",
+  "binary": "opentui.dll",
+  "sha256": "294550aa81a50439e42ecb73df97b99d6ec3dc2ecb1f3f18bb453076140e1f0e",
+  "source": "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.5.9.tgz",
+  "verification": "Bundled DLL SHA-256 equals installed upstream package DLL; no loading or execution.",
+  "files": [
+    {
+      "file": "package.json",
+      "sha256": "58c2556b99446d67db16b301fcee372a749a473f10787e22d6650f6e51348a3b"
+    },
+    {
+      "file": "LICENSE",
+      "sha256": "d9c397a5dc5ac77a2a08fc967ea06a65317a4b5b8de48f6f732ffcb21737e3d2"
+    },
+    {
+      "file": "LICENSE-GHOSTTY",
+      "sha256": "e3c017838d3f532f52fc2361ffd5528fd0d7dc158ea34e0f169d40185845c920"
+    },
+    {
+      "file": "LICENSE-LCMS2",
+      "sha256": "6dbd60437f8ef91d8de1f08ad75882547fd4931bfcc3566a0735f28db1484d31"
+    },
+    {
+      "file": "LICENSE-LIBWEBP",
+      "sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"
+    },
+    {
+      "file": "LICENSE-STB",
+      "sha256": "bebfe904b14301657e4e5d655c811d51fd31b97c455b9cc2d8600d6bac6cff63"
+    },
+    {
+      "file": "LICENSE-WUFFS",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+    },
+    {
+      "file": "AUTHORS-LIBWEBP",
+      "sha256": "f251be89fd442bd9d701360730aea163cc8e2076ff03528f59267dc2c4f8b60a"
+    },
+    {
+      "file": "PATENTS-LIBWEBP",
+      "sha256": "cc3273e0694ea5896145e0677699b53471b03ea43021ddc50e7923fbb9f5023c"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+<Project>
+  <UsingTask TaskName="ImportOpenAiOAuthPolicy" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <SourceFile ParameterType="System.String" Required="true" />
+      <DestinationFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Linq" />
+      <Using Namespace="System.Text" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Using Namespace="System.Security.Cryptography" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var bytes = File.ReadAllBytes(SourceFile);
+        var source = Encoding.UTF8.GetString(bytes);
+        Func<string, string> digest = value => {
+          using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant();
+        };
+        Func<string, string[]> identities = name => {
+          var match = Regex.Match(source, @"const " + name + @" = new Set\(\[(.*?)\]\)", RegexOptions.Singleline);
+          if (!match.Success) throw new InvalidDataException("The source OAuth eligibility policy shape changed.");
+          return Regex.Matches(match.Groups[1].Value, "\"([^\"]+)\"").Cast<Match>().Select(item => {
+            if (item.Groups[1].Value.Contains("\\")) throw new InvalidDataException("Escaped policy identifiers require importer review.");
+            return digest(item.Groups[1].Value);
+          }).ToArray();
+        };
+        var allowed = identities("codexAllowed");
+        var denied = identities("codexDisallowed");
+        var ceiling = Regex.Match(source, @"Number\.parseFloat\(match\[1\]\) <= ([\d.]+)");
+        var limits = Regex.Match(source, @"context:\s*([\d_]+),\s*input:\s*([\d_]+)");
+        if (!ceiling.Success || !limits.Success) throw new InvalidDataException("The source OAuth limit policy shape changed.");
+        var output = new StringBuilder();
+        output.AppendLine("// Generated from packages/core/src/plugin/provider/openai.ts; no model identities are embedded here.");
+        output.AppendLine("namespace OpenCode.Core.Llm;");
+        output.AppendLine("internal static class OpenAiOAuthPolicyData {");
+        output.AppendLine("internal const string SourceSha256 = \"" + digest(source) + "\";");
+        output.AppendLine("internal const double LegacyVersionCeiling = " + ceiling.Groups[1].Value + "d;");
+        output.AppendLine("internal const double ContextLimit = " + limits.Groups[1].Value.Replace("_", "") + "d;");
+        output.AppendLine("internal const double InputLimit = " + limits.Groups[2].Value.Replace("_", "") + "d;");
+        output.AppendLine("internal static bool Allowed(string hash) => " + (allowed.Length == 0 ? "false" : "hash is " + string.Join(" or ", allowed.Select(value => "\"" + value + "\""))) + ";");
+        output.AppendLine("internal static bool Denied(string hash) => " + (denied.Length == 0 ? "false" : "hash is " + string.Join(" or ", denied.Select(value => "\"" + value + "\""))) + ";");
+        output.AppendLine("}");
+        File.WriteAllText(DestinationFile, output.ToString());
+        Log.LogMessage(Microsoft.Build.Framework.MessageImportance.High, "Generated OAuth eligibility policy: {0} allowed hashes, {1} denied hashes; source SHA-256 {2}", allowed.Length, denied.Length, digest(source));
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="GenerateOpenAiOAuthPolicy">
+    <Error Condition="'$(PublicOpenAiPolicySource)' == ''" Text="Supply PublicOpenAiPolicySource pointing to the tracked public OpenAI provider plugin." />
+    <ImportOpenAiOAuthPolicy SourceFile="$(PublicOpenAiPolicySource)" DestinationFile="$(MSBuildProjectDirectory)\Llm\OpenAiOAuthPolicyData.g.cs" />
+  </Target>
+</Project>

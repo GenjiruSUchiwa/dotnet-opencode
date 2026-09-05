@@ -1,121 +1,118 @@
-# OpenCode C# Port Audit Ledger
+# OpenCode .NET Port Audit
 
-This document tracks the 1:1 faithful port of every file in the OpenCode repository.
+## Provisional Status
 
-## Codebase File Summary (3,549 Files)
+This is a source-review snapshot, not a final audit or a completion certificate. Active implementation is in flight, including CLI, Blazor, native interop, and backend review. Findings describe the files inspected on 2026-08-30 and must be checked again after those changes settle.
 
-| Package | Role | File Count | Port Status |
-| :--- | :--- | :--- | :--- |
-| `schema` | Data contracts & IDs | 98 | In Progress (55 / 98) |
-| `protocol` | API routes & events | 45 | In Progress (15 / 45) |
-| `server` | Kestrel Minimal APIs | 75 | In Progress (15 / 75) |
-| `client` | HTTP & SSE client | 42 | In Progress (5 / 42) |
-| `sdk` | Embedded host & SDK | 23 | In Progress |
-| `core` | Domain execution engine | 693 | In Progress (30 / 693) |
-| `cli` | CLI commands & supervisor | 144 | In Progress |
-| `tui` | Terminal User Interface | 374 | Queued |
-| `app` / `ui` / `desktop` | Electron & Web UIs | 1,340 | Future Phase |
-| Other packages | Merman, Latex, Theme, etc. | 715 | Future Phase |
+See [Port Status](port-status.md) for current architectural boundaries, blocking findings, behavior-level work packages, and coordination rules. That document also reconciles earlier planning documents with the current no-tests restriction and reusable `OpenTui.Blazor` requirement.
 
-## Tier 1: `packages/schema` (98 Files)
+The previous ledger's `Ported` checkboxes, package completion counts, and claim of a faithful file-for-file port were unsupported. They are withdrawn. A C# record, route, or class with a corresponding name does not establish contract or behavioral fidelity. The old file totals were not a reproducible inventory and must not be used to calculate progress.
 
-| TypeScript Source | C# Target | Status |
+Current validation is build-only in scope. The initial documentation review did not run a build; later authorized feed-only implementation builds are recorded separately in [Port Status](port-status.md#event-feed-implementation). No runtime fidelity proof is recorded here. A successful build proves compilation for that configuration, not native ABI correctness, API compatibility, provider behavior, or database compatibility. No tests were added, edited, or run; no application was executed, process terminated, or database opened for this review.
+
+## Original Goal
+
+Deliver a faithful, idiomatic .NET 10 implementation of the full OpenCode core, server, SDK/client, configuration system, and provider behavior, including compatible persistence semantics. The original same-live-database goal is superseded by the explicit channel-isolation decision below. Preserve externally observable contracts and lifecycle behavior while using appropriate .NET abstractions rather than copying TypeScript syntax or Effect machinery literally.
+
+The terminal UI must use an owned Blazor renderer connected directly to native OpenTUI. It must not be a Bun process or SolidJS wrapper. A matching screenshot, basic chat stream, or loadable native library is not sufficient to claim the full terminal experience is ported.
+
+Decision: use OpenCode channel `dotnet` and upstream channel filename/path conventions, including `opencode-dotnet.db`, rather than the live production database. Do not copy or write the live production database. Shared configuration compatibility remains a goal; database and service-state isolation must not silently isolate all configuration. Follow-up source inspection finds channel constants and database/client-registration defaults implemented, and the bounded configuration pass is complete as recorded in [Port Status](port-status.md#configuration-pass-record). Full daemon/configuration/provider fidelity and runtime proof remain pending.
+
+Persistence fidelity still requires matching migrations, event ordering, projections, transaction boundaries, identifiers, encoding, recovery, and concurrency semantics within the isolated channel. Isolation does not fix direct projection writes or missing durable admission. See [Port Status](port-status.md#channel-decision) for ownership and the decision record.
+
+## Review Baseline
+
+| Source | Baseline |
+| :--- | :--- |
+| Upstream | `C:\Repos\sst\kind-nebula`, HEAD `e70d667a9fe3e84cc071a5596aa522c142c525b7` |
+| .NET port | `C:\Repos\hona\opencode-dotnet`, HEAD `2d7e023ccb82145bb3b463b3da6a1d5ff5e83aea` |
+| Review input | Working-tree source, including uncommitted work; HEAD identifiers alone do not reproduce this snapshot |
+| Review method | Selected source comparisons and file discovery only; not an exhaustive file or symbol audit |
+
+Paths beginning with `packages/` are relative to upstream. Paths beginning with `src/` are relative to this repository. Grouped paths below describe review boundaries, not a complete manifest.
+
+## Status Definitions
+
+| Label | Meaning |
+| :--- | :--- |
+| Partial | Corresponding implementation exists, but known gaps or missing fidelity evidence prevent acceptance. |
+| Stub | Inspected code returns fixed or placeholder behavior instead of implementing the upstream operation. |
+| Unreviewed | No sufficiently detailed comparison is recorded. Presence or absence of a similarly named file is not a verdict. |
+| Accepted | Reserved for a bounded source mapping that satisfies all applicable acceptance criteria below, with reproducible evidence. No area is assigned this label here. |
+
+## Source Map
+
+These mappings replace the old schema checkboxes. Every previously checked row is now unreviewed unless a more specific partial or stub finding is documented below. Previously proposed target paths are not proof that those files exist. In particular, do not carry forward guessed lowercase filenames or `src/OpenCode.Schema/Identifiers.cs`; identifier files currently include `src/OpenCode.Schema/Identifier.cs` and `src/OpenCode.Schema/Ids/Identifiers.cs`.
+
+| Upstream source boundary | .NET implementation or candidate | Status and review limit |
 | :--- | :--- | :--- |
-| `packages/schema/src/agent.ts` | `src/OpenCode.Schema/Agent.cs` | [x] Ported |
-| `packages/schema/src/catalog.ts` | `src/OpenCode.Schema/catalog.cs` | [ ] Pending |
-| `packages/schema/src/command.ts` | `src/OpenCode.Schema/Command.cs` | [x] Ported |
-| `packages/schema/src/config.ts` | `src/OpenCode.Schema/Config.cs` | [x] Ported |
-| `packages/schema/src/config/agent.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigAgent)` | [x] Ported |
-| `packages/schema/src/config/command.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
-| `packages/schema/src/config/compaction.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigCompaction)` | [x] Ported |
-| `packages/schema/src/config/experimental.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigExperimental)` | [x] Ported |
-| `packages/schema/src/config/formatter.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigFormatter)` | [x] Ported |
-| `packages/schema/src/config/lsp.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigLsp)` | [x] Ported |
-| `packages/schema/src/config/mcp.ts` | `src/OpenCode.Schema/Mcp.cs` | [x] Ported |
-| `packages/schema/src/config/media.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
-| `packages/schema/src/config/model.ts` | `src/OpenCode.Schema/Model.cs` | [x] Ported |
-| `packages/schema/src/config/plugin.ts` | `src/OpenCode.Schema/Plugin.cs` | [x] Ported |
-| `packages/schema/src/config/policy.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigPolicy)` | [x] Ported |
-| `packages/schema/src/config/provider.ts` | `src/OpenCode.Schema/Provider.cs` | [x] Ported |
-| `packages/schema/src/config/reference.ts` | `src/OpenCode.Schema/Reference.cs` | [x] Ported |
-| `packages/schema/src/config/tool-output.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigToolOutput)` | [x] Ported |
-| `packages/schema/src/config/warming.ts` | `src/OpenCode.Schema/ConfigDetails.cs` | [x] Ported |
-| `packages/schema/src/config/watcher.ts` | `src/OpenCode.Schema/ConfigDetails.cs (ConfigWatcher)` | [x] Ported |
-| `packages/schema/src/config/websearch.ts` | `src/OpenCode.Schema/WebSearch.cs` | [x] Ported |
-| `packages/schema/src/connection.ts` | `src/OpenCode.Schema/Connection.cs` | [x] Ported |
-| `packages/schema/src/credential.ts` | `src/OpenCode.Schema/Credential.cs` | [x] Ported |
-| `packages/schema/src/durable-event-manifest.ts` | `src/OpenCode.Schema/durable-event-manifest.cs` | [ ] Pending |
-| `packages/schema/src/event-log.ts` | `src/OpenCode.Schema/event-log.cs` | [ ] Pending |
-| `packages/schema/src/event-manifest.ts` | `src/OpenCode.Schema/event-manifest.cs` | [ ] Pending |
-| `packages/schema/src/event.ts` | `src/OpenCode.Schema/Event.cs` | [x] Ported |
-| `packages/schema/src/file-diff.ts` | `src/OpenCode.Schema/FileDiff.cs` | [x] Ported |
-| `packages/schema/src/filesystem-v1.ts` | `src/OpenCode.Schema/filesystem-v1.cs` | [ ] Pending |
-| `packages/schema/src/filesystem.ts` | `src/OpenCode.Schema/FileSystem.cs` | [x] Ported |
-| `packages/schema/src/form.ts` | `src/OpenCode.Schema/Form.cs` | [x] Ported |
-| `packages/schema/src/ide-event.ts` | `src/OpenCode.Schema/ide-event.cs` | [ ] Pending |
-| `packages/schema/src/identifier.ts` | `src/OpenCode.Schema/Identifier.cs` | [x] Ported |
-| `packages/schema/src/index.ts` | `src/OpenCode.Schema/index.cs` | [ ] Pending |
-| `packages/schema/src/installation-event.ts` | `src/OpenCode.Schema/installation-event.cs` | [ ] Pending |
-| `packages/schema/src/instruction-entry.ts` | `src/OpenCode.Schema/Instruction.cs (InstructionEntry)` | [x] Ported |
-| `packages/schema/src/instruction.ts` | `src/OpenCode.Schema/Instruction.cs` | [x] Ported |
-| `packages/schema/src/integration-id.ts` | `src/OpenCode.Schema/Integration.cs (IntegrationId)` | [x] Ported |
-| `packages/schema/src/integration.ts` | `src/OpenCode.Schema/Integration.cs` | [x] Ported |
-| `packages/schema/src/legacy-event.ts` | `src/OpenCode.Schema/legacy-event.cs` | [ ] Pending |
-| `packages/schema/src/llm.ts` | `src/OpenCode.Schema/Llm.cs` | [x] Ported |
-| `packages/schema/src/location.ts` | `src/OpenCode.Schema/Location.cs` | [x] Ported |
-| `packages/schema/src/lsp-event.ts` | `src/OpenCode.Schema/lsp-event.cs` | [ ] Pending |
-| `packages/schema/src/mcp-event.ts` | `src/OpenCode.Schema/ServerEvent.cs (McpStatusChanged)` | [x] Ported |
-| `packages/schema/src/mcp.ts` | `src/OpenCode.Schema/Mcp.cs` | [x] Ported |
-| `packages/schema/src/model.ts` | `src/OpenCode.Schema/Model.cs` | [x] Ported |
-| `packages/schema/src/models-dev.ts` | `src/OpenCode.Schema/models-dev.cs` | [ ] Pending |
-| `packages/schema/src/money.ts` | `src/OpenCode.Schema/Money.cs` | [x] Ported |
-| `packages/schema/src/permission-saved.ts` | `src/OpenCode.Schema/PermissionSaved.cs` | [x] Ported |
-| `packages/schema/src/permission-v1.ts` | `src/OpenCode.Schema/permission-v1.cs` | [ ] Pending |
-| `packages/schema/src/permission.ts` | `src/OpenCode.Schema/Permission.cs` | [x] Ported |
-| `packages/schema/src/persistent-pty.ts` | `src/OpenCode.Schema/PersistentPty.cs` | [x] Ported |
-| `packages/schema/src/plugin.ts` | `src/OpenCode.Schema/Plugin.cs` | [x] Ported |
-| `packages/schema/src/project-id.ts` | `src/OpenCode.Schema/Identifiers.cs (ProjectId)` | [x] Ported |
-| `packages/schema/src/project.ts` | `src/OpenCode.Schema/Project.cs` | [x] Ported |
-| `packages/schema/src/prompt-input.ts` | `src/OpenCode.Schema/prompt-input.cs` | [ ] Pending |
-| `packages/schema/src/prompt.ts` | `src/OpenCode.Schema/Prompt.cs` | [x] Ported |
-| `packages/schema/src/provider.ts` | `src/OpenCode.Schema/Provider.cs` | [x] Ported |
-| `packages/schema/src/pty-ticket.ts` | `src/OpenCode.Schema/PtyTicket.cs` | [x] Ported |
-| `packages/schema/src/pty.ts` | `src/OpenCode.Schema/Pty.cs` | [x] Ported |
-| `packages/schema/src/question-v1.ts` | `src/OpenCode.Schema/question-v1.cs` | [ ] Pending |
-| `packages/schema/src/question.ts` | `src/OpenCode.Schema/Question.cs` | [x] Ported |
-| `packages/schema/src/reference.ts` | `src/OpenCode.Schema/Reference.cs` | [x] Ported |
-| `packages/schema/src/schema.ts` | `src/OpenCode.Schema/schema.cs` | [ ] Pending |
-| `packages/schema/src/server-event.ts` | `src/OpenCode.Schema/ServerEvent.cs` | [x] Ported |
-| `packages/schema/src/session-compaction-event.ts` | `src/OpenCode.Schema/session-compaction-event.cs` | [ ] Pending |
-| `packages/schema/src/session-error.ts` | `src/OpenCode.Schema/SessionError.cs` | [x] Ported |
-| `packages/schema/src/session-event.ts` | `src/OpenCode.Schema/SessionEvent.cs` | [x] Ported |
-| `packages/schema/src/session-fork.ts` | `src/OpenCode.Schema/SessionFork.cs` | [x] Ported |
-| `packages/schema/src/session-id.ts` | `src/OpenCode.Schema/Identifiers.cs (SessionId)` | [x] Ported |
-| `packages/schema/src/session-inbox.ts` | `src/OpenCode.Schema/SessionInbox.cs` | [x] Ported |
-| `packages/schema/src/session-message.ts` | `src/OpenCode.Schema/SessionMessage.cs` | [x] Ported |
-| `packages/schema/src/session-metadata.ts` | `src/OpenCode.Schema/session-metadata.cs` | [ ] Pending |
-| `packages/schema/src/session-revert.ts` | `src/OpenCode.Schema/SessionRevert.cs` | [x] Ported |
-| `packages/schema/src/session-stats.ts` | `src/OpenCode.Schema/SessionStats.cs` | [x] Ported |
-| `packages/schema/src/session-status-event.ts` | `src/OpenCode.Schema/session-status-event.cs` | [ ] Pending |
-| `packages/schema/src/session-transfer.ts` | `src/OpenCode.Schema/SessionTransfer.cs` | [x] Ported |
-| `packages/schema/src/session-v1.ts` | `src/OpenCode.Schema/session-v1.cs` | [ ] Pending |
-| `packages/schema/src/session.ts` | `src/OpenCode.Schema/Session.cs` | [x] Ported |
-| `packages/schema/src/shell.ts` | `src/OpenCode.Schema/Shell.cs` | [x] Ported |
-| `packages/schema/src/skill.ts` | `src/OpenCode.Schema/Skill.cs` | [x] Ported |
-| `packages/schema/src/snapshot.ts` | `src/OpenCode.Schema/Snapshot.cs` | [x] Ported |
-| `packages/schema/src/token-usage.ts` | `src/OpenCode.Schema/TokenUsage.cs` | [x] Ported |
-| `packages/schema/src/tool.ts` | `src/OpenCode.Schema/Tool.cs` | [x] Ported |
-| `packages/schema/src/tui-event.ts` | `src/OpenCode.Schema/tui-event.cs` | [ ] Pending |
-| `packages/schema/src/v1/filesystem.ts` | `src/OpenCode.Schema/v1/filesystem.cs` | [ ] Pending |
-| `packages/schema/src/v1/legacy-event.ts` | `src/OpenCode.Schema/v1/legacy-event.cs` | [ ] Pending |
-| `packages/schema/src/v1/permission.ts` | `src/OpenCode.Schema/v1/permission.cs` | [ ] Pending |
-| `packages/schema/src/v1/question.ts` | `src/OpenCode.Schema/v1/question.cs` | [ ] Pending |
-| `packages/schema/src/v1/session.ts` | `src/OpenCode.Schema/v1/session.cs` | [ ] Pending |
-| `packages/schema/src/vcs-event.ts` | `src/OpenCode.Schema/vcs-event.cs` | [ ] Pending |
-| `packages/schema/src/vcs.ts` | `src/OpenCode.Schema/Vcs.cs` | [x] Ported |
-| `packages/schema/src/websearch.ts` | `src/OpenCode.Schema/WebSearch.cs` | [x] Ported |
-| `packages/schema/src/workspace-event.ts` | `src/OpenCode.Schema/workspace-event.cs` | [ ] Pending |
-| `packages/schema/src/workspace-id.ts` | `src/OpenCode.Schema/Workspace.cs (WorkspaceId)` | [x] Ported |
-| `packages/schema/src/workspace.ts` | `src/OpenCode.Schema/Workspace.cs` | [x] Ported |
-| `packages/schema/src/worktree-event.ts` | `src/OpenCode.Schema/worktree-event.cs` | [ ] Pending |
-| `packages/schema/src/worktree.ts` | `src/OpenCode.Schema/Worktree.cs` | [x] Ported |
+| `packages/schema/src/session-message.ts`, `schema.ts` | `src/OpenCode.Schema/SessionMessage.cs`, `Serialization/OpenCodeJsonContext.cs`, supporting scalar converters | Partial: foundational epoch/required-field/discriminator work is build-checked; remaining message variants and nested contracts are incomplete. |
+| `packages/schema/src/config/compaction.ts` | `src/OpenCode.Schema/ConfigDetails.cs` (`ConfigCompactionInfo`, `ConfigCompactionKeep`) | Source constraints implemented in the canonical config pass and Schema build-checked; runtime integration is separate. |
+| Remaining `packages/schema/src/` contracts, IDs, manifests, and retained `v1/` contracts | `src/OpenCode.Schema/` | Unreviewed: no comprehensive field, union, validation, or wire-encoding comparison. |
+| `packages/core/src/session/session.ts`, `prompt.ts`, `inbox.ts`, `execution.ts`, `run-coordinator.ts`, `runner/` | `src/OpenCode.Core/Session/SessionExecutionEngine.cs` | Partial: direct text-stream path is not the durable execution lifecycle. |
+| `packages/core/src/session/history.ts`, `instructions.ts`, `instruction-state.ts`, `compaction.ts`, `revert.ts`, `transfer.ts` | `src/OpenCode.Core/Session/SessionExecutionEngine.cs` (integration point) | Unreviewed as separate ports; the inspected prompt path does not implement these domains. |
+| `packages/core/src/database/`, `session/sql.ts`, `session/projector.ts`, `session/store.ts` | `src/OpenCode.Core/Database/SqliteDatabase.cs`, `SessionStore.cs` | Partial: SQL access exists; channel isolation is assigned, and persistence/recovery fidelity is not established. |
+| `packages/core/src/config.ts`, `config/` | `src/OpenCode.Core/Config/ConfigLoader.cs`, `src/OpenCode.Schema/Config.cs`, `Config/ConfigModels.cs`, `ConfigDetails.cs` | Partial overall: bounded discovery/normalization pass complete; full location-scoped reload and domain resolution remain incomplete. |
+| `packages/core/src/provider.ts`, `plugin/provider.ts`, `session/model-transport.ts` | `src/OpenCode.Core/Llm/ProviderResolver.cs`, `LlmClient.cs` | Partial: provider resolution and text streaming exist; full provider contract is unreviewed. |
+| `packages/protocol/src/api.ts`, `groups/`, `errors.ts`; `packages/server/src/api.ts`, `handlers/`, `middleware/` | `src/OpenCode.Protocol/`, `src/OpenCode.Server/` | Partial overall; selected stubs below. Route presence does not prove request, error, authorization, or response compatibility. |
+| `packages/server/src/event-feed.ts`; `packages/protocol/src/groups/event.ts` | `src/OpenCode.Server/Services/EventFeedService.cs`, `Endpoints/EventEndpoints.cs` | Partial: typed overflow/encoding failures, drain-preserving completion, and serialized encode-once fan-out implemented and build-checked; canonical filtering/Bus/endpoint fidelity remain open. |
+| `packages/client/src/service.ts`, `promise/generated/client.ts`; `packages/sdk/src/opencode.ts`, `promise.ts` | `src/OpenCode.Client/ServiceDaemon.cs`, `src/OpenCode.Sdk/OpenCodeClient.cs` | Partial: service and embedded prompt surfaces exist; full HTTP/SSE resource coverage and lifecycle are unreviewed. |
+| `packages/cli/src/`, `packages/tui/src/` | `src/OpenCode.Cli/`, `src/OpenTui.Blazor/`, `src/OpenTui.Native/` | Partial, actively changing: source structure is not runtime or visual acceptance. |
+| Other upstream packages and files | No exhaustive target mapping recorded | Unreviewed, not implicitly complete or excluded. Scope decisions require explicit rationale. |
+
+## Major Known Gaps
+
+### Contracts And Validation
+
+The foundational serializer and prompt passes corrected location references and prepared user attachments. The later [assistant contract pass](port-status.md#assistant-contract-pass) supplies the full declared assistant content/tool-state/retry/snapshot fields, shell output, and concrete compaction variants, with Schema build evidence. This supersedes the earlier missing-field findings, not the requirement for runtime fidelity evidence. Nested contract/ID boundaries, date-range limits, remaining event families, and Core preparation/execution remain separate work; no final SessionMessage or full event-manifest acceptance is claimed.
+
+The canonical config pass supersedes the earlier compaction validation finding: ConfigCompactionInfo/Keep now enforce the source nonnegative integer constraints. The broader current config root and all 17 submodule mappings are recorded in [Port Status](port-status.md#canonical-config-contracts). The protected provider-loader model file remains separate, so canonical Schema coverage must not be mistaken for complete runtime loading/normalization.
+
+The foundational serializer pass added property-level epoch-millisecond converters to `SessionTime` and `MessageTime`, including streamed/completed timestamps, plus omission attributes for the covered optional fields. These work independently of the default ISO `DateTimeOffset` encoding. Canonical source-generation options now allow out-of-order discriminator metadata. Full optional-null decoding, nested contracts, other timestamp types, and JavaScript's wider date range remain fidelity gaps; compilation alone does not establish round-trip parity.
+
+### Durable Session Execution
+
+`src/OpenCode.Core/Session/SessionExecutionEngine.cs`, `PromptAsync`, inserts a visible user message immediately, then sends a hard-coded system message and only the current user prompt. It does not load stored history into the request. It streams strings and inserts the assistant message after streaming. Although it receives a tool registry, this method does not dispatch tool calls.
+
+Compare with upstream `packages/core/src/session/inbox.ts`, `execution.ts`, `run-coordinator.ts`, `runner/`, and `history.ts`. Durable prompt admission and delivery, queue/steer ordering, idempotent retries, logical-step accounting, execution claims, interruption, and restart recovery are not established by the inspected .NET flow. Instruction epochs, compaction, revert, and transfer require their own mappings and evidence, not just schema records.
+
+### Persistence Compatibility
+
+`src/OpenCode.Core/Database/SessionStore.cs` directly inserts into `session_v2` and `session_message`. `AddMessageAsync` obtains `MAX(seq) + 1` and inserts in separate statements without an enclosing transaction in that method. `CreateSessionAsync` inserts a supplied session ID rather than adopting an existing session there. These paths do not demonstrate upstream ordered event publication and projection semantics.
+
+Compare upstream `packages/core/src/session/projector.ts`, `sql.ts`, `inbox.ts`, and `packages/core/src/database/migration/`. `SqliteDatabase.cs` configures a connection and PRAGMAs; it is not evidence of matching migrations or atomic inbox-to-message delivery. Use the isolated `dotnet` channel decision, not same-path production database access. Do not copy production data to initialize it. No database contents were inspected.
+
+### Configuration And Providers
+
+The former single-file-only observation is superseded by the completed bounded configuration pass. `src/OpenCode.Core/Config/ConfigLoader.cs`, `LoadConfig`, now discovers shared global, explicit, ancestor, `.opencode`, and content configuration; related methods add substitutions and selected provider normalization/overlays. `ProviderResolver.ResolveAsync` now honors explicit/configured selection without silent substitution. Full location-scoped discovery/reload, domain resolution, OAuth/channel credential integration, and built-in/remote catalog discovery remain incomplete. The inspected server prompt handler still supplies its own defaults. See the [configuration pass record](port-status.md#configuration-pass-record) for scope and evidence; compilation is not configuration/provider fidelity.
+
+`src/OpenCode.Core/Llm/LlmClient.cs` exposes `ILlmClient.StreamChatAsync` as a string stream with role/content inputs. The inspected requests and parsers handle text, not the complete structured tool-call, reasoning, usage, finish-state, and continuation lifecycle. Compare upstream `packages/schema/src/llm.ts`, `packages/core/src/provider.ts`, `plugin/provider.ts`, and `session/model-transport.ts`. Provider catalog, authentication refresh, custom-provider behavior, and request-option fidelity still need detailed review. No live provider requests were made.
+
+### Server And SDK
+
+`src/OpenCode.Server/Endpoints/FeatureEndpoints.cs` returns fixed empty skill, command, plugin, and reference lists with a current-directory location. Upstream `packages/server/src/handlers/skill.ts`, for example, resolves the skill service, and `packages/protocol/src/groups/skill.ts` specifies a location query. These .NET operations are stubs, not verified implementations of discovery or location selection.
+
+`src/OpenCode.Server/Endpoints/PermissionEndpoints.cs` returns fixed empty request and saved-permission lists. This does not establish permission request/reply, persistence, or enforcement behavior. Compare upstream `packages/protocol/src/groups/permission.ts` and `packages/server/src/handlers/permission.ts`.
+
+`src/OpenCode.Sdk/OpenCodeClient.cs` composes database stores, provider resolution, and the simplified prompt engine. It is a partial embedded facade, not evidence of full upstream SDK or generated HTTP client coverage. Compare `packages/sdk/src/promise.ts` and `packages/client/src/promise/generated/client.ts`; API resource coverage, typed failures, cancellation, streaming, and host disposal need acceptance evidence.
+
+### Terminal UI And Native Interop
+
+`src/OpenTui.Blazor/Rendering/TuiRenderer.cs` translates Blazor render-tree frames into owned nodes. `src/OpenTui.Native/OpenTuiNative.cs` declares native entry points and a library resolver. This is consistent with the intended architectural direction, but does not prove native binary compatibility or complete TUI behavior.
+
+The CLI, renderer, layout engine, host, and bindings are under active implementation by other contributors. Native ABI and ownership, input dispatch, resize, Unicode width, scrolling, focus, terminal restoration, and upstream feature coverage remain unaccepted. Do not replace this status with obsolete claims about earlier code, or infer that a successful managed build loads and exercises the native library.
+
+## Fidelity Acceptance Criteria
+
+Acceptance is per bounded source mapping, not per filename count. An idiomatic many-to-one or one-to-many mapping is valid when it preserves the required behavior and records deliberate differences.
+
+1. Record exact upstream files, exported symbols or operations, revision, .NET files and symbols, reviewer, remaining gaps, and evidence references. Inventory every in-scope source file, including explicit reasons for generated files, platform adapters, or legacy contracts that are not copied.
+2. Compare schemas field by field: required versus optional values, omitted versus null keys, discriminators, unions, validation, defaults, IDs, dates, numeric ranges, errors, and storage encoding. Record representative accepted and rejected payloads.
+3. Compare protocol and server behavior: all required routes and methods, query/body decoding, response and error schemas, status codes, authorization, location selection, event delivery, streaming, cancellation, and disposal.
+4. Compare core behavior: durable admission and delivery, history and instruction assembly, tool permissions and execution, provider requests, logical steps and retries, compaction, interruption, concurrency, and recovery. A text-only prompt success cannot satisfy this criterion.
+5. Verify channel `dotnet` path selection and establish persistence compatibility on isolated disposable fixtures, including migrations, ordered events and projections, transaction boundaries, replay, existing IDs, and recovery. Do not copy or write a live production database. Fixture execution remains subject to the validation restriction.
+6. Verify configuration precedence and discovery, normalization, substitutions, reload behavior, provider catalog and authentication behavior, and SDK remote and embedded resource coverage without exposing credentials or confidential model identifiers.
+7. Verify the Blazor-to-native rendering path without a Bun/SolidJS wrapper, including ABI version, resource ownership, input, layout, resize, terminal cleanup, and representative narrow/wide terminal workflows. Visual checks supplement, not replace, behavioral evidence.
+8. Attach reproducible build evidence with revision, command, configuration, and result. Separately attach the contract and runtime evidence needed for the mapped behavior. Until those later checks are authorized and completed, retain partial or unreviewed status even if compilation succeeds.
+
+These are future acceptance requirements, not claims that validation has run. This documentation-only pass does not add or execute the checks. Reconcile this provisional map with the implementation and backend audit in flight before making any final completion claim.

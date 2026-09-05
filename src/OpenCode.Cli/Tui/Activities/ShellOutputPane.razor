@@ -1,0 +1,23 @@
+@namespace OpenCode.Cli.Tui.Activities
+
+<Box FocusKey="activity-shell-output" OnKeyDown="Key" Gap="1">
+    <Box Direction="TuiFlexDirection.Row" Height="1">
+        <TuiText Value="@Entry.Info.Command" Fg="@Theme.Text.Hex" Bold="true" Grow="1" Height="1" WrapMode="NativeTextWrapMode.None" />
+        <TuiText Value="@ActivityProjection.ShellState(_info ?? Entry.Info)" Fg="@Theme.Subdued.Hex" Height="1" />
+    </Box>
+    <Box Height="Math.Max(1, Height)" Bg="@Theme.Background.Hex">
+        <ScrollBox State="_scroll">
+            <TuiText Value="@Display" Fg="@Theme.Text.Hex" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+        </ScrollBox>
+    </Box>
+    <TuiText Value="@($"bytes {_displayStart:0}–{_cursor:0} / {_size:0}{(_trimmed ? " · older display pages omitted" : "")}{(_waiting ? " · waiting on shared feed" : "")}")"
+             Fg="@Theme.Subdued.Hex" Height="1" WrapMode="NativeTextWrapMode.None" />
+    @if (_error is not null) { <TuiText Value="@_error" Fg="@Theme.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+    <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">
+        <TuiText Value="read more enter" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="ReadClick" Height="1" />
+        <TuiText Value="reset home" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="ResetClick" Height="1" />
+        @if ((_info ?? Entry.Info).Status == ShellStatus.Running)
+        { <TuiText Value="wait w" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="WaitClick" Height="1" /> }
+        <TuiText Value="esc back" Fg="@Theme.Subdued.Hex" OnClick="BackClick" Height="1" />
+    </Box>
+</Box>

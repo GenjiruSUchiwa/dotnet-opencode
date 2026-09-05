@@ -1,0 +1,145 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using System.Text.Json
+@using OpenTui.Native
+@using OpenCode.Cli.Tui.ToolViews
+
+<Box>
+    <Box Direction="TuiFlexDirection.Row">
+        <TuiText Value="@Marker" Width="2" Fg="@StatusColor" />
+        <TuiText Value="@($"{Label}  [{Status}]")" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" />
+    </Box>
+    @if (Part.State is ToolStateError error)
+    {
+        <Box PaddingLeft="2"><TuiText Value="@error.Error.Message" Fg="@Theme.Error" /></Box>
+    }
+    @if (Kind == "shell")
+    {
+        <ShellToolBlock Theme="Theme" Command="@InputText("command")" Workdir="@InputText("workdir")"
+                        Output="@string.Join('\n', Output.OfType<ToolTextContent>().Select(text => text.Text))"
+                        Running="@(Part.State is ToolStateRunning or ToolStateStreaming)" Expanded="Expanded" Width="Width" />
+    }
+    @if (Kind is "edit" or "patch")
+    {
+        <ToolEditView @key="Part.Id" Part="Part" Theme="Theme" Bindings="Bindings" Expanded="Expanded" Width="Width" />
+    }
+    @if (Kind == "question")
+    {
+        <QuestionToolView @key="Part.Id" Part="Part" Theme="Theme" Expanded="Expanded" />
+    }
+    @if (Kind == "subagent")
+    {
+        <SubagentToolView @key="Part.Id" Part="Part" Theme="Theme" Bindings="Bindings" Expanded="Expanded" />
+    }
+    @if (Kind == "read" && Part.State is ToolStateCompleted)
+    {
+        @foreach (var path in Loaded)
+        {
+            <Box PaddingLeft="3"><TuiText Value="@($"↳ Loaded {path}")" Fg="@Theme.Subdued" WrapMode="NativeTextWrapMode.Word" /></Box>
+        }
+    }
+    @if (Expanded && Kind is not ("shell" or "edit" or "patch" or "question" or "subagent"))
+    {
+        <Box PaddingLeft="2" PaddingTop="1" Gap="1">
+            @if (Part.State is ToolStateStreaming streaming)
+            {
+                <TuiText Value="@streaming.Input" Fg="@Theme.Subdued" />
+            }
+            @foreach (var entry in Input.Where(_ => Kind is not ("read" or "glob" or "grep" or "edit")))
+            {
+                <Box Direction="TuiFlexDirection.Row">
+                    <TuiText Value="@($"{entry.Key}: ")" Fg="@Theme.Subdued" />
+                    <TuiText Value="@(entry.Value.ToString())" Fg="@Theme.Text" />
+                </Box>
+            }
+            @foreach (var content in Output)
+            {
+                @switch (content)
+                {
+                    case ToolTextContent text:
+                        <TuiText Value="@text.Text" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" Selectable="true" />
+                        break;
+                    case ToolFileContent file:
+                        <TuiText Value="@($"{file.Name ?? file.Uri} ({file.Mime})")" Fg="@Theme.MarkdownLink" />
+                        break;
+                }
+            }
+        </Box>
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public AssistantToolContent Part { get; set; } = default!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    [Parameter] public ToolViewBindings? ViewBindings { get; set; }
+    [CascadingParameter] public ToolViewBindings? HostBindings { get; set; }
+    private ToolViewBindings? Bindings => ViewBindings ?? HostBindings;
+    private string Kind => ToolResultData.Kind(Part.Name);
+    private IReadOnlyDictionary<string, JsonElement> Metadata => Part.State switch
+    {
+        ToolStateRunning running => running.Metadata ?? EmptyInput,
+        ToolStateCompleted completed => completed.Metadata ?? EmptyInput,
+        ToolStateError error => error.Metadata ?? EmptyInput,
+        _ => EmptyInput
+    };
+    private string? InputText(string key) => Input.TryGetValue(key, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    private IEnumerable<string> Loaded => Metadata.TryGetValue("loaded", out var loaded) && loaded.ValueKind == JsonValueKind.Array
+        ? loaded.EnumerateArray().Where(value => value.ValueKind == JsonValueKind.String).Select(value => value.GetString()!) : [];
+    private string MatchCount
+    {
+        get
+        {
+            if (!Metadata.TryGetValue(Kind == "grep" ? "matches" : "count", out var count) ||
+                count.ValueKind != JsonValueKind.Number || !count.TryGetInt64(out var total) || total < 0) return "";
+            return $" ({total} {(total == 1 ? "match" : "matches")})";
+        }
+    }
+    private string Label => Kind switch
+    {
+        "shell" => InputText("description") ?? "Shell",
+        "read" => $"Read {InputText("path") ?? InputText("filePath") ?? "…"}",
+        "edit" => $"Edit {InputText("path") ?? InputText("filePath") ?? "…"}",
+        "patch" => "Patch",
+        "question" => "Questions",
+        "subagent" => "Subagent",
+        "glob" or "grep" => $"{(Kind == "glob" ? "Glob" : "Grep")} \"{InputText("pattern")}\"" +
+            (InputText("path") is { } path ? $" in {path}" : "") + MatchCount,
+        _ => $"{Part.Name}  {Summary}"
+    };
+    private IReadOnlyDictionary<string, JsonElement> Input => Part.State switch
+    {
+        ToolStateRunning running => running.Input,
+        ToolStateCompleted completed => completed.Input,
+        ToolStateError error => error.Input,
+        _ => EmptyInput
+    };
+    private static readonly IReadOnlyDictionary<string, JsonElement> EmptyInput = new Dictionary<string, JsonElement>();
+    private IReadOnlyList<ToolContent> Output => Part.State switch
+    {
+        ToolStateCompleted completed => completed.Content,
+        ToolStateError error => error.Content ?? [],
+        _ => []
+    };
+    private string Status => Part.State switch
+    {
+        ToolStateStreaming => "receiving input",
+        ToolStateRunning => "running",
+        ToolStateCompleted => "completed",
+        ToolStateError => "error",
+        _ => throw new InvalidOperationException("Unknown canonical tool state.")
+    };
+    private string Marker => Part.State is ToolStateError ? "! " : Kind switch
+    {
+        "read" => "→ ", "glob" or "grep" => "✱ ", "edit" => "← ", "shell" => "# ",
+        _ => Part.State is ToolStateCompleted ? "* " : "> "
+    };
+    private string StatusColor => Part.State switch
+    {
+        ToolStateError => Theme.Error,
+        ToolStateCompleted => Theme.Success,
+        _ => Theme.Warning
+    };
+    private string Summary => new[] { "description", "filePath", "path", "pattern", "command", "url", "query" }
+        .Where(Input.ContainsKey).Select(key => Input[key].ToString().Replace('\n', ' ').Replace('\r', ' ')).FirstOrDefault() ?? "";
+}

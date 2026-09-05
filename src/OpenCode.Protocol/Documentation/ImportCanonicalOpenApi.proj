@@ -1,0 +1,12 @@
+<Project>
+  <!-- Explicit metadata import only. This project has no SDK/app target or references. -->
+  <Target Name="ImportCanonicalOpenApi">
+    <Error Condition="'$(Source)' == ''" Text="Supply Source pointing to packages/protocol/openapi.json from the TypeScript checkout." />
+    <GetFileHash Files="$(Source)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_SourceOpenApi" />
+    </GetFileHash>
+    <Copy SourceFiles="$(Source)" DestinationFiles="$(MSBuildThisFileDirectory)canonical-openapi.json" SkipUnchangedFiles="true" />
+    <WriteLinesToFile File="$(MSBuildThisFileDirectory)canonical-openapi.sha256" Lines="@(_SourceOpenApi->'%(FileHash)')"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+</Project>

@@ -1,0 +1,57 @@
+@namespace OpenCode.Cli.Tui.Activities
+
+@if (Active)
+{
+    @if (_inspected is { } output)
+    {
+        <ShellOutputPane @key="(Client, output.Info.Id, output.Location)" @ref="_output" Client="Client" Entry="output" Theme="Theme"
+                         Height="Math.Max(1, Math.Min(8, TerminalHeight / 3))" OnBack="BackAsync" OnClose="OnClose" OnObserved="ObservedAsync" />
+    }
+    else
+    {
+        <Box FocusKey="activity-shells" OnKeyDown="Key" Gap="1">
+            @if (Error is { } error)
+            { <TuiText Value="@error" Fg="@Theme.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+            else if (Shells is null)
+            { <TuiText Value="Shell activity has not been loaded." Fg="@Theme.Subdued.Hex" /> }
+            else
+            {
+                <Box Height="ListHeight">
+                    <ScrollBox State="_scroll">
+                        @if (_rows.Count == 0)
+                        { <TuiText Value="@(_runningOnly ? " No shell commands" : " No retained completed shell commands")" Fg="@Theme.Subdued.Hex" Height="1" /> }
+                        @for (var index = 0; index < _rows.Count; index++)
+                        {
+                            var row = _rows[index];
+                            var position = index;
+                            var selected = index == _selected;
+                            <Box @key="(row.Info.Id, row.Location)" Direction="TuiFlexDirection.Row" Height="1" PaddingX="1"
+                                 Bg="@Theme.ActionBackground(ThemeActionVariant.Primary, selected ? ThemeActionState.Focused : ThemeActionState.Default).Hex"
+                                 OnPointerEnter="args => Hover(position, args)" OnClick="args => OpenClick(position, args)">
+                                <TuiText Value="@row.Info.Command" Grow="1" Height="1" Bold="selected" WrapMode="NativeTextWrapMode.None" PointerEvents="false"
+                                         Fg="@Theme.ActionText(ThemeActionVariant.Primary, selected ? ThemeActionState.Focused : ThemeActionState.Default).Hex" />
+                                <TuiText Value="@ActivityProjection.ShellState(row.Info)" Height="1" WrapMode="NativeTextWrapMode.None" PointerEvents="false"
+                                         Fg="@(selected ? Theme.ActionText(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex : StatusColor(row.Info))" />
+                            </Box>
+                        }
+                    </ScrollBox>
+                </Box>
+                @if (Selected is { } selectedRow && ActivityProjection.ShellJob(selectedRow, SessionId, Jobs) is { } job)
+                {
+                    <Box Direction="TuiFlexDirection.Row" Height="1" Gap="2">
+                        <TuiText Value="@ActivityProjection.JobLabel(job)" Fg="@Theme.Subdued.Hex" Grow="1" Height="1" />
+                        @if (job.State == ActivityJobState.Running && CancelJob is not null)
+                        { <TuiText Value="cancel job" Fg="@Theme.ActionText(ThemeActionVariant.Destructive).Hex" OnClick="CancelJobClick" Height="1" /> }
+                    </Box>
+                }
+            }
+            @if (_error is not null) { <TuiText Value="@_error" Fg="@Theme.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+            <Box Direction="TuiFlexDirection.Row" Gap="2" Height="1">
+                @if (Selected?.Info.Status == ShellStatus.Running)
+                { <TuiText Value="@($"kill {KillShortcut}")" Fg="@Theme.ActionText(ThemeActionVariant.Destructive).Hex" OnClick="KillClick" Height="1" /> }
+                <TuiText Value="enter output" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="OutputClick" Height="1" />
+                <TuiText Value="@($"show {(_runningOnly ? "completed" : "running")} ctrl+a")" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" OnClick="ToggleClick" Height="1" />
+            </Box>
+        </Box>
+    }
+}

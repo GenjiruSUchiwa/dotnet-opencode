@@ -1,0 +1,36 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using Markdig
+@using OpenTui.Native
+@using OpenCode.Cli.Tui.Images
+@using OpenTui.Blazor.Code
+
+@if (Presentation == MarkdownPresentation.Source)
+{
+    <TuiText Value="@Text" Fg="@(Subdued ? Theme.Subdued : Theme.MarkdownText)" WrapMode="NativeTextWrapMode.Character" Selectable="true" />
+}
+else
+{
+    <MarkdownBlocks Blocks="_document" Theme="Theme" Subdued="Subdued" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="Streaming" />
+}
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public bool Subdued { get; set; }
+    [Parameter] public MarkdownPresentation Presentation { get; set; }
+    [Parameter] public EventCallback<string> OnCopyCode { get; set; }
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
+    [Parameter] public ICodeHighlighter? CodeHighlighter { get; set; }
+    [Parameter] public IReadOnlyList<NativeSyntaxRule> SyntaxRules { get; set; } = [];
+    [Parameter] public bool Streaming { get; set; }
+    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UsePipeTables().UseEmphasisExtras().Build();
+    private string? _source;
+    private MarkdownDocument _document = new();
+
+    protected override void OnParametersSet()
+    {
+        if (Presentation == MarkdownPresentation.Source || _source == Text) return;
+        _source = Text;
+        _document = Markdown.Parse(Text, Pipeline);
+    }
+}

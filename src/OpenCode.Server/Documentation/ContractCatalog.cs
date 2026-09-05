@@ -1,0 +1,127 @@
+namespace OpenCode.Server.Documentation;
+
+using OpenCode.Protocol.Groups;
+using OpenCode.Schema;
+using OpenCode.Server.Endpoints;
+using OpenCode.Core.Session.Skills;
+
+/// <summary>Verified bindings, separate from endpoint ownership. Entries never cause routes to be registered.</summary>
+internal static class ContractCatalog
+{
+    internal static IReadOnlyDictionary<string, NativeContract> Create()
+    {
+        var contracts = new Dictionary<string, NativeContract>(StringComparer.Ordinal);
+        void Add(string id, Type? response, Type? request = null, int status = 200, string? note = null, string content = "application/json") =>
+            contracts.Add(id, new(request, response, status, Note: note, ContentType: content));
+        void Empty(string id, Type? request = null) => Add(id, null, request, 204);
+        Add("v2.health.get", typeof(NativeHealth), note: "Native health adds verified process/build/channel/state fields; starting/stopping use 503 and failed uses 500.");
+        Add("v2.server.get", typeof(ServerInfoResponse));
+        Add("v2.location.get", typeof(LocationInfo));
+        Add("v2.agent.list", typeof(LocationResponse<IReadOnlyList<AgentInfo>>));
+        Add("v2.agent.get", typeof(LocationResponse<AgentInfo>));
+        Add("v2.model.list", typeof(LocationResponse<IReadOnlyList<ModelInfo>>));
+        Add("v2.model.default", typeof(DefaultModelResponse));
+        Add("v2.provider.list", typeof(LocationResponse<IReadOnlyList<ProviderInfo>>));
+        Add("v2.integration.list", typeof(LocationResponse<IReadOnlyList<IntegrationInfo>>));
+        Add("v2.integration.get", typeof(IntegrationGetResponse));
+        Empty("v2.integration.connect.key", typeof(IntegrationKeyConnectPayload));
+        Add("v2.integration.oauth.connect", typeof(LocationResponse<IntegrationAttempt>), typeof(IntegrationOAuthConnectPayload));
+        Add("v2.integration.oauth.status", typeof(LocationResponse<IntegrationAttemptStatus>));
+        Empty("v2.integration.oauth.complete", typeof(IntegrationOAuthCompletePayload)); Empty("v2.integration.oauth.cancel");
+        Add("v2.integration.command.connect", typeof(LocationResponse<IntegrationCommandAttempt>), typeof(IntegrationCommandConnectPayload));
+        Add("v2.integration.command.status", typeof(LocationResponse<IntegrationCommandAttemptStatus>));
+        Empty("v2.integration.command.cancel");
+        Add("v2.project.list", typeof(IReadOnlyList<ProjectInfo>));
+        Add("v2.project.current", typeof(LocationProjectInfo));
+        Add("v2.project.update", typeof(ProjectInfo), typeof(ProjectUpdateApiRequest));
+        Add("v2.config.get", typeof(IReadOnlyList<ConfigEntry>));
+        Add("v2.command.list", typeof(LocationResponse<IReadOnlyList<CommandInfo>>));
+        Add("v2.skill.list", typeof(LocationResponse<IReadOnlyList<SkillInfo>>));
+        Add("v2.plugin.list", typeof(LocationResponse<IReadOnlyList<PluginInfo>>), note: "Native Location instances only; external JS/TS plugins are not loaded or inferred from configuration.");
+        Add("v2.reference.list", typeof(LocationResponse<IReadOnlyList<ReferenceInfo>>));
+        Add("v2.fs.list", typeof(LocationResponse<IReadOnlyList<FileSystemEntry>>));
+        Add("v2.fs.find", typeof(LocationResponse<IReadOnlyList<FileSystemEntry>>));
+        Add("v2.fs.read", typeof(byte[]), content: "application/octet-stream", note: "Raw bytes with the actual file MIME type; not a base64 JSON response.");
+        Add("v2.session.list", typeof(ApiPage<SessionInfo>));
+        Add("v2.session.stats", typeof(ApiResult<SessionStatsInfo>));
+        Add("v2.session.export", typeof(ApiResult<SessionTransferData>));
+        Add("v2.session.import", typeof(ApiResult<SessionInfo>), typeof(SessionArchiveImportInput));
+        Empty("v2.session.skill", typeof(SessionSkillRequest));
+        Add("v2.session.create", typeof(ApiResult<SessionInfo>), typeof(CreateSessionApiRequest));
+        Add("v2.session.get", typeof(ApiResult<SessionInfo>));
+        Add("v2.session.active", typeof(ApiResult<IReadOnlyDictionary<string, SessionActive>>));
+        Add("v2.session.fork", typeof(ApiResult<SessionInfo>), typeof(SessionForkInput));
+        Add("v2.message.list", typeof(ApiPage<SessionMessage>));
+        Add("v2.session.message", typeof(ApiResult<SessionMessage>));
+        Add("v2.session.context", typeof(ApiResult<IReadOnlyList<SessionMessage>>));
+        Add("v2.session.inbox.list", typeof(ApiResult<IReadOnlyList<SessionInboxItem>>));
+        Add("v2.session.prompt", typeof(ApiResult<SessionInboxItem>), typeof(PromptApiRequest), note: "New prompt model/variant overrides remain unsupported; committed-ID retries retain first admission.");
+        Add("v2.session.compact", typeof(ApiResult<SessionInboxItem>), typeof(CompactSessionApiRequest));
+        Add("v2.session.interrupt", typeof(InterruptSessionResponse), note: "continue=true schedules a non-forced steering/control drain after interrupting locally owned work; parked queued prompts are not promoted by that continuation.");
+        Add("v2.session.revert.stage", typeof(ApiResult<SessionRevert>), typeof(StageRevertApiRequest));
+        Add("v2.session.generate", typeof(ApiResult<GeneratedText>), typeof(SessionGenerateApiRequest));
+        Add("v2.session.instructions.entry.list", typeof(ApiResult<IReadOnlyList<InstructionEntryInfo>>));
+        Empty("v2.session.instructions.entry.put", typeof(InstructionEntryApiRequest));
+        Empty("v2.session.instructions.entry.remove");
+        Empty("v2.session.remove"); Empty("v2.session.wait"); Empty("v2.session.revert.clear"); Empty("v2.session.revert.commit");
+        Empty("v2.session.switchAgent", typeof(SwitchAgentApiRequest));
+        Empty("v2.session.switchModel", typeof(SwitchModelApiRequest));
+        Empty("v2.session.rename", typeof(RenameSessionApiRequest));
+        Empty("v2.session.move", typeof(SessionMoveInput));
+        Empty("v2.session.background");
+        Empty("v2.session.view", typeof(ViewSessionApiRequest));
+        Empty("v2.session.environment", typeof(SessionEnvironmentApiRequest));
+        Empty("v2.session.command", typeof(CommandSessionApiRequest));
+        Empty("v2.session.inbox.cancel"); Empty("v2.session.inbox.steer"); Empty("v2.session.inbox.queue");
+        Add("v2.form.request.list", typeof(LocationResponse<IReadOnlyList<FormInfo>>));
+        Add("v2.session.form.list", typeof(ApiResult<IReadOnlyList<FormInfo>>));
+        Add("v2.session.form.create", typeof(ApiResult<FormInfo>), typeof(FormCreatePayload));
+        Add("v2.session.form.get", typeof(ApiResult<FormInfo>));
+        Add("v2.session.form.state", typeof(ApiResult<FormState>));
+        Empty("v2.session.form.reply", typeof(FormReply)); Empty("v2.session.form.cancel");
+        Add("v2.permission.request.list", typeof(LocationResponse<IReadOnlyList<PermissionRequest>>));
+        Add("v2.session.permission.list", typeof(ApiResult<IReadOnlyList<PermissionRequest>>));
+        Add("v2.session.permission.get", typeof(ApiResult<PermissionRequest>));
+        Add("v2.session.permission.create", typeof(ApiResult<PermissionDecisionInfo>), typeof(PermissionCreateApiRequest));
+        Empty("v2.session.permission.reply", typeof(PermissionReplyApiRequest));
+        Add("v2.permission.saved.list", typeof(PermissionSavedListResponse)); Empty("v2.permission.saved.remove");
+        Add("v2.mcp.list", typeof(LocationResponse<IReadOnlyList<McpServer>>));
+        Add("v2.mcp.resource.catalog", typeof(LocationResponse<McpResourceCatalog>));
+        Empty("v2.mcp.add", typeof(McpAddPayload)); Empty("v2.mcp.remove"); Empty("v2.mcp.connect"); Empty("v2.mcp.disconnect");
+        Add("v2.worktree.list", typeof(IReadOnlyList<WorktreeDirectory>));
+        Add("v2.worktree.create", typeof(WorktreeInfo), typeof(WorktreeCreatePayload));
+        Empty("v2.worktree.remove", typeof(WorktreeRemovePayload)); Empty("v2.worktree.refresh");
+        Add("v2.vcs.get", typeof(LocationResponse<VcsInfo>)); Add("v2.vcs.base", typeof(LocationResponse<VcsBase?>));
+        Add("v2.vcs.status", typeof(LocationResponse<IReadOnlyList<VcsFileStatus>>));
+        Add("v2.vcs.branches", typeof(LocationResponse<IReadOnlyList<string>>));
+        Add("v2.vcs.diff", typeof(LocationResponse<IReadOnlyList<FileDiffInfo>>));
+        Add("v2.pty.list", typeof(LocationResponse<IReadOnlyList<PtyInfo>>));
+        Add("v2.pty.create", typeof(LocationResponse<PtyInfo>), typeof(PtyCreateInput));
+        Add("v2.pty.get", typeof(LocationResponse<PtyInfo>));
+        Add("v2.pty.update", typeof(LocationResponse<PtyInfo>), typeof(PtyUpdateInput));
+        Empty("v2.pty.remove");
+        Add("v2.pty.connect.token", typeof(LocationResponse<PtyConnectToken>));
+        Add("v2.pty.connect", null, status: 101, content: "websocket");
+        Add("server.experimental.persistentPty.list", typeof(ApiResult<IReadOnlyList<PersistentPtyInfo>>));
+        Add("server.experimental.persistentPty.create", typeof(ApiResult<PersistentPtyInfo>), typeof(PersistentPtyCreateInput));
+        Add("server.experimental.persistentPty.get", typeof(ApiResult<PersistentPtyInfo>));
+        Add("server.experimental.persistentPty.update", typeof(ApiResult<PersistentPtyInfo>), typeof(PersistentPtyUpdateInput));
+        Add("server.experimental.persistentPty.snapshot", typeof(ApiResult<PersistentPtySnapshot>));
+        Add("server.experimental.persistentPty.read", typeof(PersistentReadResponse));
+        Add("server.experimental.persistentPty.handoff", typeof(PersistentHandoffResponse));
+        Empty("server.experimental.persistentPty.remove"); Empty("server.experimental.persistentPty.shutdown");
+        Add("server.experimental.persistentPty.connectToken", typeof(ApiResult<PtyConnectToken>));
+        Add("v2.persistentPty.connect", null, status: 101, content: "websocket");
+        Add("v2.shell.list", typeof(LocationResponse<IReadOnlyList<ShellInfo>>));
+        Add("v2.shell.create", typeof(LocationResponse<ShellInfo>), typeof(ShellCreateInput));
+        Add("v2.shell.get", typeof(LocationResponse<ShellInfo>));
+        Add("v2.shell.timeout", typeof(LocationResponse<ShellInfo>), typeof(ShellTimeoutInput));
+        Add("v2.shell.output", typeof(LocationResponse<ShellOutput>));
+        Empty("v2.shell.remove"); Empty("v2.session.shell", typeof(SessionShellPayload));
+        Add("v2.event.subscribe", typeof(OpenCodeEvent), content: "text/event-stream", note: "Initial server.connected frame has no created/durable fields; heartbeat comments occur every 15 seconds.");
+        Empty("v2.credential.update", typeof(CredentialLabelPayload)); Empty("v2.credential.remove"); Empty("v2.credential.activate");
+        foreach (var id in new[] { "v2.experimental.integration.wellknown.add" })
+            contracts.Add(id, new(null, null, 503, "This registered native handler currently returns ServiceUnavailableError; it does not provide the source success operation."));
+        return contracts;
+    }
+}

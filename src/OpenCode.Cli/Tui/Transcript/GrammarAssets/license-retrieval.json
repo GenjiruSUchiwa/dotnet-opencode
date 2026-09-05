@@ -1,0 +1,234 @@
+[
+  {
+    "language": "rust",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-rust/v0.24.0/LICENSE",
+    "file": "rust-LICENSE.txt",
+    "sha256": "31d5b6f4243d5c7c6e1c4ebbbb9f6407bd1457a08bcc4f706521710341acba36",
+    "error": null
+  },
+  {
+    "language": "cpp",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-cpp/v0.23.4/LICENSE",
+    "file": "cpp-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "go",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-go/v0.25.0/LICENSE",
+    "file": "go-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "python",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-python/v0.23.6/LICENSE",
+    "file": "python-LICENSE.txt",
+    "sha256": "d724405ce238a22c0d35769c5a36b386ad5958192efe8bbb304fb2896254575f",
+    "error": null
+  },
+  {
+    "language": "bash",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-bash/v0.25.0/LICENSE",
+    "file": "bash-LICENSE.txt",
+    "sha256": "49bf33cf78ef5897e4e161ce1517df7de1ae5042a65b6bcfd44401e0fc606559",
+    "error": null
+  },
+  {
+    "language": "csharp",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-c-sharp/v0.23.1/LICENSE",
+    "file": "csharp-LICENSE.txt",
+    "sha256": "778fb7d63b8c1844da315648c02f325c4713a6f4a5d19644fd413421422776d3",
+    "error": null
+  },
+  {
+    "language": "kotlin",
+    "source": "https://raw.githubusercontent.com/fwcd/tree-sitter-kotlin/0.3.8/LICENSE",
+    "file": "kotlin-LICENSE.txt",
+    "sha256": "948495f61768f7de26bcc61113d8cd95f50bbc15adb678c28c941c6c8fcd5903",
+    "error": null
+  },
+  {
+    "language": "java",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-java/v0.23.5/LICENSE",
+    "file": "java-LICENSE.txt",
+    "sha256": "52ed137b039cd9c46409bc22e89938af911c95b157feae2d040b51e6084369a7",
+    "error": null
+  },
+  {
+    "language": "c",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-c/v0.24.1/LICENSE",
+    "file": "c-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "php",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-php/v0.24.2/LICENSE",
+    "file": "php-LICENSE.txt",
+    "sha256": "664764fabf40c0b318e06324a5a12379092a2df25b8cbf2415f71bc0bb352346",
+    "error": null
+  },
+  {
+    "language": "scala",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-scala/v0.24.0/LICENSE",
+    "file": "scala-LICENSE.txt",
+    "sha256": "1f95ed26e1f4074074c9c7083e61c0a9e4c3b9f435745044995f3beb4ed28575",
+    "error": null
+  },
+  {
+    "language": "html",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-html/v0.23.2/LICENSE",
+    "file": "html-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "vue",
+    "source": "https://raw.githubusercontent.com/anomalyco/tree-sitter-vue/v0.1.2/LICENSE",
+    "file": "vue-LICENSE.txt",
+    "sha256": "91ebb180e4e2e34628c45e405584d0faac6863660b69e8139da96290e58c14dd",
+    "error": null
+  },
+  {
+    "language": "hcl",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-hcl/v1.2.0/LICENSE",
+    "file": "hcl-LICENSE.txt",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "error": null
+  },
+  {
+    "language": "json",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-json/v0.24.8/LICENSE",
+    "file": "json-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "yaml",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-yaml/v0.7.2/LICENSE",
+    "file": "yaml-LICENSE.txt",
+    "sha256": "2d181298822a124f6d106118dcc69c8d4d26ac668559be29682c452e712b0947",
+    "error": null
+  },
+  {
+    "language": "haskell",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-haskell/v0.23.1/LICENSE",
+    "file": "haskell-LICENSE.txt",
+    "sha256": "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1",
+    "error": null
+  },
+  {
+    "language": "css",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-css/v0.25.0/LICENSE",
+    "file": "css-LICENSE.txt",
+    "sha256": "c5cfb43042b6b72045f4ba997834d0a7786d2793d91680868b5815b39f14fc78",
+    "error": null
+  },
+  {
+    "language": "julia",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-julia/v0.23.1/LICENSE",
+    "file": "julia-LICENSE.txt",
+    "sha256": "74f800107f200f4e28da33e9c3f86230d37d8f4c0a4916f7111e800c395ee3a2",
+    "error": null
+  },
+  {
+    "language": "ocaml",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-ocaml/v0.24.2/LICENSE",
+    "file": "ocaml-LICENSE.txt",
+    "sha256": "f977a20805dd6e275f14bc090a5f8e638401dad4df366841c1060f12c75b74ae",
+    "error": null
+  },
+  {
+    "language": "nix",
+    "error": "No grammar repository license identified from non-release origin."
+  },
+  {
+    "language": "ruby",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-ruby/v0.23.1/LICENSE",
+    "file": "ruby-LICENSE.txt",
+    "sha256": "ee006f02a3d856df282e409be2a86e24a65bb573a98b9c28343771141351bb6b",
+    "error": null
+  },
+  {
+    "language": "toml",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-toml/v0.7.0/LICENSE",
+    "file": "toml-LICENSE.txt",
+    "sha256": "b727eee929bee836e8102cecf749a795b199f291b58c885bcd81cae727ac5a46",
+    "error": null
+  },
+  {
+    "language": "lua",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-lua/v0.5.0/LICENSE.md",
+    "file": "lua-LICENSE.txt",
+    "sha256": "9a32b02e4c917b1ce6b5e79d8ea81e25cefd7f27d89c7235f2afb262c06cf32e",
+    "error": null
+  },
+  {
+    "language": "swift",
+    "source": "https://raw.githubusercontent.com/alex-pinkus/tree-sitter-swift/0.7.1/LICENSE",
+    "file": "swift-LICENSE.txt",
+    "sha256": "3533cec129bb4bba015c0d61d86dd7c3b7e82110e4d2ff7837a01eff5bad5ccc",
+    "error": null
+  },
+  {
+    "language": "diff",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-diff/v0.1.0/LICENSE",
+    "file": "diff-LICENSE.txt",
+    "sha256": "bb98faf5a86e9458536a6c745e02b53775d01066f1e51dda4ae220a3c0b050f4",
+    "error": null
+  },
+  {
+    "language": "elixir",
+    "source": "https://raw.githubusercontent.com/elixir-lang/tree-sitter-elixir/v0.3.5/LICENSE",
+    "file": "elixir-LICENSE.txt",
+    "sha256": "a6cba85bc92e0cff7a450b1d873c0eaa2e9fc96bf472df0247a26bec77bf3ff9",
+    "error": null
+  },
+  {
+    "language": "r",
+    "source": "https://raw.githubusercontent.com/r-lib/tree-sitter-r/v1.2.0/LICENSE",
+    "file": "r-LICENSE.txt",
+    "sha256": "de2e49529f03d573bc3fa229dc83acfe22c63a5ad1766b289563edfd45b72dea",
+    "error": null
+  },
+  {
+    "language": "fsharp",
+    "source": "https://raw.githubusercontent.com/ionide/tree-sitter-fsharp/0.3.0/LICENSE",
+    "file": "fsharp-LICENSE.txt",
+    "sha256": "f9352b63e87252b282b252bf27530027c8ca69829e0023f8b8b682a736f271fd",
+    "error": null
+  },
+  {
+    "language": "make",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-make/v1.1.1/LICENSE",
+    "file": "make-LICENSE.txt",
+    "sha256": "28eecdb75b6de2d9020603531461444bf54db827ee2fb345a8fcf4dbee7c2ad1",
+    "error": null
+  },
+  {
+    "language": "vim",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-vim/v0.8.1/LICENSE",
+    "file": "vim-LICENSE.txt",
+    "sha256": "14eaaaa5c0cdb0eb86e85c55643c4cfa04593dbfbaef6a20f35337667b7278d7",
+    "error": null
+  },
+  {
+    "language": "xml",
+    "source": "https://raw.githubusercontent.com/tree-sitter-grammars/tree-sitter-xml/v0.7.0/LICENSE",
+    "file": "xml-LICENSE.txt",
+    "sha256": "3297073719030b7261afd78b7267931ccc03a27f7a65ca6fc644316180f71bf6",
+    "error": null
+  },
+  {
+    "language": "agda",
+    "source": "https://raw.githubusercontent.com/tree-sitter/tree-sitter-agda/v1.3.3/LICENSE",
+    "file": "agda-LICENSE.txt",
+    "sha256": "ef120ea13e3e543234f3d9a193c99ea512872979802dc0cebaea404c1a47047c",
+    "error": null
+  },
+  {
+    "language": "clojure",
+    "error": "https://raw.githubusercontent.com/anomalyco/tree-sitter-clojure/v0.0.1/LICENSE : Response status code does not indicate success: 404 (Not Found).; https://raw.githubusercontent.com/anomalyco/tree-sitter-clojure/v0.0.1/LICENSE.md : Response status code does not indicate success: 404 (Not Found).; https://raw.githubusercontent.com/anomalyco/tree-sitter-clojure/v0.0.1/LICENSE.txt : Response status code does not indicate success: 404 (Not Found).; https://raw.githubusercontent.com/anomalyco/tree-sitter-clojure/v0.0.1/COPYING : Response status code does not indicate success: 404 (Not Found)."
+  }
+]

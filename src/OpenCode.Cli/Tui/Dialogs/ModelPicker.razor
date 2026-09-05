@@ -1,0 +1,20 @@
+@namespace OpenCode.Cli.Tui.Dialogs
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Models
+
+@if (_variantModel is { } model)
+{
+    <DialogSelect @key="model" T="ModelRef" Title="Select variant" Options="VariantOptions(model)" Current="VariantCurrent(model)"
+                  HasCurrent="true" TerminalHeight="TerminalHeight" Size="Size" Flat="true"
+                  OnSelect="ChooseVariant" OnClose="CloseVariants" Error="@DisplayError" Theme="Theme"
+                  Actions="PreferenceRetryActions" ResolveCommand="ResolveModelCommand" />
+}
+else
+{
+    <DialogSelect @key="Filter" T="ModelRef" Title="@Title" Options="Options()" Current="BaseCurrent" HasCurrent="@(BaseCurrent is not null)"
+                  FocusCurrent="false"
+                  TerminalHeight="TerminalHeight" Size="Size" Loading="Loading" Error="@DisplayError" Theme="Theme" Actions="EffectiveActions"
+                  ResolveCommand="ResolveModelCommand" OnSelect="Choose" OnClose="CloseModels"
+                  RegisterActionDispatcher="_registerModelActions"
+                  OnFilter="FilterChanged" Flat="true" SkipFilter="true" />
+}

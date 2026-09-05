@@ -1,0 +1,25 @@
+@namespace OpenCode.Cli.Tui.SystemDialogs
+
+@if (_catalogError is not null)
+{
+    <Modal Background="@View.Background.Hex" Backdrop="@Backdrop" OnClose="CancelAsync">
+        <Box PaddingX="4" PaddingBottom="1" Gap="1">
+            <TuiText Value="Themes" Fg="@View.Text.Hex" Bold="true" />
+            <TuiText Value="@_catalogError" Fg="@View.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" />
+            <TuiText Value="Close and reopen Themes after the catalog is available." Fg="@View.Subdued.Hex" />
+        </Box>
+    </Modal>
+}
+else
+{
+    <DialogSelect T="string" Title="Themes" Theme="Colors" Options="_options" Current="@_initial" HasCurrent="true"
+                  PreserveSelection="true" OnMove="Preview" OnFilter="FilterAsync" OnSelect="ConfirmAsync" OnClose="CancelAsync"
+                  ResolveCommand="ResolveCommand" TerminalHeight="TerminalHeight" Locked="_closing">
+        <Footer>
+            @if ((_error ?? PersistenceError) is { } error)
+            { <TuiText Value="@error" Fg="@View.Color("text.feedback.error.default").Hex" WrapMode="NativeTextWrapMode.Word" /> }
+            else
+            { <TuiText Value="@($"{_state.Current.Mode.ToString().ToLowerInvariant()} · mode preference {_state.Settings.Mode.ToString().ToLowerInvariant()}")" Fg="@View.Subdued.Hex" Height="1" /> }
+        </Footer>
+    </DialogSelect>
+}

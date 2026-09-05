@@ -1,0 +1,134 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using System.Collections.Immutable
+@using OpenCode.Cli.Tui.Images
+@using OpenTui.Blazor.Code
+@using OpenTui.Native
+
+<ScrollBox State="ScrollState">
+    @foreach (var row in _rows)
+    {
+        <Box @key="row.Key" PaddingTop="1" OnClick="@RowClick(row)">
+            @switch (row)
+            {
+                case MessageRow message:
+                    @if (ShowTimestamps)
+                    {
+                        <TuiText Value="@message.Message.Time.Created.ToLocalTime().ToString("HH:mm")" Fg="@Theme.Subdued" Height="1" />
+                    }
+                    <SessionMessageRow Message="message.Message" Theme="Theme" OnMessageActions="OnMessageActions" />
+                    break;
+                case ReasoningRow reasoning:
+                    <ReasoningBlock Row="reasoning" Theme="Theme" Expanded="@IsExpanded(row.Key, ShowReasoning)" Presentation="MarkdownMode" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" />
+                    break;
+                case ExplorationRow exploration:
+                    <Box PaddingLeft="3">
+                        @if (exploration.Parts.Any(part => part.Part is AssistantToolContent tool && !PendingToolIds.Contains(tool.Id)))
+                        {
+                            <TuiText Value="@($"{(IsExpanded(row.Key, ShowToolOutput) ? "−" : "+")} {ExplorationLabel(exploration)}")" Fg="@Theme.Subdued" />
+                        }
+                        @foreach (var part in exploration.Parts.Where(part => IsExpanded(row.Key, ShowToolOutput) ||
+                            IsExpanded(part.Key, false) || part.Part is AssistantToolContent tool && PendingToolIds.Contains(tool.Id)))
+                        {
+                            <ToolRow @key="part.Key" Part="((AssistantToolContent)part.Part)" Theme="Theme"
+                                     Width="@Math.Max(1, Width - 3)"
+                                     Expanded="@IsExpanded(part.Key, IsExpanded(row.Key, ShowToolOutput))" />
+                        }
+                    </Box>
+                    break;
+                case PartRow part:
+                    <Box PaddingLeft="3">
+                        @if (part.Part is AssistantTextContent text)
+                        {
+                            <MarkdownText Text="@text.Text" Theme="Theme" Presentation="MarkdownMode" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="@(part.Message.Time.Completed is null)" />
+                        }
+                        @if (part.Part is AssistantToolContent tool)
+                        {
+                            <ToolRow Part="tool" Theme="Theme" Expanded="@IsExpanded(row.Key, ShowToolOutput)" Width="@Math.Max(1, Width - 3)" />
+                        }
+                    </Box>
+                    break;
+                case AssistantFooterRow footer:
+                    <Box PaddingLeft="3">
+                        @if (footer.Message.Retry is { } retry)
+                        {
+                            <TuiText Value="@($"Retry {retry.Attempt}: {retry.Error.Message}")" Fg="@Theme.Warning" />
+                        }
+                        @if (footer.Message.Error is { } error && error.Message != "Step interrupted")
+                        {
+                            <TuiText Value="@error.Message" Fg="@Theme.Error" />
+                        }
+                        <TuiText Value="@Footer(footer.Message)" Fg="@Theme.Subdued" />
+                        @if (ShowTimestamps && footer.Message.Time.Completed is { } completed)
+                        {
+                            <TuiText Value="@completed.ToLocalTime().ToString("HH:mm")" Fg="@Theme.Subdued" />
+                        }
+                        @if (ShowUsage && footer.Message.Tokens is { } tokens && tokens.Input + tokens.Output + tokens.Reasoning + tokens.Cache.Read + tokens.Cache.Write > 0)
+                        {
+                            <TuiText Value="@($"Input {tokens.Input:N0}  Output {tokens.Output:N0}  Reasoning {tokens.Reasoning:N0}  Cache read {tokens.Cache.Read:N0} / write {tokens.Cache.Write:N0}")" Fg="@Theme.Subdued" />
+                        }
+                    </Box>
+                    break;
+            }
+        </Box>
+    }
+</ScrollBox>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SessionMessage> Messages { get; set; } = [];
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter, EditorRequired] public TerminalScrollState ScrollState { get; set; } = default!;
+    [Parameter] public bool ShowReasoning { get; set; }
+    [Parameter] public bool ShowToolOutput { get; set; }
+    [Parameter] public bool ShowUsage { get; set; }
+    [Parameter] public bool ShowTimestamps { get; set; }
+    [Parameter] public int Width { get; set; } = 80;
+    [Parameter] public MarkdownPresentation MarkdownMode { get; set; }
+    [Parameter] public EventCallback<string> OnCopyCode { get; set; }
+    [Parameter] public EventCallback<MessageId> OnMessageActions { get; set; }
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
+    [Parameter] public ICodeHighlighter? CodeHighlighter { get; set; }
+    [Parameter] public IReadOnlyList<NativeSyntaxRule> SyntaxRules { get; set; } = [];
+    [Parameter] public IReadOnlySet<string> ExpandedRows { get; set; } = ImmutableHashSet<string>.Empty;
+    [Parameter] public IReadOnlySet<string> CollapsedRows { get; set; } = ImmutableHashSet<string>.Empty;
+    [Parameter] public IReadOnlySet<string> PendingToolIds { get; set; } = ImmutableHashSet<string>.Empty;
+    [Parameter] public EventCallback<string> OnToggleRow { get; set; }
+    private EventCallback<TerminalPointerEventArgs> RowClick(TranscriptRow row) =>
+        OnToggleRow.HasDelegate && row is ReasoningRow or ExplorationRow or PartRow { Part: AssistantToolContent }
+            ? EventCallback.Factory.Create<TerminalPointerEventArgs>(this, async args =>
+            {
+                args.Handled = true;
+                await OnToggleRow.InvokeAsync(row.Key);
+            }) : default;
+    private bool IsExpanded(string key, bool fallback) => !CollapsedRows.Contains(key) && (ExpandedRows.Contains(key) || fallback);
+    private ImmutableArray<TranscriptRow> _rows = [];
+    private IReadOnlyList<SessionMessage>? _previous;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_previous, Messages)) return;
+        _previous = Messages;
+        _rows = TranscriptRows.Create(Messages);
+    }
+
+    private string Footer(AssistantMessage message)
+    {
+        var result = $"{message.Agent} - {message.Model?.ProviderId}/{message.Model?.Id}";
+        if (message.Time.Completed is { } completed)
+        {
+            var input = Messages.TakeWhile(item => item.Id != message.Id).LastOrDefault(item => item is UserMessage or SyntheticMessage);
+            var duration = completed - (input?.Time.Created ?? message.Time.Created);
+            if (duration > TimeSpan.Zero) result += $" - {duration.TotalSeconds:0.0}s";
+        }
+        if (message.Error?.Message == "Step interrupted") result += " - interrupted";
+        return result;
+    }
+
+    private string ExplorationLabel(ExplorationRow row)
+    {
+        var tools = row.Parts.Select(part => (AssistantToolContent)part.Part).Where(tool => !PendingToolIds.Contains(tool.Id)).ToArray();
+        var completed = row.Completed || tools.All(tool => tool.Time.Completed is not null);
+        var counts = tools.GroupBy(tool => tool.Name.ToLowerInvariant() is "glob" or "grep" ? "search" : tool.Name.ToLowerInvariant());
+        return (completed ? "Explored - " : "Exploring - ") + string.Join(", ", counts.Select(group =>
+            $"{group.Count()} {(group.Count() == 1 ? group.Key : group.Key == "search" ? "searches" : group.Key + "s")}"));
+    }
+}

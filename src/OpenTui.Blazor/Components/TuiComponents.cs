@@ -2,90 +2,174 @@ namespace OpenTui.Blazor.Components;
 
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Rendering;
+using OpenTui.Blazor.Nodes;
+using System.Collections.Immutable;
 using OpenTui.Native;
+using OpenTui.Blazor.TextMarks;
+using OpenTui.Blazor.Rendering;
 
-public class Box : ComponentBase
+public class Box : PointerComponentBase
 {
     [Parameter] public RenderFragment? ChildContent { get; set; }
-    [Parameter] public string Direction { get; set; } = "column";
+    [Parameter] public TuiFlexDirection Direction { get; set; } = TuiFlexDirection.Column;
     [Parameter] public string? Border { get; set; }
+    [Parameter] public string? BorderFg { get; set; }
     [Parameter] public int? Width { get; set; }
     [Parameter] public int? Height { get; set; }
     [Parameter] public int Gap { get; set; }
+    [Parameter] public int Grow { get; set; }
+    [Parameter] public int Shrink { get; set; }
+    [Parameter] public bool Center { get; set; }
+    [Parameter] public bool SharedColumns { get; set; }
+    [Parameter] public TuiCrossAlignment CrossAlignment { get; set; }
+    [Parameter] public TuiPosition Position { get; set; }
+    [Parameter] public int? Left { get; set; }
+    [Parameter] public int? Right { get; set; }
+    [Parameter] public int? Top { get; set; }
+    [Parameter] public int? Bottom { get; set; }
+    [Parameter] public int ZIndex { get; set; }
+    [Parameter] public string? FocusKey { get; set; }
+    [Parameter] public EventCallback<TerminalKeyEventArgs> OnKeyDown { get; set; }
+    [Parameter] public EventCallback<TerminalSizeEventArgs> OnSizeChanged { get; set; }
+    [Parameter] public string? Bg { get; set; }
+    [Parameter] public int PaddingX { get; set; }
+    [Parameter] public int PaddingTop { get; set; }
+    [Parameter] public int PaddingBottom { get; set; }
+    [Parameter] public int? PaddingLeft { get; set; }
+    [Parameter] public int? PaddingRight { get; set; }
 
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
         builder.OpenElement(0, "box");
-        builder.AddAttribute(1, "direction", Direction);
-        if (Border is not null) builder.AddAttribute(2, "border", Border);
-        if (Width.HasValue) builder.AddAttribute(3, "width", Width.Value);
-        if (Height.HasValue) builder.AddAttribute(4, "height", Height.Value);
-        if (Gap > 0) builder.AddAttribute(5, "gap", Gap);
-        if (ChildContent is not null) builder.AddContent(6, ChildContent);
+        builder.AddAttribute(1, "direction", Direction.ToString());
+        builder.AddAttribute(2, "border", Border);
+        builder.AddAttribute(3, "width", Width);
+        builder.AddAttribute(4, "height", Height);
+        builder.AddAttribute(5, "gap", Gap);
+        builder.AddAttribute(6, "grow", Grow);
+        builder.AddAttribute(7, "center", Center);
+        builder.AddAttribute(8, "bg", Bg);
+        builder.AddAttribute(9, "padding-x", PaddingX);
+        builder.AddAttribute(10, "padding-top", PaddingTop);
+        builder.AddAttribute(11, "border-fg", BorderFg);
+        builder.AddAttribute(12, "shrink", Shrink);
+        builder.AddAttribute(13, "padding-bottom", PaddingBottom);
+        builder.AddAttribute(14, "padding-left", PaddingLeft);
+        builder.AddAttribute(15, "padding-right", PaddingRight);
+        builder.AddAttribute(17, "shared-columns", SharedColumns);
+        builder.AddAttribute(18, "cross-alignment", CrossAlignment.ToString());
+        builder.AddAttribute(19, "position", Position.ToString());
+        builder.AddAttribute(20, "left", Left);
+        builder.AddAttribute(21, "right", Right);
+        builder.AddAttribute(22, "top", Top);
+        builder.AddAttribute(23, "bottom", Bottom);
+        builder.AddAttribute(24, "z-index", ZIndex);
+        builder.AddAttribute(25, "focus-key", FocusKey);
+        builder.AddAttribute(26, "onkeydown", OnKeyDown);
+        builder.AddAttribute(27, "onsizechanged", OnSizeChanged);
+        AddPointerAttributes(builder);
+        builder.AddContent(108, ChildContent);
         builder.CloseElement();
     }
 }
 
-public class Text : ComponentBase
+public class Input : PointerComponentBase
 {
-    [Parameter] public RenderFragment? ChildContent { get; set; }
-    [Parameter] public string? Value { get; set; }
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public int Cursor { get; set; }
+    [Parameter] public int? SelectionAnchor { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
     [Parameter] public string? Fg { get; set; }
+    [Parameter] public string? Bg { get; set; }
+    [Parameter] public string? PlaceholderFg { get; set; }
+    [Parameter] public NativeRgba? CursorColor { get; set; }
+    [Parameter] public NativeRgba? SelectionForeground { get; set; }
+    [Parameter] public NativeRgba? SelectionBackground { get; set; }
+    [Parameter] public int MaxHeight { get; set; } = 1;
+    [Parameter] public string? FocusKey { get; set; }
+    [Parameter] public EventCallback<TerminalKeyEventArgs> OnKeyDown { get; set; }
+    [Parameter] public EventCallback<TerminalPasteEventArgs> OnPaste { get; set; }
+    [Parameter] public EventCallback<TerminalTextInputEventArgs> OnTextInput { get; set; }
+    [Parameter] public IReadOnlyList<TerminalTextMark> TextMarks { get; set; } = [];
+    internal ImmutableArray<NativeTextRun> MarkRuns { get; private set; }
+    private string? _paintText;
+    private ImmutableArray<TerminalTextMark> _paintMarks = [];
+
+    protected override void OnParametersSet()
+    {
+        if (_paintText == Value && _paintMarks.SequenceEqual(TextMarks)) return;
+        _paintText = Value;
+        _paintMarks = TextMarks.ToImmutableArray();
+        MarkRuns = InputTextRuns.Create(Value, _paintMarks);
+    }
+
+    protected override void BuildRenderTree(RenderTreeBuilder builder)
+    {
+        builder.OpenElement(0, "input");
+        builder.AddAttribute(1, "max-height", MaxHeight);
+        builder.AddAttribute(2, "cursor", Cursor);
+        builder.AddAttribute(3, "placeholder", Placeholder);
+        builder.AddAttribute(4, "focus-key", FocusKey);
+        builder.AddAttribute(5, "onkeydown", OnKeyDown);
+        builder.AddAttribute(6, "onpaste", OnPaste);
+        builder.AddAttribute(7, "selection-anchor", SelectionAnchor);
+        builder.AddAttribute(8, "fg", Fg);
+        builder.AddAttribute(9, "bg", Bg);
+        builder.AddAttribute(10, "placeholder-fg", PlaceholderFg);
+        builder.AddAttribute(11, "cursor-color", Color(CursorColor));
+        builder.AddAttribute(12, "selection-fg", Color(SelectionForeground));
+        builder.AddAttribute(13, "selection-bg", Color(SelectionBackground));
+        builder.AddAttribute(14, "ontextinput", OnTextInput);
+        AddPointerAttributes(builder);
+        builder.AddContent(108, Value);
+        builder.CloseElement();
+    }
+
+    private static string? Color(NativeRgba? value) => value is { } color ? $"#{(byte)color.R:X2}{(byte)color.G:X2}{(byte)color.B:X2}{(byte)color.A:X2}" : null;
+}
+
+public class TuiText : PointerComponentBase
+{
+    [Parameter] public string? Value { get; set; }
+    /// <summary>Immutable styled UTF-8 runs. Replace the array to update content; do not mutate its backing memory.</summary>
+    [Parameter] public ImmutableArray<NativeTextRun> Runs { get; set; }
+    [Parameter] public string? Fg { get; set; }
+    [Parameter] public string? Bg { get; set; }
     [Parameter] public bool Bold { get; set; }
     [Parameter] public bool Dim { get; set; }
+    [Parameter] public int? Height { get; set; }
+    [Parameter] public int? Width { get; set; }
+    [Parameter] public int Grow { get; set; }
+    [Parameter] public bool Tail { get; set; }
+    [Parameter] public int Scroll { get; set; }
+    [Parameter] public NativeTextWrapMode WrapMode { get; set; } = NativeTextWrapMode.Character;
+    [Parameter] public bool Selectable { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (!Runs.IsDefault && Value is not null)
+#pragma warning disable MA0015 // This describes mutually exclusive component parameters, not a C# method argument.
+            throw new ArgumentException("TuiText accepts either Value or Runs, not both.");
+#pragma warning restore MA0015
+    }
 
     protected override void BuildRenderTree(RenderTreeBuilder builder)
     {
         builder.OpenElement(0, "text");
-        if (Fg is not null) builder.AddAttribute(1, "fg", Fg);
-        if (Bold) builder.AddAttribute(2, "bold", true);
-        if (Dim) builder.AddAttribute(3, "dim", true);
-
-        if (!string.IsNullOrEmpty(Value))
-        {
-            builder.AddContent(4, Value);
-        }
-        else if (ChildContent is not null)
-        {
-            builder.AddContent(5, ChildContent);
-        }
-
+        builder.AddAttribute(1, "fg", Fg);
+        builder.AddAttribute(2, "bg", Bg);
+        builder.AddAttribute(3, "bold", Bold);
+        builder.AddAttribute(4, "dim", Dim);
+        builder.AddAttribute(5, "height", Height);
+        builder.AddAttribute(6, "grow", Grow);
+        builder.AddAttribute(7, "tail", Tail);
+        builder.AddAttribute(8, "scroll", Scroll);
+        builder.AddAttribute(9, "width", Width);
+        builder.AddAttribute(11, "wrap-mode", WrapMode.ToString());
+        builder.AddAttribute(12, "selectable", Selectable);
+        // Runs remain typed component state. Element attributes would stringify them.
+        AddPointerAttributes(builder);
+        if (Runs.IsDefault) builder.AddContent(108, Value);
         builder.CloseElement();
-    }
-}
-
-public class Wordmark : ComponentBase
-{
-    protected override void BuildRenderTree(RenderTreeBuilder builder)
-    {
-        // 1. Subtle "dotnet" in .NET blurple character coloring directly ABOVE the opencode wordmark
-        builder.OpenComponent<Box>(0);
-        builder.AddAttribute(1, "Direction", "column");
-        builder.AddAttribute(2, "ChildContent", (RenderFragment)(b =>
-        {
-            // The subtle dotnet header in .NET brand blurple (#7B61FF / RGB 123,97,255)
-            b.OpenComponent<Text>(10);
-            b.AddAttribute(11, "Value", "      d  o  t  n  e  t");
-            b.AddAttribute(12, "Fg", "#7B61FF");
-            b.AddAttribute(13, "Bold", true);
-            b.CloseComponent();
-
-            // The OpenCode Wordmark lines
-            b.OpenComponent<Text>(20);
-            b.AddAttribute(21, "Value", "█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█");
-            b.AddAttribute(22, "Bold", true);
-            b.CloseComponent();
-
-            b.OpenComponent<Text>(30);
-            b.AddAttribute(31, "Value", "█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀");
-            b.AddAttribute(32, "Bold", true);
-            b.CloseComponent();
-
-            b.OpenComponent<Text>(40);
-            b.AddAttribute(41, "Value", "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀");
-            b.AddAttribute(42, "Bold", true);
-            b.CloseComponent();
-        }));
-        builder.CloseComponent();
     }
 }

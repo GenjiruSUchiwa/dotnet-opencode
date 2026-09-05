@@ -1,0 +1,3 @@
+# Source strings and licensed parser assets have byte-level provenance.
+# Do not change their line endings implicitly during checkout or staging.
+* -text

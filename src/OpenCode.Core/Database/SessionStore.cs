@@ -1,170 +1,120 @@
 namespace OpenCode.Core.Database;
 
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
+using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using OpenCode.Core.Persistence;
+using OpenCode.Core.Event;
+using OpenCode.Core.Instructions;
+using OpenCode.Core.Locations;
+using OpenCode.Core.Session;
 using OpenCode.Schema;
 
-public sealed class SessionStore
+/// <summary>
+/// Maps the upstream session projections. Database readiness belongs to the daemon.
+/// Inbox operations use durable append plus transactional projection.
+/// Other mutations remain direct projection writes and reject durable aggregates.
+/// This is not a complete Session domain or an execution coordinator.
+/// </summary>
+public sealed class SessionStore : IDisposable
 {
     private readonly IDatabase _database;
+    public TimeProvider Clock => _database.Clock;
+    private readonly ReadInstructionLoader _readInstructions;
+    private readonly Lock _instructionScopesLock = new();
+    private readonly Dictionary<string, InstructionLocationState> _instructionScopes = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private bool _disposed;
 
     public SessionStore(IDatabase database)
     {
         _database = database;
+        _readInstructions = new ReadInstructionLoader(database);
     }
 
     public async Task<IReadOnlyList<SessionInfo>> ListSessionsAsync(int limit = 50, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, project_id, slug, directory, time_created, time_updated, time_idle,
-                   title, agent, cost, tokens_input, tokens_output, idle_outcome
-            FROM session_v2
-            ORDER BY time_updated DESC
-            LIMIT @limit
-        """;
-        cmd.Parameters.AddWithValue("@limit", limit);
-
-        var list = new List<SessionInfo>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
-        {
-            var id = new SessionId(reader.GetString(0));
-            var projectId = new ProjectId(reader.GetString(1));
-            var slug = reader.GetString(2);
-            var directory = reader.GetString(3);
-            var timeCreated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4));
-            var timeUpdated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(5));
-            DateTimeOffset? timeIdle = reader.IsDBNull(6) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(6));
-
-            var title = reader.IsDBNull(7) ? null : reader.GetString(7);
-            var agent = reader.IsDBNull(8) ? null : reader.GetString(8);
-            var cost = reader.IsDBNull(9) ? 0.0 : reader.GetDouble(9);
-            var tokensIn = reader.IsDBNull(10) ? 0 : reader.GetInt64(10);
-            var tokensOut = reader.IsDBNull(11) ? 0 : reader.GetInt64(11);
-
-            SessionOutcome? outcome = null;
-            if (!reader.IsDBNull(12))
-            {
-                Enum.TryParse<SessionOutcome>(reader.GetString(12), true, out var parsed);
-                outcome = parsed;
-            }
-
-            list.Add(new SessionInfo(
-                Id: id,
-                ProjectId: projectId,
-                Slug: slug,
-                Directory: directory,
-                Time: new SessionTime(timeCreated, timeUpdated, timeIdle),
-                Tokens: new TokenUsageInfo(Input: tokensIn, Output: tokensOut),
-                Cost: new Money(cost),
-                Title: title,
-                Agent: agent,
-                Outcome: outcome,
-                Location: new LocationRef(directory)
-            ));
-        }
-
-        return list;
+        await using var db = new PersistenceContext(conn);
+        return (await db.Sessions.OrderByDescending(row => row.time_updated).ThenByDescending(row => row.id).LimitAsync(limit, ct))
+            .Select(ReadSession).ToArray();
     }
 
     public async Task<SessionInfo?> GetSessionAsync(SessionId id, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, project_id, slug, directory, time_created, time_updated, time_idle,
-                   title, agent, cost, tokens_input, tokens_output, idle_outcome
-            FROM session_v2
-            WHERE id = @id
-            LIMIT 1
-        """;
-        cmd.Parameters.AddWithValue("@id", id.Value);
-
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct)) return null;
-
-        var sid = new SessionId(reader.GetString(0));
-        var projectId = new ProjectId(reader.GetString(1));
-        var slug = reader.GetString(2);
-        var directory = reader.GetString(3);
-        var timeCreated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(4));
-        var timeUpdated = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(5));
-        DateTimeOffset? timeIdle = reader.IsDBNull(6) ? null : DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(6));
-
-        var title = reader.IsDBNull(7) ? null : reader.GetString(7);
-        var agent = reader.IsDBNull(8) ? null : reader.GetString(8);
-        var cost = reader.IsDBNull(9) ? 0.0 : reader.GetDouble(9);
-        var tokensIn = reader.IsDBNull(10) ? 0 : reader.GetInt64(10);
-        var tokensOut = reader.IsDBNull(11) ? 0 : reader.GetInt64(11);
-
-        SessionOutcome? outcome = null;
-        if (!reader.IsDBNull(12))
-        {
-            Enum.TryParse<SessionOutcome>(reader.GetString(12), true, out var parsed);
-            outcome = parsed;
-        }
-
-        return new SessionInfo(
-            Id: sid,
-            ProjectId: projectId,
-            Slug: slug,
-            Directory: directory,
-            Time: new SessionTime(timeCreated, timeUpdated, timeIdle),
-            Tokens: new TokenUsageInfo(Input: tokensIn, Output: tokensOut),
-            Cost: new Money(cost),
-            Title: title,
-            Agent: agent,
-            Outcome: outcome,
-            Location: new LocationRef(directory)
-        );
+        await using var db = new PersistenceContext(conn);
+        var row = await db.Sessions.FirstOrDefaultAsync(row => row.id == id.Value, ct);
+        return row is null ? null : ReadSession(row);
     }
 
-    public async Task<IReadOnlyList<JsonElement>> ListMessagesAsync(SessionId sessionId, int limit = 100, CancellationToken ct = default)
+    internal static SessionInfo ReadSession(SessionRow row)
     {
-        await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT id, type, seq, time_created, time_updated, data
-            FROM session_message
-            WHERE session_id = @sessionId
-            ORDER BY seq ASC
-            LIMIT @limit
-        """;
-        cmd.Parameters.AddWithValue("@sessionId", sessionId.Value);
-        cmd.Parameters.AddWithValue("@limit", limit);
+        static DateTimeOffset? Time(long? value) => value is { } time ? DateTimeOffset.FromUnixTimeMilliseconds(time) : null;
+        var directory = OperatingSystem.IsWindows() && System.Text.RegularExpressions.Regex.IsMatch(row.directory, @"^(?:[A-Za-z]:/|//)")
+            ? row.directory.Replace('/', '\\') : row.directory;
+        var model = row.model is { } modelJson ? JsonSerializer.Deserialize(modelJson, OpenCodeJsonContext.Default.ModelRef) : null;
+        return new SessionInfo(
+            Id: SessionId.FromExisting(row.id), ProjectId: ProjectId.FromExisting(row.project_id), Slug: row.slug,
+            Directory: directory, Version: row.version,
+            ParentId: row.parent_id is { Length: > 0 } parent ? SessionId.FromExisting(parent) : null,
+            Fork: row.fork_session_id is { Length: > 0 } fork && row.fork_boundary is { } boundary
+                ? new SessionForkInfo(SessionId.FromExisting(fork), JsonSerializer.Deserialize(boundary, OpenCodeJsonContext.Default.ForkBoundary)!) : null,
+            Time: new SessionTime(DateTimeOffset.FromUnixTimeMilliseconds(row.time_created), DateTimeOffset.FromUnixTimeMilliseconds(row.time_updated),
+                Time(row.time_idle), Time(row.time_viewed), Time(row.time_archived)),
+            Tokens: new TokenUsageInfo(row.tokens_input, row.tokens_output, row.tokens_reasoning, new TokenCacheUsage(row.tokens_cache_read, row.tokens_cache_write)),
+            Cost: Money.FromExisting(row.cost), Title: row.title, Agent: row.agent is { Length: > 0 } agent ? agent : null,
+            Model: model is null ? null : model with { Variant = model.Variant ?? "default" },
+            Outcome: row.idle_outcome switch { null => null, "succeeded" => SessionOutcome.Succeeded, "failed" => SessionOutcome.Failed,
+                "interrupted" => SessionOutcome.Interrupted, _ => throw new JsonException("Invalid persisted session outcome.") },
+            Location: new LocationRef(directory, row.workspace_id is { Length: > 0 } workspace ? WorkspaceId.FromExisting(workspace) : null),
+            Subpath: row.path is { Length: > 0 } subpath ? subpath : null,
+            Metadata: row.metadata is { } metadata ? JsonSerializer.Deserialize<IReadOnlyDictionary<string, JsonElement>>(metadata, OpenCodeJsonContext.Default.Options) : null,
+            Revert: row.revert is { } revert ? ReadRevert(revert) : null);
+    }
 
-        var list = new List<JsonElement>();
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct))
+    private static SessionRevert? ReadRevert(string json)
+    {
+        var data = JsonNode.Parse(json);
+        // Upstream PersistedRevert also accepts V1 file diffs stored with `path`.
+        if (data?["files"] is JsonArray files)
         {
-            var msgId = reader.GetString(0);
-            var type = reader.GetString(1);
-            var seq = reader.GetInt64(2);
-            var created = reader.GetInt64(3);
-            var updated = reader.GetInt64(4);
-            var dataJson = reader.GetString(5);
-
-            using var doc = JsonDocument.Parse(dataJson);
-            var dict = new Dictionary<string, object?>
+            foreach (var file in files.OfType<JsonObject>())
             {
-                ["id"] = msgId,
-                ["type"] = type,
-                ["seq"] = seq,
-                ["time"] = new { created, completed = updated }
-            };
-
-            foreach (var prop in doc.RootElement.EnumerateObject())
-            {
-                if (prop.Name != "time")
+                if (!file.ContainsKey("file") && file["path"] is { } path)
                 {
-                    dict[prop.Name] = prop.Value.Clone();
+                    file["file"] = path.DeepClone();
+                    file.Remove("path");
                 }
             }
+        }
+        return data.Deserialize(OpenCodeJsonContext.Default.SessionRevert);
+    }
 
-            var mergedJson = JsonSerializer.Serialize(dict);
-            list.Add(JsonDocument.Parse(mergedJson).RootElement.Clone());
+    public Task<IReadOnlyList<JsonElement>> ListMessagesAsync(SessionId sessionId, int limit = 100, CancellationToken ct = default) =>
+        ReadMessagesAsync(sessionId, limit, false, ct);
+
+    private async Task<IReadOnlyList<JsonElement>> ReadMessagesAsync(SessionId sessionId, int limit, bool context, CancellationToken ct)
+    {
+        await using var conn = _database.CreateConnection();
+        await using var db = new PersistenceContext(conn);
+        var query = context ? SessionQueries.Context(db, sessionId.Value) : db.Messages.Where(row => row.session_id == sessionId.Value);
+        var rows = await query.OrderBy(row => row.seq).Select(row => new { row.id, row.type, row.data }).LimitAsync(limit, ct);
+        var list = new List<JsonElement>();
+        foreach (var row in rows)
+        {
+            var data = new JsonObject
+            {
+                ["type"] = row.type,
+                ["id"] = row.id
+            };
+            foreach (var property in JsonNode.Parse(row.data)!.AsObject())
+            {
+                if (property.Key is not ("id" or "type"))
+                    data[property.Key] = property.Value?.DeepClone();
+            }
+            // The payload owns message time; row update time does not mean completion.
+            using var document = JsonDocument.Parse(data.ToJsonString());
+            list.Add(document.RootElement.Clone());
         }
 
         return list;
@@ -172,73 +122,59 @@ public sealed class SessionStore
 
     public async Task<ProjectId> EnsureProjectAsync(string directory, CancellationToken ct = default)
     {
-        var normalizedDir = Path.GetFullPath(directory).Replace('\\', '/');
-        await using var conn = _database.CreateConnection();
-
-        await using var findCmd = conn.CreateCommand();
-        findCmd.CommandText = "SELECT id FROM project WHERE worktree = @dir LIMIT 1";
-        findCmd.Parameters.AddWithValue("@dir", normalizedDir);
-        var existing = await findCmd.ExecuteScalarAsync(ct);
-        if (existing is string existingId)
-        {
-            return new ProjectId(existingId);
-        }
-
-        var newId = ProjectId.Create();
-        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        await using var insertCmd = conn.CreateCommand();
-        insertCmd.CommandText = """
-            INSERT INTO project (id, worktree, time_created, time_updated, sandboxes)
-            VALUES (@id, @worktree, @now, @now, '[]')
-        """;
-        insertCmd.Parameters.AddWithValue("@id", newId.Value);
-        insertCmd.Parameters.AddWithValue("@worktree", normalizedDir);
-        insertCmd.Parameters.AddWithValue("@now", nowMs);
-        await insertCmd.ExecuteNonQueryAsync(ct);
-
-        return newId;
+        var location = await CatalogLocation.ResolveAsync(_database, directory, ct: ct);
+        return location.Project.Id;
     }
 
     public async Task DeleteSessionAsync(SessionId id, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM session_v2 WHERE id = @id";
-        cmd.Parameters.AddWithValue("@id", id.Value);
-        await cmd.ExecuteNonQueryAsync(ct);
+        using var transaction = conn.BeginTransaction(deferred: false);
+        await using var db = new PersistenceContext(conn, transaction);
+        await RequireDirectMutationAsync(db, id, ct);
+        await db.Sessions.Where(row => row.id == id.Value).ExecuteDeleteAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateTitleAsync(SessionId id, string title, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE session_v2 SET title = @title, time_updated = @now WHERE id = @id";
-        cmd.Parameters.AddWithValue("@id", id.Value);
-        cmd.Parameters.AddWithValue("@title", title);
-        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        await cmd.ExecuteNonQueryAsync(ct);
+        using var transaction = conn.BeginTransaction(deferred: false);
+        await using var db = new PersistenceContext(conn, transaction);
+        await RequireDirectMutationAsync(db, id, ct);
+        var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
+        await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
+            .SetProperty(row => row.title, title).SetProperty(row => row.time_updated, now), ct);
+        ct.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateAgentAsync(SessionId id, string agent, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE session_v2 SET agent = @agent, time_updated = @now WHERE id = @id";
-        cmd.Parameters.AddWithValue("@id", id.Value);
-        cmd.Parameters.AddWithValue("@agent", agent);
-        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        await cmd.ExecuteNonQueryAsync(ct);
+        using var transaction = conn.BeginTransaction(deferred: false);
+        await using var db = new PersistenceContext(conn, transaction);
+        await RequireDirectMutationAsync(db, id, ct);
+        var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
+        await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
+            .SetProperty(row => row.agent, agent).SetProperty(row => row.time_updated, now), ct);
+        ct.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task UpdateModelAsync(SessionId id, ModelRef model, CancellationToken ct = default)
     {
         await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE session_v2 SET model = @model, time_updated = @now WHERE id = @id";
-        cmd.Parameters.AddWithValue("@id", id.Value);
-        cmd.Parameters.AddWithValue("@model", JsonSerializer.Serialize(model, OpenCodeJsonContext.Default.ModelRef));
-        cmd.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        await cmd.ExecuteNonQueryAsync(ct);
+        using var transaction = conn.BeginTransaction(deferred: false);
+        await using var db = new PersistenceContext(conn, transaction);
+        await RequireDirectMutationAsync(db, id, ct);
+        var now = Clock.GetUtcNow().ToUnixTimeMilliseconds();
+        var json = JsonSerializer.Serialize(model, OpenCodeJsonContext.Default.ModelRef);
+        await db.Sessions.Where(row => row.id == id.Value).ExecuteUpdateAsync(setters => setters
+            .SetProperty(row => row.model, json).SetProperty(row => row.time_updated, now), ct);
+        ct.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
     }
 
     public async Task<SessionInfo> CreateSessionAsync(
@@ -246,88 +182,230 @@ public sealed class SessionStore
         string? title = null,
         ProjectId? projectId = null,
         SessionId? sessionId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? agent = null,
+        ModelRef? model = null,
+        LocationRef? location = null,
+        IReadOnlyDictionary<string, JsonElement>? metadata = null,
+        SessionId? parentId = null,
+        string? subpath = null,
+        SessionForkInfo? fork = null)
     {
+        directory = location?.Directory ?? directory;
         var id = sessionId ?? SessionId.Create();
-        var prjId = projectId ?? await EnsureProjectAsync(directory, ct);
-        var slug = Guid.NewGuid().ToString("N")[..8];
-        var now = DateTimeOffset.UtcNow;
-        var nowMs = now.ToUnixTimeMilliseconds();
+        if (sessionId is not null && await GetSessionAsync(id, ct) is { } existing) return existing;
+        if (fork is not null) throw new NotSupportedException("Fork creation requires the canonical fork event and history-copying projector.");
+        var resolved = projectId is null
+            ? await CatalogLocation.ResolveAsync(_database, directory, location?.WorkspaceId?.Value, ct)
+            : null;
+        var prjId = projectId ?? resolved!.Project.Id;
+        if (resolved is not null)
+        {
+            directory = resolved.Directory;
+            location = new LocationRef(directory, resolved.WorkspaceId);
+            var relative = Path.GetRelativePath(resolved.Project.Directory, directory).Replace('\\', '/');
+            subpath ??= relative == "." ? "" : relative;
+        }
+        return await new SessionCreation(_database).CreateAsync(new SessionCreatedEventData(id, prjId,
+            Guid.NewGuid().ToString("N")[..8], "2", location ?? new LocationRef(directory), title, agent, model, parentId, metadata, subpath), ct);
+    }
 
-        await using var conn = _database.CreateConnection();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO session_v2 (
-                id, project_id, slug, directory, title, version,
-                time_created, time_updated, cost, tokens_input, tokens_output,
-                tokens_reasoning, tokens_cache_read, tokens_cache_write
-            ) VALUES (
-                @id, @projectId, @slug, @directory, @title, '2',
-                @now, @now, 0, 0, 0, 0, 0, 0
-            )
-        """;
-        cmd.Parameters.AddWithValue("@id", id.Value);
-        cmd.Parameters.AddWithValue("@projectId", prjId.Value);
-        cmd.Parameters.AddWithValue("@slug", slug);
-        cmd.Parameters.AddWithValue("@directory", directory);
-        cmd.Parameters.AddWithValue("@title", (object?)title ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("@now", nowMs);
+    /// <summary>
+    /// Admits prepared text-only user or synthetic input without running a model.
+    /// Returns only after event and projection commit. Execution wake-up belongs to
+    /// the caller; resume=false must stop here. Controls and attachments are not supported yet.
+    /// </summary>
+    public async Task<SessionInboxItem> AdmitInboxAsync(SessionId sessionId, MessageId id, InboxPayload payload,
+        InboxDeliveryMode delivery = InboxDeliveryMode.Steer, CancellationToken ct = default)
+    {
+        var type = payload switch
+        {
+            UserInboxPayload => "user", SyntheticInboxPayload => "synthetic",
+            _ => throw new NotSupportedException("Control admission requires its dedicated lifecycle.")
+        };
+        var admission = new SessionAdmission(_database);
+        var existing = await admission.ReconcileAsync(sessionId, id, type, delivery, ct);
+        if (existing is not null) return existing;
+        return await SessionRunCoordinator.AdmitAsync(sessionId, () => admission.AdmitAsync(sessionId, id, payload, delivery, ct), ct);
+    }
 
-        await cmd.ExecuteNonQueryAsync(ct);
+    /// <summary>Operation-specific compaction admission; one unconsumed compaction per Session.</summary>
+    public Task<SessionInboxItem> AdmitCompactionAsync(SessionId sessionId, MessageId? id = null,
+        InboxDeliveryMode delivery = InboxDeliveryMode.Steer, CancellationToken ct = default) =>
+        SessionRunCoordinator.AdmitAsync(sessionId,
+            () => new SessionAdmission(_database).AdmitCompactionAsync(sessionId, id ?? MessageId.Create(), delivery, ct), ct);
 
-        return new SessionInfo(
-            Id: id,
-            ProjectId: prjId,
-            Slug: slug,
-            Directory: directory,
-            Time: new SessionTime(now, now),
-            Tokens: new TokenUsageInfo(),
-            Cost: new Money(0),
-            Title: title,
-            Location: new LocationRef(directory)
-        );
+    internal Task<MessageId?> StartCompactionAsync(SessionId sessionId, InboxPromotable scope, CancellationToken ct) =>
+        new SessionAdmission(_database).StartCompactionAsync(sessionId, scope, ct);
+
+    internal Task<OpenCodeEvent> PublishCompactionAsync<T>(SessionId id, OpenCode.Core.Event.DurableEventDefinition<T> definition, T data, CancellationToken ct) =>
+        new EventStore(_database).TransactAsync(id.Value, async (transaction, token) =>
+        {
+            if (!await transaction.Db.Sessions.AnyAsync(row => row.id == id.Value, token)) throw new InvalidOperationException("Session not found.");
+            return await transaction.AppendAsync(definition, data, token);
+        }, ct);
+
+    /// <summary>Reconcile identity before preparing a retried user/synthetic payload.</summary>
+    public Task<SessionInboxItem?> ReconcileInboxAsync(SessionId sessionId, MessageId id, string type,
+        InboxDeliveryMode delivery = InboxDeliveryMode.Steer, CancellationToken ct = default) =>
+        new SessionAdmission(_database).ReconcileAsync(sessionId, id, type, delivery, ct);
+
+    public Task<IReadOnlyList<SessionInboxItem>> ListInboxAsync(SessionId sessionId, CancellationToken ct = default) =>
+        new SessionAdmission(_database).ListAsync(sessionId, ct);
+
+    /// <summary>Read-only preview, including controls; not a claim or reservation.</summary>
+    public Task<SessionInboxItem?> NextPromotableInboxAsync(SessionId sessionId, InboxPromotable scope, CancellationToken ct = default) =>
+        new SessionAdmission(_database).NextPromotableAsync(sessionId, scope, ct);
+
+    public Task CancelInboxAsync(SessionId sessionId, MessageId id, CancellationToken ct = default) =>
+        new SessionAdmission(_database).CancelAsync(sessionId, id, ct);
+
+    /// <summary>Changes queue/steer mode only; callers own advisory execution wake-up.</summary>
+    public Task ChangeInboxDeliveryAsync(SessionId sessionId, MessageId id, InboxDeliveryMode delivery, CancellationToken ct = default) =>
+        new SessionAdmission(_database).ChangeDeliveryAsync(sessionId, id, delivery, ct);
+
+    /// <summary>
+    /// Delivers the ordered steer prefix at a safe step boundary, or one queued
+    /// input followed by newly arrived steers at an idle boundary. Does not execute
+    /// a model. Controls remain pending for their dedicated domain operation.
+    /// </summary>
+    public Task<int> PromoteInboxAsync(SessionId sessionId, InboxPromotable scope, CancellationToken ct = default) =>
+        new SessionAdmission(_database).PromoteAsync(sessionId, scope, ct);
+
+    /// <summary>
+    /// Appends a supported canonical assistant event data object (not an envelope)
+    /// and projects it atomically. Type is unversioned; the event definition owns
+    /// its version. This does not execute tools, stream deltas, or replay events.
+    /// Reusing an event ID fails; a fresh terminal event records usage again.
+    /// </summary>
+    public Task<OpenCodeEvent> AppendAssistantEventAsync(string type, JsonElement data,
+        CancellationToken ct = default, EventId? eventId = null) =>
+        new AssistantProjector(_database).AppendAsync(type, data, ct, eventId);
+
+    /// <summary>Experimental durable Session log, not the volatile /api/event feed.</summary>
+    public async IAsyncEnumerable<OpenCode.Core.Event.Log.DurableLogItem> LogAsync(SessionId sessionId, double? after = null, bool follow = false,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        if (await GetSessionAsync(sessionId, ct) is null) throw new SessionMutationNotFoundException(sessionId);
+        await foreach (var item in new OpenCode.Core.Event.Log.DurableEventLog(_database).LogAsync(sessionId.Value, after ?? -1, follow, ct))
+            yield return item;
+    }
+
+    /// <summary>Publishes session.shell.started.1 and its event-derived message atomically; does not start a process.</summary>
+    public Task<OpenCodeEvent> PublishShellStartedAsync(SessionId sessionId, ShellInfo shell, CancellationToken ct = default,
+        EventId? eventId = null, IReadOnlyDictionary<string, JsonElement>? metadata = null) =>
+        new SessionShellPersistence(_database).StartedAsync(sessionId, shell, ct, eventId, metadata);
+
+    /// <summary>Publishes session.shell.ended.1 and updates the latest matching shell message; does not admit completion input.</summary>
+    public Task<OpenCodeEvent> PublishShellEndedAsync(SessionId sessionId, ShellInfo shell, ShellOutput output, CancellationToken ct = default,
+        EventId? eventId = null, IReadOnlyDictionary<string, JsonElement>? metadata = null) =>
+        new SessionShellPersistence(_database).EndedAsync(sessionId, shell, output, ct, eventId, metadata);
+
+    internal Task<OpenCodeEvent> AppendExecutionEventAsync(SessionId id, string type, CancellationToken ct,
+        SessionStructuredError? error = null, string? reason = null) =>
+        new ExecutionProjector(_database).AppendAsync(id, type, error, reason, ct);
+
+    /// <summary>Unpaginated projected history from the latest completed compaction boundary.</summary>
+    internal Task<IReadOnlyList<JsonElement>> LoadExecutionHistoryAsync(SessionId id, CancellationToken ct) =>
+        ReadMessagesAsync(id, int.MaxValue, true, ct);
+
+    internal async Task<LocalInstructionSelection> SelectInstructionsAsync(SessionInfo session, string agent,
+        JsonObject configuration, bool preview, CancellationToken ct, AgentInfo? selection = null,
+        IReadOnlyList<string>? toolNames = null, string? projectDirectory = null, InstructionSource? mcp = null, InstructionSource? codeMode = null)
+    {
+        var instructions = await ObserveInstructionsAsync(session, agent, configuration, ct, selection, toolNames, projectDirectory, mcp, codeMode);
+        await new InstructionPersistence(_database).PrepareAsync(session.Id, instructions.Sources, preview, ct);
+        return instructions;
+    }
+
+    internal async Task<LocalInstructionSelection> ObserveInstructionsAsync(SessionInfo session, string agent,
+        JsonObject configuration, CancellationToken ct, AgentInfo? selection = null,
+        IReadOnlyList<string>? toolNames = null, string? projectDirectory = null, InstructionSource? mcp = null, InstructionSource? codeMode = null)
+    {
+        InstructionLocationState observations;
+        lock (_instructionScopesLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            var directory = Path.GetFullPath(session.Location.Directory);
+            if (!_instructionScopes.TryGetValue(directory, out observations!))
+                _instructionScopes.Add(directory, observations = new InstructionLocationState(directory));
+        }
+        var persistence = new InstructionPersistence(_database);
+        return await LocalInstructions.ReadAsync(session, agent, configuration, await persistence.EntriesAsync(session.Id, ct), observations, Clock, ct, selection, toolNames, projectDirectory, mcp, codeMode);
+    }
+
+    /// <summary>Invalidates only this host's Location observation scope; durable instruction epochs are unchanged.</summary>
+    public void InvalidateInstructionLocation(string directory)
+    {
+        lock (_instructionScopesLock)
+            if (_instructionScopes.Remove(Path.GetFullPath(directory), out var scope)) scope.Dispose();
+    }
+
+    public void Dispose()
+    {
+        lock (_instructionScopesLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            foreach (var scope in _instructionScopes.Values) scope.Dispose();
+            _instructionScopes.Clear();
+        }
+    }
+
+    internal Task<(string Initial, IReadOnlyList<JsonElement> Messages)> LoadExecutionContextAsync(SessionId id,
+        LocalInstructionSelection selection, CancellationToken ct) =>
+        new InstructionPersistence(_database).LoadAsync(id, selection.Sources, ct);
+
+    internal Task<(string Initial, string Update, IReadOnlyList<JsonElement> Messages)> PreviewExecutionContextAsync(SessionId id,
+        LocalInstructionSelection selection, CancellationToken ct) =>
+        new InstructionPersistence(_database).PreviewAsync(id, selection.Sources, ct);
+
+    internal Task LoadReadInstructionsAsync(SessionId id, IReadOnlyList<string> paths, string projectRoot, CancellationToken ct) =>
+        _readInstructions.LoadAsync(id, paths, projectRoot, ct);
+
+    /// <summary>Reads durable execution claims. This snapshot does not establish recovery ownership or start execution.</summary>
+    public Task<IReadOnlyList<SessionId>> ListSuspendedAsync(CancellationToken ct) => new RestartPersistence(_database).ListAsync(ct);
+
+    internal Task<RestartPreparation> PrepareRestartAsync(SessionId id, int maxAttempts, CancellationToken ct, RestartScope? scope = null,
+        bool child = false, bool localMoves = false) =>
+        new RestartPersistence(_database).PrepareAsync(id, maxAttempts, ct, scope, child, localMoves);
+
+    internal async Task RequireExecutionReadyAsync(SessionId id, CancellationToken ct, bool recovering = false)
+    {
+        await using var connection = _database.CreateConnection();
+        await using var db = new PersistenceContext(connection);
+        if (await db.Sessions.Where(row => row.id == id.Value).Select(row => Math.Max(
+            db.Messages.Where(message => message.session_id == row.id).Max(message => (long?)message.seq) ?? -1,
+            db.Inbox.Where(inbox => inbox.session_id == row.id).Max(inbox => (long?)inbox.enqueued_seq) ?? -1)
+            > (db.Sequences.Where(sequence => sequence.aggregate_id == row.id).Select(sequence => (long?)sequence.seq).FirstOrDefault() ?? -1)).FirstOrDefaultAsync(ct))
+            throw new NotSupportedException("Unsequenced projections require canonical migration before execution.");
+        if (recovering) return;
+        if (await db.Sessions.AnyAsync(row => row.id == id.Value && row.time_suspended != null, ct))
+            throw new NotSupportedException("A surviving execution claim requires startup recovery; this runner will not overwrite or release it.");
     }
 
     public async Task AddMessageAsync(SessionId sessionId, SessionMessage message, CancellationToken ct = default)
     {
+        var data = JsonSerializer.SerializeToNode(message, OpenCodeJsonContext.Default.SessionMessage)!.AsObject();
+        var type = data["type"]!.GetValue<string>();
+        data.Remove("id");
+        data.Remove("type");
         await using var conn = _database.CreateConnection();
-
-        await using var seqCmd = conn.CreateCommand();
-        seqCmd.CommandText = "SELECT COALESCE(MAX(seq), -1) + 1 FROM session_message WHERE session_id = @sessionId";
-        seqCmd.Parameters.AddWithValue("@sessionId", sessionId.Value);
-        var nextSeq = Convert.ToInt64(await seqCmd.ExecuteScalarAsync(ct));
-
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data)
-            VALUES (@id, @sessionId, @type, @seq, @now, @now, @data)
-        """;
-        cmd.Parameters.AddWithValue("@id", message.Id.Value);
-        cmd.Parameters.AddWithValue("@sessionId", sessionId.Value);
-        cmd.Parameters.AddWithValue("@type", message switch
-        {
-            UserMessage => "user",
-            AssistantMessage => "assistant",
-            ShellMessage => "shell",
-            _ => "unknown"
-        });
-        cmd.Parameters.AddWithValue("@seq", nextSeq);
-
+        using var transaction = conn.BeginTransaction(deferred: false);
+        await using var db = new PersistenceContext(conn, transaction);
+        await RequireDirectMutationAsync(db, sessionId, ct);
+        var nextSeq = (await db.Messages.Where(row => row.session_id == sessionId.Value).MaxAsync(row => (long?)row.seq, ct) ?? -1) + 1;
         var nowMs = message.Time.Created.ToUnixTimeMilliseconds();
-        cmd.Parameters.AddWithValue("@now", nowMs);
+        await db.InsertAsync(new MessageRow { id = message.Id.Value, session_id = sessionId.Value, type = type,
+            seq = nextSeq, time_created = nowMs, time_updated = nowMs, data = data.ToJsonString() }, ct);
+        ct.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(true);
+    }
 
-        var dataJson = message switch
-        {
-            UserMessage u => JsonSerializer.Serialize(new { text = u.Text, time = new { created = nowMs } }),
-            AssistantMessage a => JsonSerializer.Serialize(new {
-                model = a.Model,
-                content = a.Content,
-                time = new { created = nowMs }
-            }),
-            _ => JsonSerializer.Serialize(message, OpenCodeJsonContext.Default.SessionMessage)
-        };
-        cmd.Parameters.AddWithValue("@data", dataJson);
-
-        await cmd.ExecuteNonQueryAsync(ct);
+    private static async Task RequireDirectMutationAsync(PersistenceContext db,
+        SessionId id, CancellationToken ct)
+    {
+        if (await db.Sequences.AnyAsync(row => row.aggregate_id == id.Value, ct))
+            throw new NotSupportedException("Durable aggregates require event-driven domain operations, not direct session mutation.");
     }
 }

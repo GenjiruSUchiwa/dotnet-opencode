@@ -1,0 +1,100 @@
+@namespace OpenCode.Cli.Tui.Terminals
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Client
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Theme
+@using OpenTui.Blazor
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+@implements IAsyncDisposable
+
+<Box Grow="1" Bg="@Theme.Background.Hex" OnSizeChanged="Sized" OnPointerDown="Interact">
+    @if (_controller?.Failure is { } failure)
+    {
+        <TuiText Value="@failure" Fg="@Theme.Color("text.feedback.error.default").Hex" />
+    }
+    else
+    {
+        <Box Position="TuiPosition.Absolute" Left="1" Top="0" Width="_surface.Columns" Height="_surface.Rows">
+            <EmbeddedTerminal State="_surface" FocusKey="@($"terminal:{PtyId.Value}")" />
+        </Box>
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public PtyId PtyId { get; set; }
+    [Parameter, EditorRequired] public SessionHttpClient Client { get; set; } = null!;
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public Func<ConsoleKeyInfo, bool>? DeferKey { get; set; }
+    [Parameter, EditorRequired] public Func<TerminalKeyInput, bool> DeferRichKey { get; set; } = null!;
+    [Parameter] public bool Resizing { get; set; }
+    [Parameter] public bool AutoFocus { get; set; }
+    [Parameter] public Action? OnAutoFocus { get; set; }
+    [Parameter] public Action<Action?>? OnFocusRequest { get; set; }
+    [Parameter] public Action? OnDisconnect { get; set; }
+    [Parameter] public Action<bool>? OnFocusChange { get; set; }
+    [Parameter] public CancellationToken CancellationToken { get; set; }
+    private readonly EmbeddedTerminalState _surface = new();
+    private PersistentTerminalController? _controller;
+    private ThemeTokens? _theme;
+    private PtyId _identity;
+    private Task _connection = Task.CompletedTask;
+    private bool _resizing;
+    private bool _autoFocused;
+
+    protected override void OnInitialized()
+    {
+        ArgumentNullException.ThrowIfNull(Client);
+        ArgumentNullException.ThrowIfNull(DeferRichKey);
+        _identity = PtyId;
+        _surface.DeferKey = key => DeferKey?.Invoke(key) ?? false;
+        _surface.DeferRichKey = key => DeferRichKey(key);
+        _surface.FocusChanged += FocusChanged;
+        _controller = new(Client, PtyId, _surface, CancellationToken);
+        _controller.Changed += Refresh;
+        _controller.DisconnectedWhileFocused += Disconnected;
+        OnFocusRequest?.Invoke(_controller.Focus);
+    }
+    protected override void OnParametersSet()
+    {
+        if (_identity != PtyId) throw new InvalidOperationException("Key TerminalPane by its persistent PTY identity.");
+        if (!ReferenceEquals(_theme, Theme))
+        {
+            _theme = Theme;
+            _controller!.SetPalette(TerminalPalette.Encode(Theme));
+        }
+        if (Resizing && !_resizing) _controller!.Interact();
+        _resizing = Resizing;
+        if (!AutoFocus) _autoFocused = false;
+        if (AutoFocus && !_autoFocused)
+        {
+            _autoFocused = true;
+            _controller!.Focus();
+            OnAutoFocus?.Invoke();
+        }
+    }
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _connection = _controller!.StartAsync();
+        return Task.CompletedTask;
+    }
+    private void Refresh() => StateHasChanged();
+    private void Sized(TerminalSizeEventArgs args) => _controller!.SetViewport(args.Width, args.Height);
+    private void Interact(TerminalPointerEventArgs args) => _controller!.Interact();
+    private void FocusChanged(bool focused) => OnFocusChange?.Invoke(focused);
+    private void Disconnected() => OnDisconnect?.Invoke();
+    public async ValueTask DisposeAsync()
+    {
+        _surface.FocusChanged -= FocusChanged;
+        OnFocusChange?.Invoke(false);
+        OnFocusRequest?.Invoke(null);
+        if (_controller is not null)
+        {
+            _controller.Changed -= Refresh;
+            _controller.DisconnectedWhileFocused -= Disconnected;
+            await _controller.DisposeAsync();
+        }
+        await _connection;
+        _surface.Dispose();
+    }
+}

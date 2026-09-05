@@ -1,0 +1,81 @@
+@namespace OpenCode.Cli.Tui.Layout
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Transcript
+
+<Box Width="Width" Grow="Grow" Shrink="0" Bg="@Theme.ElevatedBackground" PaddingTop="1" PaddingBottom="1" PaddingX="2">
+    <ScrollBox State="_scroll">
+        <Box Gap="1" PaddingRight="1">
+            <Box PaddingRight="1">
+                <TuiText Value="@Title" Fg="@Theme.Text" Bold="true" />
+                @if (Workspace is not null)
+                {
+                    <TuiText Value="@Workspace" Fg="@Theme.Subdued" />
+                }
+            </Box>
+            @if (Summary.ContextTokens is not null || Summary.Cost is not null)
+            {
+                <Box>
+                    <TuiText Value="Context" Fg="@Theme.Text" Bold="true" />
+                    @if (Summary.ContextTokens is { } tokens)
+                    {
+                        <TuiText Value="@($"{tokens:N0} tokens")" Fg="@Theme.Subdued" />
+                    }
+                    @if (Summary.ContextPercent is { } percent)
+                    {
+                        <TuiText Value="@($"{percent:0}% used")" Fg="@Theme.Subdued" />
+                    }
+                    @if (Summary.CostLabel is { } cost)
+                    {
+                        <TuiText Value="@(cost + " spent")" Fg="@Theme.Subdued" />
+                    }
+                </Box>
+            }
+            @if (Mcp.Count > 0)
+            {
+                <Box>
+                    <TuiText Value="MCP" Fg="@Theme.Text" Bold="true" />
+                    @foreach (var server in Mcp)
+                    {
+                        <Box @key="server.Name" Direction="TuiFlexDirection.Row" Gap="1">
+                            <TuiText Value="•" Width="1" Fg="@StatusColor(server.Status)" />
+                            <TuiText Value="@server.Name" Grow="1" Height="1" Bold="true" Fg="@Theme.Text" />
+                            <TuiText Value="@StatusLabel(server.Status)" Height="1" Fg="@StatusColor(server.Status)" />
+                        </Box>
+                    }
+                </Box>
+            }
+            @if (Error is not null)
+            {
+                <TuiText Value="@Error" Fg="@Theme.Error" />
+            }
+        </Box>
+    </ScrollBox>
+    <Box Shrink="0" PaddingTop="1">
+        <TuiText Value="@Directory" Fg="@Theme.Subdued" />
+    </Box>
+</Box>
+
+@code {
+    [Parameter] public int Width { get; set; } = SessionFrameState.SidebarWidth;
+    [Parameter] public int Grow { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Workspace { get; set; }
+    [Parameter] public string Directory { get; set; } = "";
+    [Parameter, EditorRequired] public SessionSummary Summary { get; set; } = new(null, null, null);
+    [Parameter] public IReadOnlyList<McpServer> Mcp { get; set; } = [];
+    [Parameter] public string? Error { get; set; }
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    private readonly TerminalScrollState _scroll = new() { AutoFollow = false };
+    public void Scroll(int rows) => _scroll.ScrollBy(rows);
+
+    private string StatusColor(McpStatus status) => status switch
+    {
+        McpConnectedStatus => Theme.Success, McpFailedStatus => Theme.Error,
+        McpNeedsAuthStatus => Theme.Warning, _ => Theme.Subdued
+    };
+    private static string StatusLabel(McpStatus status) => status switch
+    {
+        McpConnectedStatus => "Connected", McpPendingStatus => "Connecting", McpFailedStatus => "Error",
+        McpDisabledStatus => "Disabled", McpNeedsAuthStatus => "Sign in", _ => "Unknown"
+    };
+}

@@ -1,0 +1,108 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using OpenCode.Cli.Tui.Images
+@using OpenTui.Blazor.Code
+@using OpenTui.Native
+@implements IAsyncDisposable
+
+<Box Gap="1">
+    @foreach (var block in Blocks)
+    {
+        @switch (block)
+        {
+            case HeadingBlock heading:
+                <MarkdownInlineText Inline="heading.Inline" Theme="@(Theme with { MarkdownText = Theme.MarkdownHeading })" Subdued="Subdued" Bold="true" OnImagePreview="OnImagePreview" />
+                break;
+            case ParagraphBlock paragraph:
+                <MarkdownInlineText Inline="paragraph.Inline" Theme="Theme" Subdued="Subdued" OnImagePreview="OnImagePreview" />
+                break;
+            case CodeBlock code:
+                <Box Bg="@Theme.ElevatedBackground" PaddingX="1">
+                    @if (OnCopyCode.HasDelegate || code is FencedCodeBlock { Info.Length: > 0 })
+                    {
+                        <Box Direction="TuiFlexDirection.Row" Height="1">
+                            <TuiText Value="@(code is FencedCodeBlock fence ? fence.Info : null)" Fg="@Theme.Subdued" Grow="1" Height="1" />
+                            @if (OnCopyCode.HasDelegate)
+                            {
+                                <TuiText Value="Copy" Fg="@(Theme.ActionText ?? Theme.Text)" Height="1" OnClick="@(args => CopyCode(code, args))" />
+                            }
+                        </Box>
+                    }
+                    <TuiCode Content="@(code.Lines.ToString())" Filetype="@(code is FencedCodeBlock fenced ? fenced.Info?.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null)"
+                             Highlighter="EffectiveCodeHighlighter" SyntaxRules="SyntaxRules" Streaming="Streaming" Conceal="false"
+                             Fg="@(Subdued ? Theme.Subdued : Theme.Text)" Bg="@Theme.ElevatedBackground" Selectable="true" />
+                </Box>
+                break;
+            case ListBlock list:
+                <Box>
+                    @for (var index = 0; index < list.Count; index++)
+                    {
+                        var marker = list.IsOrdered ? $"{(int.TryParse(list.OrderedStart, out var start) ? start : 1) + index}. " : "- ";
+                        <Box Direction="TuiFlexDirection.Row">
+                            <TuiText Value="@marker" Width="marker.Length" Fg="@(Subdued ? Theme.Subdued : Theme.MarkdownList)" Selectable="true" />
+                            <Box Grow="1"><MarkdownBlocks Blocks="((ContainerBlock)list[index])" Theme="Theme" Subdued="Subdued" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="Streaming" /></Box>
+                        </Box>
+                    }
+                </Box>
+                break;
+            case QuoteBlock quote:
+                <Box Border="left" BorderFg="@Theme.MarkdownQuote" PaddingLeft="1">
+                    <MarkdownBlocks Blocks="quote" Theme="Theme" Subdued="Subdued" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="Streaming" />
+                </Box>
+                break;
+            case Table table:
+                <Box Border="single" BorderFg="@Theme.Border" SharedColumns="true">
+                    @foreach (var row in table.OfType<TableRow>())
+                    {
+                        <Box Direction="TuiFlexDirection.Row">
+                            @for (var column = 0; column < row.Count; column++)
+                            {
+                                var cell = (TableCell)row[column];
+                                var alignment = column < table.ColumnDefinitions.Count ? table.ColumnDefinitions[column].Alignment : null;
+                                <Box Grow="1" Border="left" BorderFg="@Theme.Border" PaddingX="1"
+                                     CrossAlignment="@(alignment == TableColumnAlign.Right ? TuiCrossAlignment.End : alignment == TableColumnAlign.Center ? TuiCrossAlignment.Center : TuiCrossAlignment.Stretch)">
+                                    @foreach (var tableParagraph in cell.OfType<ParagraphBlock>())
+                                    {
+                                        <MarkdownInlineText Inline="tableParagraph.Inline" Theme="Theme" Subdued="Subdued" Bold="row.IsHeader" OnImagePreview="OnImagePreview" />
+                                    }
+                                </Box>
+                            }
+                        </Box>
+                    }
+                </Box>
+                break;
+            case ThematicBreakBlock:
+                <TuiText Value="---" Fg="@Theme.Border" Height="1" />
+                break;
+            case HtmlBlock html:
+                <TuiText Value="@(html.Lines.ToString())" Fg="@(Subdued ? Theme.Subdued : Theme.MarkdownText)" Selectable="true" />
+                break;
+            case ContainerBlock container:
+                <MarkdownBlocks Blocks="container" Theme="Theme" Subdued="Subdued" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview" CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="Streaming" />
+                break;
+        }
+    }
+</Box>
+
+@code {
+    [Inject] public TimeProvider Clock { get; set; } = TimeProvider.System;
+    [Parameter, EditorRequired] public ContainerBlock Blocks { get; set; } = default!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public bool Subdued { get; set; }
+    [Parameter] public EventCallback<string> OnCopyCode { get; set; }
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
+    [Parameter] public ICodeHighlighter? CodeHighlighter { get; set; }
+    [Parameter] public IReadOnlyList<NativeSyntaxRule> SyntaxRules { get; set; } = [];
+    [Parameter] public bool Streaming { get; set; }
+    private ProductionGrammarHighlighter.Lease? _grammarLease;
+    private ICodeHighlighter EffectiveCodeHighlighter => CodeHighlighter ??
+        (_grammarLease ??= ProductionGrammarHighlighter.Retain(Clock)).Highlighter;
+    public async ValueTask DisposeAsync()
+    {
+        if (_grammarLease is not null) await _grammarLease.DisposeAsync();
+    }
+    private async Task CopyCode(CodeBlock code, TerminalPointerEventArgs args)
+    {
+        args.Handled = true;
+        await OnCopyCode.InvokeAsync(code.Lines.ToString());
+    }
+}

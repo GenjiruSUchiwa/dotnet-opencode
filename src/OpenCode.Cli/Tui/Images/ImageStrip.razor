@@ -1,0 +1,43 @@
+@namespace OpenCode.Cli.Tui.Images
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Cli.Tui.Theme
+@using OpenTui.Blazor
+@using OpenTui.Blazor.Components
+@using OpenTui.Blazor.Nodes
+
+@if (Enabled && Images.Count > 0)
+{
+    <Box Direction="TuiFlexDirection.Row" PaddingTop="1" PaddingBottom="1" PaddingLeft="PaddingLeft" PaddingRight="2" Gap="1" Shrink="0">
+        @for (var index = 0; index < Math.Min(3, Images.Count); index++)
+        {
+            var selected = index;
+            <Box @key="index" Width="@(Height * 2)" Height="Height" Shrink="1" OnClick="@(args => Open(selected, args))">
+                <ImageThumbnail Item="Images[index]" Loader="Loader" Theme="Theme" Height="Height" />
+            </Box>
+        }
+        @if (Images.Count > 3)
+        {
+            <Box Width="8" Height="Height" Shrink="1">
+                <Box Grow="1" Height="0" />
+                <Box CrossAlignment="TuiCrossAlignment.Center"><TuiText Value="@($"+{Images.Count - 3} more")" Fg="@Theme.Text.Hex" Height="1" /></Box>
+                <Box Grow="1" Height="0" />
+            </Box>
+        }
+    </Box>
+}
+
+@code {
+    [Parameter] public bool Enabled { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<ImagePreviewItem> Images { get; set; } = [];
+    [Parameter, EditorRequired] public ImageSourceLoader Loader { get; set; } = null!;
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public int PaddingLeft { get; set; } = 3;
+    [Parameter] public EventCallback<ImagePreviewRequest> OnPreview { get; set; }
+    private int Height => Math.Max(4, Math.Min(8, TerminalHeight / 4));
+    private async Task Open(int index, TerminalPointerEventArgs args)
+    {
+        args.Handled = true;
+        if (OnPreview.HasDelegate) await OnPreview.InvokeAsync(new(Images, index));
+    }
+}

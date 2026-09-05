@@ -1,0 +1,26 @@
+@namespace OpenCode.Cli.Tui.Attachments
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Theme
+
+@foreach (var item in Items())
+{
+    <Box Direction="TuiFlexDirection.Row" Height="1" Gap="1">
+        <TuiText Value="@item.Kind.ToString().ToLowerInvariant()" Fg="@Theme.FormfieldText(ThemeActionState.Selected).Hex"
+                 Bg="@Theme.FormfieldBackground(ThemeActionState.Selected).Hex" Bold="true" Height="1" />
+        <TuiText Value="@item.Label" Fg="@Theme.Subdued.Hex" Height="1" Grow="1" />
+        <TuiText Value="×" Fg="@Theme.ActionText(ThemeActionVariant.Secondary).Hex" Height="1" OnClick="args => Remove(item.Target, args)" />
+    </Box>
+}
+
+@code {
+    [Parameter, EditorRequired] public PromptInput Input { get; set; } = new("");
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public IReadOnlyDictionary<string, AttachmentKind> Kinds { get; set; } = new Dictionary<string, AttachmentKind>();
+    [Parameter] public EventCallback<AttachmentTarget> OnRemove { get; set; }
+    private IEnumerable<(AttachmentKind Kind, string Label, AttachmentTarget Target)> Items() =>
+        (Input.Files ?? []).Select(file => (Kind: Kinds.GetValueOrDefault(file.Uri, AttachmentKind.File), Label: file.Name ?? file.Uri,
+            Target: new AttachmentTarget(AttachmentKind.File, file.Uri)))
+        .Concat((Input.Agents ?? []).Select(agent => (AttachmentKind.Agent, agent.Name, new AttachmentTarget(AttachmentKind.Agent, agent.Name))))
+        .Concat((Input.Skills ?? []).Select(skill => (AttachmentKind.Skill, skill.Id.Value, new AttachmentTarget(AttachmentKind.Skill, skill.Id.Value))));
+    private Task Remove(AttachmentTarget target, TerminalPointerEventArgs args) { args.Handled = true; return OnRemove.InvokeAsync(target); }
+}

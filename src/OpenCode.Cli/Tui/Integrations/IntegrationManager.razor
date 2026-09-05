@@ -1,0 +1,62 @@
+@namespace OpenCode.Cli.Tui.Integrations
+
+@if (!_loaded && _error is not null)
+{
+    <ManagementUnavailable Title="Integrations unavailable" Message="@_error" Theme="Theme" ErrorColor="@FormTheme.Error" Retry="RefreshAsync" OnClose="CloseAsync" />
+}
+else if (_form is not null)
+{
+    <Modal Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="CloseAsync" Size="ModalSize.Large">
+        <FormComposer @key="_form.Form.Id" Request="_form" Theme="FormTheme" Width="Math.Min(86, TerminalWidth)"
+                      TerminalHeight="TerminalHeight" OnReply="MethodFormReply" OnCancel="MethodFormCancel"
+                      OpenExternal="OpenExternal" CopyExternal="CopyExternal" ReadClipboard="ReadClipboard" />
+    </Modal>
+}
+else if (_phase is View.Key or View.Rename or View.Code)
+{
+    <IntegrationTextPrompt @key="(_phase, _rename)" Title="@PromptTitle" Placeholder="@PromptPlaceholder"
+                           InitialValue="@PromptInitial" Description="@(_phase == View.Code ? _attempt?.Instructions : null)"
+                           Secret="@(_phase == View.Key)" Theme="Theme" ErrorColor="@FormTheme.Error" TerminalWidth="TerminalWidth"
+                           Submit="SubmitTextAsync" ReadClipboard="ReadClipboard" OnClose="CloseAsync" />
+}
+else if (_phase is View.Starting or View.OAuth)
+{
+    <Modal Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="CloseAsync">
+        <Box PaddingX="2" PaddingBottom="1" Gap="1">
+            <Box Direction="TuiFlexDirection.Row">
+                <TuiText Value="@(Current?.Name ?? "Authorization")" Fg="@Theme.Text" Bold="true" Grow="1" />
+                <TuiText Value="esc cancel" Fg="@Theme.Subdued" OnClick="CloseClick" />
+            </Box>
+            @if (_attempt is { } attempt)
+            {
+                <TuiText Value="@attempt.Url" Fg="@FormTheme.ActionText" OnClick="OpenClick" WrapMode="NativeTextWrapMode.Character" />
+                <TuiText Value="@attempt.Instructions" Fg="@Theme.Text" WrapMode="NativeTextWrapMode.Word" />
+            }
+            <TuiText Value="@(_phase == View.Starting ? "Starting authorization…" : "Waiting for authorization…")" Fg="@Theme.Subdued" />
+            @if (_error is not null) { <TuiText Value="@_error" Fg="@FormTheme.Error" /> }
+            @if (_notice is not null) { <TuiText Value="@_notice" Fg="@Theme.Subdued" /> }
+            <Input Value="" Placeholder="o open · c copy · r retry status · esc cancel" PlaceholderFg="@Theme.Subdued"
+                   FocusKey="integration-oauth" OnKeyDown="OAuthKey" MaxHeight="1" />
+        </Box>
+    </Modal>
+}
+else if (_phase == View.Accounts && Current is { } account)
+{
+    <DialogSelect @key="(_phase, account.Id)" T="string" Title="@account.Name" Theme="Theme" Options="AccountOptions(account)"
+                  Current="@IntegrationPresentation.Credentials(account).FirstOrDefault()?.Id.Value"
+                  HasCurrent="@(IntegrationPresentation.Credentials(account).Length > 0)" PreserveSelection="true"
+                  Actions="AccountActions" ResolveCommand="ResolveKey" OnMove="Moved" OnFilter="AccountFiltered" OnSelect="AccountSelected"
+                  Loading="_loading" Locked="_busy" Error="@_error" TerminalHeight="TerminalHeight" OnClose="CloseAsync" />
+}
+else if (_phase == View.Methods && Current is { } integration)
+{
+    <DialogSelect @key="(_phase, integration.Id)" T="string" Title="@($"Connect {integration.Name}")" Theme="Theme"
+                  Options="MethodOptions(integration)" OnSelect="MethodSelected" Error="@_error" TerminalHeight="TerminalHeight"
+                  Loading="_loading" Locked="_busy" OnClose="CloseAsync" />
+}
+else
+{
+    <DialogSelect @key="View.List" T="string" Title="Connect an integration" Theme="Theme" Options="IntegrationOptions"
+                  Actions="RefreshActions" ResolveCommand="ResolveKey" OnSelect="IntegrationSelected" Loading="_loading"
+                  Locked="_busy" Error="@_error" TerminalHeight="TerminalHeight" OnClose="CloseAsync" />
+}

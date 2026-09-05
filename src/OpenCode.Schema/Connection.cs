@@ -8,10 +8,17 @@ using System.Text.Json.Serialization;
 public abstract record ConnectionInfo;
 
 public sealed record ConnectionCredentialInfo(
-    [property: JsonPropertyName("id")] CredentialId Id,
-    [property: JsonPropertyName("label")] string Label
-) : ConnectionInfo;
+    CredentialId Id, string Label
+) : ConnectionInfo
+{
+    [JsonPropertyName("id"), JsonRequired]
+    public CredentialId Id { get; init => field = ModelProviderContract.Id(value, value.IsInitialized()); } = ModelProviderContract.Id(Id, Id.IsInitialized());
+    [JsonPropertyName("label"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))]
+    public string Label { get; init => field = PromptValidation.Required(value); } = PromptValidation.Required(Label);
+}
 
-public sealed record ConnectionEnvInfo(
-    [property: JsonPropertyName("name")] string Name
-) : ConnectionInfo;
+public sealed record ConnectionEnvInfo(string Name) : ConnectionInfo
+{
+    [JsonPropertyName("name"), JsonRequired, JsonConverter(typeof(NonNullPromptJsonConverter<string>))]
+    public string Name { get; init => field = PromptValidation.Required(value); } = PromptValidation.Required(Name);
+}

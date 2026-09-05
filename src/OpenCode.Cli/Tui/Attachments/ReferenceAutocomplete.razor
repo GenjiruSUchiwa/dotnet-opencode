@@ -1,0 +1,53 @@
+@namespace OpenCode.Cli.Tui.Attachments
+@using OpenCode.Cli.Tui.Commands
+@using OpenCode.Cli.Tui.Dialogs
+
+<Box Position="TuiPosition.Absolute" Left="Anchor.X" Top="@(Anchor.Y - Rows)" Width="Anchor.Width" Height="Rows"
+     ZIndex="100" Direction="TuiFlexDirection.Row" Bg="@Theme.Background">
+    <TuiText Value="@string.Join('\n', Enumerable.Repeat("┃", Rows))" Width="1" Fg="@Border" />
+    <Box Grow="1">
+        <ScrollBox State="_scroll">
+            @if (Error is not null && Options.Count > 0)
+            {
+                <Box PaddingX="1"><TuiText Value="@Error" Fg="@ErrorForeground" Height="1" /></Box>
+            }
+            @if (Options.Count == 0)
+            {
+                <Box PaddingX="1"><TuiText Value="@(Error ?? (Loading ? "Searching…" : "No matching files or agents"))" Fg="@(Error is null ? Theme.Subdued : ErrorForeground)" Height="1" /></Box>
+            }
+            @foreach (var item in Options.Select((option, index) => (Option: option, Index: index)))
+            {
+                <Box @key="item.Option.Identity" Direction="TuiFlexDirection.Row" Gap="1" PaddingX="1" Height="1"
+                     Bg="@(item.Index == Selected ? Theme.FocusedBackground : Theme.Background)"
+                     OnPointerEnter="() => OnHighlight.InvokeAsync(item.Index)" OnClick="args => Select(item.Index, args)">
+                    <TuiText Value="@item.Option.Label" Height="1" Fg="@(item.Index == Selected ? Theme.FocusedText : Theme.Text)" />
+                    @if (item.Option.Description is not null)
+                    {
+                        <TuiText Value="@item.Option.Description" Height="1" Fg="@(item.Index == Selected ? Theme.FocusedText : Theme.Subdued)" />
+                    }
+                </Box>
+            }
+        </ScrollBox>
+    </Box>
+    <TuiText Value="@string.Join('\n', Enumerable.Repeat("┃", Rows))" Width="1" Fg="@Border" />
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public ComposerAnchor Anchor { get; set; } = new(0, 0, 1, 1);
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter, EditorRequired] public string Border { get; set; } = "";
+    [Parameter] public IReadOnlyList<ReferenceOption> Options { get; set; } = [];
+    [Parameter] public int Selected { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter, EditorRequired] public string ErrorForeground { get; set; } = "";
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+    [Parameter] public EventCallback<int> OnHighlight { get; set; }
+    private readonly TerminalScrollState _scroll = new() { AutoFollow = false };
+    private int Rows => Math.Min(10, Math.Min(Math.Max(1, Options.Count + (Error is null ? 0 : 1)), Math.Max(1, Anchor.Y)));
+    protected override void OnParametersSet()
+    {
+        if (Options.ElementAtOrDefault(Selected) is { } selected) _scroll.Reveal(selected.Identity);
+    }
+    private Task Select(int index, TerminalPointerEventArgs args) { args.Handled = true; return OnSelect.InvokeAsync(index); }
+}

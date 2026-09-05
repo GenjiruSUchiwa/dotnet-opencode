@@ -1,0 +1,86 @@
+@namespace OpenCode.Cli.Tui.Layout
+@using OpenCode.Schema
+@using OpenCode.Cli.Tui.Theme
+
+<Box Border="left" BorderFg="@Theme.Border.Hex" Bg="@Theme.Background.Hex" PaddingLeft="1" PaddingRight="2" PaddingTop="1" PaddingBottom="1"
+     FocusKey="terminal-list" OnKeyDown="Key">
+    <Box Direction="TuiFlexDirection.Row" PaddingLeft="1" Height="1">
+        <TuiText Value="Terminals" Bold="true" Fg="@Theme.Text.Hex" Grow="1" Height="1" />
+        <TuiText Value="esc" Fg="@Theme.Subdued.Hex" Height="1" OnClick="Close" />
+    </Box>
+    @if (Error is not null)
+    {
+        <Box PaddingLeft="1"><TuiText Value="@Error" Fg="@Theme.Color("text.feedback.error.default").Hex" /></Box>
+    }
+    @if (Loading)
+    {
+        <Box PaddingLeft="1"><TuiText Value="Loading terminals…" Fg="@Theme.Subdued.Hex" /></Box>
+    }
+    else
+    {
+        <Box Height="@Math.Min(5, Math.Max(1, Entries.Count + (CanCreate ? 1 : 0)))">
+            <ScrollBox State="_scroll">
+                @foreach (var item in Entries.Select((entry, index) => (Entry: entry, Index: index)))
+                {
+                    <Box @key="item.Entry.Id.Value" PaddingX="1" Height="1" OnPointerEnter="() => _selected = item.Index" OnClick="args => Select(item.Index, args)"
+                         Bg="@(item.Index == _selected ? Theme.ActionBackground(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex : Theme.ActionBackground(ThemeActionVariant.Primary).Hex)">
+                        <TuiText Value="@(item.Entry.ForegroundProcess ?? item.Entry.Title)" Height="1" Bold="@(item.Entry.Id == Current)"
+                                 Fg="@(item.Index == _selected ? Theme.ActionText(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex : Theme.ActionText(ThemeActionVariant.Primary).Hex)" />
+                    </Box>
+                }
+                @if (CanCreate)
+                {
+                    <Box @key="@("new")" PaddingX="1" Height="1" OnClick="args => Select(Entries.Count, args)"
+                         Bg="@(_selected == Entries.Count ? Theme.ActionBackground(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex : Theme.ActionBackground(ThemeActionVariant.Primary).Hex)">
+                        <TuiText Value="+ New terminal" Height="1" Fg="@Theme.ActionText(ThemeActionVariant.Primary, ThemeActionState.Focused).Hex" />
+                    </Box>
+                }
+            </ScrollBox>
+        </Box>
+    }
+    <Box PaddingLeft="1"><TuiText Value="@(Entries.Count == 0 && !CanCreate ? "esc close" : _delete is null ? "↑↓ select  enter open  delete remove" : "Press delete again to remove this terminal")" Fg="@Theme.Subdued.Hex" /></Box>
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public ThemeTokens Theme { get; set; } = null!;
+    [Parameter] public IReadOnlyList<PersistentPtyInfo> Entries { get; set; } = [];
+    [Parameter] public PtyId? Current { get; set; }
+    [Parameter] public bool CanCreate { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback<PtyId?> OnSelect { get; set; }
+    [Parameter] public EventCallback<PtyId> OnRemove { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private readonly TerminalScrollState _scroll = new() { AutoFollow = false };
+    private int _selected = -1;
+    private PtyId? _delete;
+    private PtyId? _previous;
+    protected override void OnParametersSet()
+    {
+        if (_previous != Current) { _selected = Entries.ToList().FindIndex(entry => entry.Id == Current); _previous = Current; }
+        _selected = Math.Clamp(_selected, -1, Math.Max(-1, Entries.Count + (CanCreate ? 1 : 0) - 1));
+    }
+    private async Task Key(TerminalKeyEventArgs args)
+    {
+        args.Handled = true;
+        if (args.Key.Key == ConsoleKey.Escape || args.Key.Key == ConsoleKey.C && args.Key.Modifiers.HasFlag(ConsoleModifiers.Control)) { await OnClose.InvokeAsync(); return; }
+        if (Loading) return;
+        var count = Entries.Count + (CanCreate ? 1 : 0);
+        if (args.Key.Key is ConsoleKey.UpArrow or ConsoleKey.DownArrow && count > 0)
+        {
+            var current = _selected >= 0 ? _selected : args.Key.Key == ConsoleKey.UpArrow ? 0 : -1;
+            _selected = (current + (args.Key.Key == ConsoleKey.UpArrow ? -1 : 1) + count) % count;
+            _delete = null;
+            _scroll.Reveal(_selected < Entries.Count ? Entries[_selected].Id.Value : "new");
+        }
+        if (args.Key.Key == ConsoleKey.Enter && _selected >= 0) await OnSelect.InvokeAsync(_selected < Entries.Count ? Entries[_selected].Id : null);
+        if (args.Key.Key == ConsoleKey.Delete && _selected >= 0 && _selected < Entries.Count)
+        {
+            var id = Entries[_selected].Id;
+            if (_delete == id) { await OnRemove.InvokeAsync(id); _delete = null; }
+            else _delete = id;
+        }
+    }
+    private Task Select(int index, TerminalPointerEventArgs args) { args.Handled = true; _selected = index; return Loading ? Task.CompletedTask : OnSelect.InvokeAsync(index < Entries.Count ? Entries[index].Id : null); }
+    private Task Close(TerminalPointerEventArgs args) { args.Handled = true; return OnClose.InvokeAsync(); }
+}

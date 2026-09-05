@@ -1,0 +1,81 @@
+@namespace OpenCode.Cli.Tui.ToolViews
+@using System.Collections.Immutable
+@using System.Globalization
+@using OpenTui.Blazor.Code
+
+<Box Width="@Math.Max(1, Width)" Bg="@Colors?.ContextBackground">
+  <Box Direction="TuiFlexDirection.Row" Width="@Math.Max(1, Width)" Bg="@Background">
+    <Box Width="@GutterWidth" Bg="@GutterBackground">
+        <Box Direction="TuiFlexDirection.Row">
+            @if (NumberWidth > 0)
+            {
+                <TuiText Value="@Number" Width="@NumberWidth" Height="1" Fg="@(Colors?.LineNumber ?? Theme.Subdued)" WrapMode="NativeTextWrapMode.None" />
+            }
+            @if (SignWidth > 0)
+            {
+                <TuiText Value="@Sign" Width="@SignWidth" Height="1" Fg="@SignColor" WrapMode="NativeTextWrapMode.None" />
+            }
+        </Box>
+    </Box>
+    @if (Line is not null)
+    {
+        <TuiText Runs="_runs" Fg="@TextColor" Bg="@Background" Width="@Math.Max(1, Width - GutterWidth)"
+                 WrapMode="Wrap" Height="@(Wrap == NativeTextWrapMode.None ? 1 : (int?)null)" Selectable="true" />
+    }
+    else
+    {
+        <Box Width="@Math.Max(1, Width - GutterWidth)" Height="1" />
+    }
+  </Box>
+</Box>
+
+@code {
+    [Parameter] public PatchLine? Line { get; set; }
+    [Parameter] public bool OldSide { get; set; }
+    [Parameter] public int Digits { get; set; }
+    [Parameter] public int Width { get; set; }
+    [Parameter] public NativeTextWrapMode Wrap { get; set; }
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = null!;
+    [Parameter] public ToolDiffColors? Colors { get; set; }
+    [Parameter, EditorRequired] public CodeDocument Document { get; set; } = null!;
+    [Parameter] public int Offset { get; set; }
+    private int SignWidth => Math.Min(2, Math.Max(0, Width - 1));
+    private int NumberWidth => Math.Min(Digits, Math.Max(0, Width - 1 - SignWidth));
+    private int GutterWidth => NumberWidth + SignWidth;
+    private string Number => ((OldSide ? Line?.OldNumber : Line?.NewNumber)?.ToString(CultureInfo.InvariantCulture) ?? "").PadLeft(NumberWidth);
+    private string Sign => Line?.Kind switch { '+' => " +", '-' => " -", _ => "  " };
+    private string TextColor => Colors is not null ? Theme.Text : Line?.Kind switch { '+' => Theme.DiffAdded ?? Theme.Text, '-' => Theme.DiffRemoved ?? Theme.Text, _ => Theme.Text };
+    private string SignColor => Line?.Kind switch { '+' => Colors?.AddedSign ?? Theme.DiffAdded ?? Theme.Text, '-' => Colors?.RemovedSign ?? Theme.DiffRemoved ?? Theme.Text, _ => Theme.Subdued };
+    private string? Background => Line?.Kind switch { '+' => Colors?.AddedBackground, '-' => Colors?.RemovedBackground, _ => Colors?.ContextBackground };
+    private string? GutterBackground => Line?.Kind switch { '+' => Colors?.AddedLineNumberBackground, '-' => Colors?.RemovedLineNumberBackground, _ => Colors?.ContextBackground };
+    private ImmutableArray<NativeTextRun> _runs = [];
+    private CodeDocument? _document;
+    private PatchLine? _line;
+    private int _offset = -1;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_document, Document) && ReferenceEquals(_line, Line) && _offset == Offset) return;
+        _document = Document;
+        _line = Line;
+        _offset = Offset;
+        if (Line is null) { _runs = []; return; }
+        var result = ImmutableArray.CreateBuilder<NativeTextRun>();
+        var cursor = Offset;
+        var end = Offset + Line.Text.Length;
+        // CodeProjection has already resolved overlapping parser captures. Slice those actual
+        // source spans, not a per-line reparse that would lose multiline syntax state.
+        foreach (var span in Document.Spans.Where(span => span.End > Offset && span.Start < end))
+        {
+            var start = Math.Max(Offset, span.Start);
+            var stop = Math.Min(end, span.End);
+            if (start > cursor) result.Add(new(Line.Text[(cursor - Offset)..(start - Offset)]));
+            var rule = Document.Styles.FirstOrDefault(rule => rule.Scope == span.Style);
+            result.Add(new(Line.Text[(start - Offset)..(stop - Offset)], rule?.Foreground, rule?.Background, rule?.Attributes ?? 0));
+            cursor = stop;
+        }
+        if (cursor < end) result.Add(new(Line.Text[(cursor - Offset)..]));
+        if (result.Count == 0) result.Add(new(""));
+        _runs = result.ToImmutable();
+    }
+}

@@ -4,27 +4,28 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 [JsonConverter(typeof(PermissionSavedIdJsonConverter))]
-public readonly record struct PermissionSavedId : IEquatable<PermissionSavedId>
+[Vogen.ValueObject<string>(comparison: Vogen.ComparisonGeneration.Omit)]
+public readonly partial struct PermissionSavedId
 {
     public const string Prefix = "psv_";
-    public string Value { get; }
-
-    public PermissionSavedId(string value)
+    public static PermissionSavedId FromExisting(string value)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
-        Value = value;
+        return From(value);
     }
 
-    public static PermissionSavedId Create() => new($"{Prefix}{Identifier.Ascending()}");
+    public static PermissionSavedId Create() => FromExisting($"{Prefix}{Identifier.Ascending()}");
+    private static Vogen.Validation Validate(string value) => !string.IsNullOrWhiteSpace(value)
+        ? Vogen.Validation.Ok : Vogen.Validation.Invalid("PermissionSavedId cannot be empty or whitespace.");
     public override string ToString() => Value;
     public static implicit operator string(PermissionSavedId id) => id.Value;
-    public static explicit operator PermissionSavedId(string value) => new(value);
+    public static explicit operator PermissionSavedId(string value) => FromExisting(value);
 }
 
-public sealed class PermissionSavedIdJsonConverter : JsonConverter<PermissionSavedId>
+public sealed class PermissionSavedIdJsonConverter() : ScalarJsonConverter<PermissionSavedId, string>(PermissionSavedId.FromExisting, static value => value.Value)
 {
     public override PermissionSavedId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        new(reader.GetString()!);
+        PermissionSavedId.FromExisting(reader.GetString()!);
 
     public override void Write(Utf8JsonWriter writer, PermissionSavedId value, JsonSerializerOptions options) =>
         writer.WriteStringValue(value.Value);

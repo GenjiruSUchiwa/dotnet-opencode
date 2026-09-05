@@ -1,9 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <ItemGroup>
     <ProjectReference Include="..\OpenCode.Sdk\OpenCode.Sdk.csproj" />
     <ProjectReference Include="..\OpenCode.Core\OpenCode.Core.csproj" />
     <ProjectReference Include="..\OpenCode.Schema\OpenCode.Schema.csproj" />
+    <ProjectReference Include="..\Runtime.Time\Runtime.Time.csproj" />
+    <Using Include="Runtime.Time" />
     <ProjectReference Include="..\OpenCode.Server\OpenCode.Server.csproj" />
     <ProjectReference Include="..\OpenCode.Client\OpenCode.Client.csproj" />
     <ProjectReference Include="..\OpenTui.Blazor\OpenTui.Blazor.csproj" />
@@ -11,13 +13,36 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Public tool identity is separate from assembly and persistent channel identity. -->
+    <PackAsTool>true</PackAsTool>
+    <PackageId>dotnet-opencode</PackageId>
+    <ToolCommandName>dotnet-opencode</ToolCommandName>
+    <ToolCommandRunner>dotnet</ToolCommandRunner>
+    <ToolEntryPoint>OpenCode.Cli.dll</ToolEntryPoint>
+    <PackageVersion>0.0.0-local</PackageVersion>
+    <Title>dotnet-opencode</Title>
+    <Authors>dotnet-opencode contributors</Authors>
+    <Description>Independent .NET 11 port of OpenCode V2. Development prerelease tool; invoke as dotnet opencode.</Description>
+    <PackageTags>dotnet-tool;opencode;terminal</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <OpenApiGenerateDocuments>false</OpenApiGenerateDocuments>
+    <RollForward>Disable</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Markdig" Version="0.41.3" />
+    <PackageReference Include="System.CommandLine" Version="2.0.11" />
+    <PackageReference Include="Vogen" Version="8.0.7" />
+    <EmbeddedResource Include="Tui/Theme/Assets/*.json" LogicalName="OpenCode.Cli.Tui.Theme.Assets.%(Filename)%(Extension)" />
+    <None Update="Tui/Transcript/GrammarAssets/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../packaging/README.md" Pack="true" PackagePath="/README.md" />
   </ItemGroup>
+
+  <Import Project="../../build/DotnetTool.targets" />
 
 </Project>

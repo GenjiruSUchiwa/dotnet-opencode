@@ -1,0 +1,29 @@
+@namespace OpenCode.Cli.Tui.MessageActions
+@using Microsoft.AspNetCore.Components
+@using OpenCode.Cli.Tui.Dialogs
+
+<DialogSelect T="string" Title="Message Actions" Theme="Theme" Options="Controller.Options(Target)"
+              TerminalHeight="TerminalHeight" OnSelect="Choose" OnClose="OnClose" />
+
+@code {
+    [Parameter, EditorRequired] public MessageTarget Target { get; set; }
+    [Parameter, EditorRequired] public MessageActionsController Controller { get; set; } = null!;
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter] public int TerminalHeight { get; set; } = 24;
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public CancellationToken CancellationToken { get; set; }
+
+    private async Task Choose(string action)
+    {
+        if (action == "message.copy")
+        {
+            if (await Controller.CopyMessageAsync(Target, CancellationToken)) await OnClose.InvokeAsync();
+            return;
+        }
+        // Start the source operation (including prompt restoration for revert),
+        // then close. The supplied error sink remains live after this dialog.
+        var operation = Controller.ExecuteAsync(action, Target, CancellationToken);
+        await OnClose.InvokeAsync();
+        await operation;
+    }
+}

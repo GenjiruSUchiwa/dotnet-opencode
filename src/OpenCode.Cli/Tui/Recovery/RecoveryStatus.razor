@@ -1,0 +1,40 @@
+@namespace OpenCode.Cli.Tui.Recovery
+@using OpenTui.Native
+
+<Box Gap="1" PaddingLeft="1" Bg="@Theme.Background">
+    <TuiText Value="@Message" Fg="@(Error is null ? Theme.Subdued : Theme.Error)" WrapMode="NativeTextWrapMode.Word" />
+    <Box Direction="TuiFlexDirection.Row" Gap="1">
+        @if (Retry is not null && !Busy)
+        {
+            <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="RetryClick"><TuiText Value="Retry connection" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+        }
+        @if (Reload is not null && !Busy)
+        {
+            <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="ReloadClick"><TuiText Value="Reload session" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+        }
+        @if (Cancel is not null && Busy)
+        {
+            <Box PaddingX="1" Bg="@Theme.ActionBackground" OnClick="CancelClick"><TuiText Value="Cancel wait" Fg="@Theme.ActionText" PointerEvents="false" /></Box>
+        }
+    </Box>
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public RecoveryTheme Theme { get; set; } = default!;
+    [Parameter] public SessionSynchronization Synchronization { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public Func<Task>? Retry { get; set; }
+    [Parameter] public Func<Task>? Reload { get; set; }
+    [Parameter] public Action? Cancel { get; set; }
+    private string Message => Error ?? (Busy ? "Waiting for session recovery…" : Synchronization switch
+    {
+        SessionSynchronization.Hydrating => "Synchronizing session data; the transcript and draft are retained…",
+        SessionSynchronization.Stale => "Session data is stale while the event feed reconnects.",
+        SessionSynchronization.Failed => "Session data could not be reloaded.",
+        _ => "Session recovery"
+    });
+    private Task RetryClick(TerminalPointerEventArgs args) { args.Handled = true; return Retry?.Invoke() ?? Task.CompletedTask; }
+    private Task ReloadClick(TerminalPointerEventArgs args) { args.Handled = true; return Reload?.Invoke() ?? Task.CompletedTask; }
+    private void CancelClick(TerminalPointerEventArgs args) { args.Handled = true; Cancel?.Invoke(); }
+}

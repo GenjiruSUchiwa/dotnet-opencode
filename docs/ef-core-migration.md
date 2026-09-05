@@ -1,0 +1,262 @@
+# EF Core persistence migration
+
+## Status and verification boundary
+
+The Core domain persistence paths now use EF Core 11 SQLite. This is a
+whole-persistence source migration, not a second selectable implementation.
+Database bootstrap and reviewed incremental migrations remain source-owned.
+
+Verification is **build-only**. No application, SDK host, DI container, DbContext,
+EF model, database connection, SQL statement, query-translation probe, migration,
+test, or native/provider operation was run to verify this change. Compiling a LINQ
+expression does not establish runtime translation or behavioral parity.
+
+The full CLI dependency graph is built with:
+
+```powershell
+.\.dotnet\dotnet.exe build src/OpenCode.Cli/OpenCode.Cli.csproj `
+  --artifacts-path C:\tmp\opencode\ef-migration `
+  -p:OpenApiGenerateDocuments=false
+```
+
+Build logs are outside the repository at
+`C:\tmp\opencode\ef-migration\build.log`. Analyzer completion is tracked
+separately in [analyzer-migration.md](./analyzer-migration.md). A successful build
+with enabled warnings is not analyzer sign-off. Runtime validation remains
+explicitly unauthorized and has not been substituted with model-only probes.
+
+## Package and dependency boundary
+
+- SDK: `11.0.100-preview.7.26381.103` from the repository's `.dotnet` directory.
+- `Microsoft.EntityFrameworkCore.Sqlite`: `11.0.0-preview.7.26381.103`, in Core only.
+- Existing `Microsoft.Data.Sqlite`: `11.0.0-preview.7.26381.103`.
+- Official NuGet nuspecs for both EF SQLite packages identify the `net11.0`
+  dependency group and matching minimum versions of SQLite Core, EF Relational,
+  and Microsoft.Extensions dependencies. The bundled native SQLite dependency
+  remains `SQLitePCLRaw.bundle_e_sqlite3` 2.1.12.
+- No Schema-to-EF or Core-to-Server dependency was added. Public models, Vogen
+  generation/validation, native ABI, and the TimeProvider and Pipelines work remain
+  separate from persistence.
+
+Metadata inspected:
+
+- <https://api.nuget.org/v3-flatcontainer/microsoft.entityframeworkcore.sqlite/11.0.0-preview.7.26381.103/microsoft.entityframeworkcore.sqlite.nuspec>
+- <https://api.nuget.org/v3-flatcontainer/microsoft.entityframeworkcore.sqlite.core/11.0.0-preview.7.26381.103/microsoft.entityframeworkcore.sqlite.core.nuspec>
+
+## Ownership and transactions
+
+`IDatabase` / `SqliteDatabase` still own channel path selection, connection opening,
+the private shared-memory anchor, pooling, and connection PRAGMAs. The existing
+foreign-key, busy-timeout, WAL, synchronous, cache-size, and checkpoint behavior
+has not moved into EF. Data-channel names have not changed.
+
+`PersistenceContext` borrows an already-open connection with
+`contextOwnsConnection: false`. It uses `UseTransaction` when the caller owns a
+native transaction. Contexts are short-lived operation resources, never singleton
+Server/SDK services. Server, SDK, and CLI authentication still compose the database
+owner; stores create their own contexts internally.
+
+`EventStore.TransactAsync` preserves this order:
+
+1. Acquire the aggregate publication gate.
+2. Begin the native immediate SQLite transaction (`deferred: false`).
+3. Attach one EF context to that connection and transaction.
+4. Run admission checks, projectors, sequence reservation, and retained-event writes.
+5. Commit the outer transaction.
+6. Notify durable/live observers while publication serialization remains held.
+
+No SaveChanges interceptor publishes events. There is no new retry strategy around
+admission, model calls, tools, or publication. Existing cancellation and replay's
+uninterruptible commit window remain in the event owner.
+
+The context defaults to no tracking and relational SQL null semantics. Ordinary
+inserts flush immediately and detach their rows so subsequent LINQ or intrinsic
+operations see the write without a stale change-tracker copy. SQLite exceptions
+wrapped by SaveChanges are rethrown as their original provider exception. Set-based
+writes retain explicit row-count checks where the domain requires them.
+
+There is no universal timestamp interceptor. Producer-specific timestamps still
+come from the existing injected clocks. Operational updates that must not count
+as Session activity do not set `time_updated`.
+
+## Schema mapping
+
+`Persistence/Rows.cs` contains storage-only scalar rows. JSON remains opaque text;
+EF inheritance and owned JSON mappings are not used. This avoids dropping unknown
+payload properties or applying public DTO defaults during a database read/write.
+
+IDs are stored as strings in these internal rows. Existing domain adapters call
+the same `FromExisting` factories when producing public values. No EF converter is
+needed for a scalar string row, and no unused Vogen converter layer is introduced.
+In particular, legacy `ses` IDs, non-prefixed project identities such as `global`,
+and message-ID validation are not tightened. Public ID generation is unchanged.
+
+The model maps these 19 tables:
+
+| Table | Key | JSON TEXT columns |
+| --- | --- | --- |
+| account_state | id, INTEGER | — |
+| account | id, TEXT | — |
+| control_account | email + url, TEXT | — |
+| credential | id, TEXT | value |
+| event_sequence | aggregate_id, TEXT | — |
+| event | id, TEXT | data |
+| kv | key, TEXT | value for the current consumers |
+| permission | id, TEXT | — |
+| project_directory | project_id + directory, TEXT | — |
+| project | id, TEXT | sandboxes, commands |
+| instruction_blob | hash, TEXT | value |
+| instruction_entry | session_id + key, TEXT | value |
+| instruction_state | session_id, TEXT | initial_values, current_values |
+| session_inbox | id, TEXT | payload |
+| session_message | id, TEXT | data |
+| session_pending | id, TEXT | data |
+| session_v2 | id, TEXT | fork_boundary, summary_diffs, metadata, revert, permission, model |
+| workspace | id, TEXT | binding |
+| worktree | project_id + directory, TEXT | — |
+
+`migration(id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)` is deliberately
+not an EF entity. It belongs exclusively to the source migration runner.
+
+The 16 explicit index names and ordered columns are:
+
+| Name | Columns | Constraint |
+| --- | --- | --- |
+| event_aggregate_seq_idx | aggregate_id, seq | unique |
+| event_aggregate_type_seq_idx | aggregate_id, type, seq | |
+| permission_project_action_resource_idx | project_id, action, resource | unique |
+| session_inbox_session_delivery_seq_idx | session_id, delivery, enqueued_seq | |
+| session_inbox_session_enqueued_seq_idx | session_id, enqueued_seq | unique |
+| session_message_session_seq_idx | session_id, seq | unique |
+| session_message_session_type_seq_idx | session_id, type, seq | |
+| session_message_session_time_created_id_idx | session_id, time_created, id | |
+| session_message_time_created_idx | time_created | |
+| session_pending_session_delivery_seq_idx | session_id, delivery, admitted_seq | |
+| session_pending_session_compaction_idx | session_id | unique; type = 'compaction' |
+| session_pending_session_admitted_seq_idx | session_id, admitted_seq | unique |
+| session_v2_project_idx | project_id | |
+| session_v2_workspace_idx | workspace_id | |
+| session_v2_parent_idx | parent_id | |
+| session_v2_time_suspended_idx | time_suspended | time_suspended is not null |
+
+The foreign-key-index convention is removed. Only source-declared relationships
+are mapped: account-state to account uses SET NULL; event to event-sequence and
+the existing project/session dependents use CASCADE. Parent, fork, and workspace
+identities on Session are not invented foreign keys. No auto-generated identity
+values or new indexes are introduced.
+
+Epoch fields retain INTEGER affinity and milliseconds; cost retains REAL affinity.
+Event creation time remains a double even with INTEGER affinity. Projection read
+models retain their previous integral reads; intrinsics preserve fractional replay
+creation times and numeric usage writes without rounding them through those read
+models. Credential active state remains a nullable integer and the decoder still
+rejects values other than NULL, zero, and one.
+
+EF requires non-null tracked keys. The generated source DDL's historical omission
+of explicit NOT NULL on single TEXT primary keys is not rewritten: EF is never
+used to create or migrate this schema. `DatabaseBootstrapSchema.Generated.cs` and
+`SourceSchema` remain the authoritative DDL/profile definitions.
+
+## Source migration authority
+
+There are no calls to EF EnsureCreated, EnsureDeleted, or Migrate, no EF migration
+assembly, and no EF history table. The current 46-entry baseline still ends at
+`20260823191254_nullable_workspace_binding`.
+
+`DatabaseBootstrap.Apply` retains fresh-schema stamping and the strict default
+current-baseline gate. `SourceMigrationRunner` retains the explicit owner-selected
+`MigrationTarget`, canonical/named-Drizzle/timestamp-Drizzle journal classification,
+exact-prefix validation, pre-split marker, blocked destructive/legacy transitions,
+schema-profile checks, and whole-batch rollback. Foreign keys are toggled before
+the native migration transaction, checked before commit, and restored afterward.
+
+No current baseline was stamped on an existing database as part of this change.
+There is no parallel writable migration history.
+
+## Domain coverage
+
+| Area | Converted source |
+| --- | --- |
+| Sessions and messages | Database/SessionStore; Session/SessionQueries |
+| Event append, claim, replay, log paging | Event/EventStore; Event/Log/DurableEventLog |
+| Admission and consumption | Event/SessionAdmission; SessionInboxOperations; CompactionInbox; Session/Transfer/MoveInbox |
+| Assistant and execution projection | AssistantProjector; ExecutionProjector; RestartPersistence |
+| Instructions | InstructionPersistence; InstructionEntryPersistence; Session/ReadInstructionLoader |
+| Background KV | JobBackgroundStore |
+| Session mutations and revert | SessionMutationProjector; SessionRevertPersistence |
+| Creation, shell, title, skills, synthetic messages | SessionCreation; SessionShellPersistence; SessionTitlePersistence; SessionSkillPublisher; SessionSyntheticProjector |
+| Compaction and usage | CompactionProjector |
+| Fork, movement, archive import | Session/Transfer/SessionTransfer; ForkProjector; MoveProjector; Event/SessionArchivePersistence |
+| Projects and worktrees | Projects/ProjectQueries; ProjectMutations; ProjectDiscovery; Locations/CatalogLocation; Worktrees/WorktreeStore |
+| Credentials and saved permissions | Database/CredentialStore; Permissions/SqlitePermissionGrantStore |
+| Other KV consumers | Integrations/Wellknown/WellknownSourceStore; WebSearch/WebSearchSelectionStore |
+| Statistics | Session/Statistics/SessionStatistics |
+
+The old domain SqliteCommand factory and SqliteDataReader materializers are removed.
+Remaining direct ADO use is limited to connection initialization and source schema
+migration/classification. No duplicated writable adapter remains.
+
+## Complete retained SQL inventory
+
+All runtime SQL below is parameterized through EF APIs. `SqliteIntrinsics` owns
+the named mutations, and `StatisticsSql` owns the two JSON-expanded statistics
+queries. These are supported boundaries, not temporary legacy adapters.
+
+| Intrinsic | Reason |
+| --- | --- |
+| ReserveSequenceAsync | max-based reservation; preserve owner and a projector's higher reservation |
+| ReserveReplayAsync | max reservation plus conditional owner adoption |
+| PutKvAsync | upsert preserving creation time |
+| PutProjectAsync | null-safe conditional VCS upsert; unchanged discovery must not touch time/path/display |
+| PutWorktreeAsync | null-safe conditional strategy upsert; affected-row count is the changed result |
+| AddWorktreeAsync | insert-on-conflict-no-op producer record |
+| AddPermissionAsync | insert-on-conflict-no-op across both ID and semantic unique key |
+| PutInstructionAsync | conditional upsert with SQL NULL/value distinction and removed-state reset |
+| PutInstructionBlobAsync | content-addressed first insertion wins |
+| PutInstructionStateAsync | update current/through values without resetting an established epoch |
+| InsertSessionAsync | conflict result and unrounded replay creation time |
+| InsertInboxAsync | conflict result and unrounded enqueue time |
+| InsertMessageAsync | shared event projection insert preserving double creation time |
+| TouchSessionAsync | unrounded event time in INTEGER-affinity activity column |
+| SaveAssistantAsync | opaque JSON and double payload creation time; assistant ownership predicate |
+| SaveCompactionAsync | opaque JSON and double payload creation time |
+| AddUsageAsync | source SQL numeric arithmetic, including INTEGER-affinity counters |
+| ConsumeInboxAsync | DELETE RETURNING supplies the exact consumed payload before projection |
+| ClaimExecutionAsync | conditional local claim with unrounded event time |
+| ClearCurrentRetryAsync | JSON key removal on only the newest incomplete assistant |
+| CompleteExecutionAsync | monotonic idle time and replay-sensitive operational-claim preservation |
+| IncrementResumeAsync | UPDATE RETURNING count drives the same transaction's next durable event |
+| RestoreArchiveAsync | exact numeric usage/time restoration and existing outcome serialization |
+| ForkSessionAsync | INSERT SELECT preserves parent fields and source conflict behavior |
+| ForkMessagesAsync | INSERT SELECT preserves sequence gaps, timestamps, JSON, and settled filters |
+| ForkInstructionEntryAsync | preserve double event time and SQL NULL versus JSON text |
+| ForkInstructionStateAsync | inherited initial/current values, insert-on-conflict-no-op |
+| StatisticsSql.SummaryAsync | MATERIALIZED CTE, json_each, aggregate FILTER and SQL null behavior |
+| StatisticsSql.DetailAsync | json_each plus source duration CASE/coalesce behavior |
+
+Source migration SQL and bootstrap PRAGMAs are additionally retained unchanged in
+their existing database-owner files. SQL scalar JSON functions used by LINQ are
+explicitly mapped (`json_extract`, `json_valid`); there is no assumption
+that SQL Server JSON features apply to SQLite.
+
+## Compatibility details and remaining limitations
+
+- LIKE retains `%` and `_` wildcard behavior; it is not replaced by Contains.
+- Keyset tie ordering and previous-page reversal remain explicit. Normal limits
+  translate to Take; negative SQLite limits remain unbounded. Limits above Int32
+  are streamed without narrowing the public Int64 limit.
+- Credential ordering retains NULL/false/true distinctions and binary identity
+  matching. Row decoders retain existing JSON validation and errors.
+- Replay uses the existing structural JSON equality implementation, including
+  signed zero, rather than text equality or EF tracking.
+- Archive import retains only settled projected history. It does not fabricate
+  historical events. Project resolution remains outside the Session commit.
+- Forking retains the selected high-water mark even when that boundary row is
+  unsettled. Copied payload references are not rewritten.
+- Statistics retains 31-day windows, half-open bounds, fork exclusions, local
+  timezone/median work, and the existing unversioned compaction-event type query.
+- This migration deliberately does not fix the existing archive-outcome
+  serialization/read discrepancy. Such a behavior change needs its own review.
+- No runtime query translation, schema materialization, concurrency, rollback,
+  performance, or migration parity has been tested. Those are not implied by the
+  build result and must remain a separate explicitly authorized verification step.

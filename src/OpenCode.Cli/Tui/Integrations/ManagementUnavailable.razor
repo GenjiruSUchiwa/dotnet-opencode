@@ -1,0 +1,19 @@
+@namespace OpenCode.Cli.Tui.Integrations
+
+<Modal Background="@Theme.Background" Backdrop="@Theme.Backdrop" OnClose="OnClose">
+    <Box PaddingX="2" PaddingBottom="1" Gap="1">
+        <TuiText Value="@Title" Fg="@Theme.Text" Bold="true" />
+        <TuiText Value="@Message" Fg="@ErrorColor" WrapMode="NativeTextWrapMode.Word" />
+        <Input Value="" Placeholder="r retry · esc close" PlaceholderFg="@Theme.Subdued" FocusKey="management-unavailable" OnKeyDown="Key" />
+    </Box>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public DialogTheme Theme { get; set; } = null!;
+    [Parameter, EditorRequired] public string ErrorColor { get; set; } = null!;
+    [Parameter] public string Title { get; set; } = "Catalog unavailable";
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public EventCallback Retry { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    private async Task Key(TerminalKeyEventArgs args) { args.Handled = true; if (args.Key.Key == ConsoleKey.R) await Retry.InvokeAsync(); }
+}

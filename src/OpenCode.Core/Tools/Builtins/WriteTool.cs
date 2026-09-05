@@ -5,10 +5,12 @@ using System.Text.Json;
 using OpenCode.Schema;
 
 /// <summary>
-/// 1:1 port of packages/core/src/tool/plugin/write.ts
+/// Source-backed write leaf; requires real Location mutation services.
 /// </summary>
-public sealed class WriteTool : ITool
+public sealed class WriteTool(ToolFilePolicy? policy = null, IToolFileMutation? mutation = null)
 {
+    public ToolInfo Create() => ToolInfo.FromJson(Name, Description, InputSchema, ExecuteAsync, BuiltinToolSchemas.Write,
+        new ToolOptions(Permission: "edit", CodeMode: false));
     public string Name => "write";
 
     public string Description =>
@@ -28,17 +30,23 @@ public sealed class WriteTool : ITool
 
     public async Task<ToolExecutionResult> ExecuteAsync(JsonElement input, ToolContext context, CancellationToken ct = default)
     {
-        var path = input.GetProperty("path").GetString()!;
-        var content = input.GetProperty("content").GetString()!;
-
-        var dir = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(dir))
-        {
-            Directory.CreateDirectory(dir);
-        }
-
-        await File.WriteAllTextAsync(path, content, Encoding.UTF8, ct);
-
-        return new ToolExecutionResult($"Successfully wrote {content.Length} characters to {path}.");
+        var args = new ToolInput(input);
+        var path = args.String("path");
+        var content = args.String("content");
+        if (policy is null || mutation is null)
+            throw new NotSupportedException("write requires Location, permission and file mutation services.");
+        if (Encoding.UTF8.GetByteCount(content) > mutation.MaximumBytes)
+            throw new ToolExecutionException($"Content exceeds the configured {mutation.MaximumBytes} byte limit.");
+        var target = await policy.ResolveAsync(path, ToolPathKind.File, context, ct);
+        await using var transaction = await mutation.LockAsync(target.Absolute, ct);
+        var original = await transaction.ReadAsync(ct);
+        var existed = original is not null;
+        var preview = mutation.Diff(target.Resource, original?.Text ?? "", content.TrimStart('\uFEFF'),
+            existed ? FileDiffStatus.Modified : FileDiffStatus.Added);
+        await policy.AssertAsync("edit", [target.Resource], ["*"], context,
+            new Dictionary<string, object> { ["files"] = new[] { preview } }, ct);
+        await transaction.WriteTextAsync(content, ct);
+        return new ToolExecutionResult($"{(existed ? "Wrote" : "Created")} file successfully: {target.Resource}",
+            new { operation = "write", target = target.Absolute, resource = target.Resource, existed });
     }
 }

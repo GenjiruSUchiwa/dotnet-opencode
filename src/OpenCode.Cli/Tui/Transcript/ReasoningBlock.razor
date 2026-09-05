@@ -1,0 +1,57 @@
+@namespace OpenCode.Cli.Tui.Transcript
+@using OpenCode.Cli.Tui.Images
+@using OpenTui.Blazor.Code
+@using OpenTui.Native
+
+<Box PaddingLeft="3">
+    <Box Border="@(Expanded ? "left" : null)" BorderFg="@Theme.RaisedBackground" PaddingLeft="@(Expanded ? 1 : 0)">
+        <TuiText Value="@Header" Fg="@Theme.Warning" Height="1" />
+    </Box>
+    @if (Expanded)
+    {
+        <Box PaddingTop="1" Border="left" BorderFg="@Theme.RaisedBackground" PaddingLeft="3">
+            @foreach (var part in Row.Parts)
+            {
+                <MarkdownText @key="part.Key" Text="@(((AssistantReasoningContent)part.Part).Text.Replace("[REDACTED]", "").Trim())"
+                              Theme="Theme" Subdued="true" Presentation="Presentation" OnCopyCode="OnCopyCode" OnImagePreview="OnImagePreview"
+                              CodeHighlighter="CodeHighlighter" SyntaxRules="SyntaxRules" Streaming="@(!Completed)" />
+            }
+        </Box>
+    }
+</Box>
+
+@code {
+    [Parameter, EditorRequired] public ReasoningRow Row { get; set; } = default!;
+    [Parameter, EditorRequired] public TranscriptTheme Theme { get; set; } = default!;
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public MarkdownPresentation Presentation { get; set; }
+    [Parameter] public EventCallback<string> OnCopyCode { get; set; }
+    [Parameter] public EventCallback<ImagePreviewRequest> OnImagePreview { get; set; }
+    [Parameter] public ICodeHighlighter? CodeHighlighter { get; set; }
+    [Parameter] public IReadOnlyList<NativeSyntaxRule> SyntaxRules { get; set; } = [];
+    private string? _group;
+    private string? _latest;
+    protected override void OnParametersSet()
+    {
+        if (_group != Row.Key) { _group = Row.Key; _latest = null; }
+        var last = Row.Parts[^1];
+        var part = (AssistantReasoningContent)last.Part;
+        var title = ReasoningSummary.Parse(part.Text.Replace("[REDACTED]", "")).Title;
+        if (title is not null) _latest = title;
+        else if (part.Time?.Completed is not null || last.Message.Time.Completed is not null) _latest = null;
+    }
+    private bool Completed => Row.Completed || Row.Parts.All(part =>
+        ((AssistantReasoningContent)part.Part).Time?.Completed is not null || part.Message.Time.Completed is not null);
+    private string Header
+    {
+        get
+        {
+            var duration = Row.Parts.Sum(item => ((AssistantReasoningContent)item.Part).Time is { Completed: { } end } time
+                ? Math.Max(0, (end - time.Created).TotalMilliseconds) : 0);
+            var title = Completed && Expanded ? null : _latest;
+            return $"{(Expanded ? "-" : "+")} {(Completed ? "Thought" : "Thinking")}{(title is null ? "" : ": " + title)}" +
+                (Completed && Row.Parts.Length > 1 ? $" · {Row.Parts.Length} steps" : "") +
+                (Completed && duration > 0 ? $" · {(duration < 1000 ? $"{duration:0}ms" : $"{duration / 1000:0.#}s")}" : "");
+        }
+    }
+}

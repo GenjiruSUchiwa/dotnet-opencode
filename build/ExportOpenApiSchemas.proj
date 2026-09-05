@@ -1,0 +1,9 @@
+<Project>
+  <UsingTask TaskName="ExportContractSchemas" AssemblyFile="$(ArtifactsPath)/bin/OpenCode.Documentation/metadata/OpenCode.Documentation.dll" />
+  <Target Name="ExportOpenApiSchemas">
+    <Error Condition="'$(ArtifactsPath)' == ''" Text="Supply a private ArtifactsPath for metadata-only generation." />
+    <MSBuild Projects="$(MSBuildThisFileDirectory)OpenCode.Documentation/OpenCode.Documentation.csproj" Targets="Restore;Build"
+             Properties="ArtifactsPath=$(ArtifactsPath);ArtifactsPivots=metadata;OpenApiGenerateDocuments=false;OpenCodePackagePersistentPty=false" />
+    <ExportContractSchemas OutputFile="$(ArtifactsPath)/openapi-schemas.json" />
+  </Target>
+</Project>

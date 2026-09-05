@@ -1,0 +1,6 @@
+@namespace OpenCode.Cli.Tui.Dialogs
+@typeparam T
+
+<DialogSelect T="T" Title="@Title" Theme="Theme" Options="Items" Current="Current" HasCurrent="@(Current is not null)"
+              Size="Size" TerminalHeight="TerminalHeight" Loading="Loading" Error="@Error" Flat="true"
+              Actions="Actions" ResolveCommand="ResolveCommand" OnSelect="Choose" OnClose="OnClose" />

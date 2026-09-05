@@ -54,7 +54,7 @@ try {
     }
     # Reuse compiler/restore outputs per checkout, SDK, architecture and PTY configuration.
     # Running clients never load assemblies from this mutable build directory.
-    $flavor = $requiredSdk + '|' + [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture + '|' + ($assetProperties -join '|')
+    $flavor = $requiredSdk + '|' + [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture + '|dotnet-local|' + ($assetProperties -join '|')
     $cacheKey = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($flavor))).ToLowerInvariant()
     $artifacts = Join-Path $PSScriptRoot "artifacts/run/$cacheKey"
     [IO.Directory]::CreateDirectory($artifacts) | Out-Null
@@ -72,7 +72,8 @@ try {
     $stamp = Join-Path $artifacts 'expected-build.id'
     $identityArguments = @('msbuild', $protocol, '-target:GetApplicationBuildIdentity', '-nologo',
         '-property:Configuration=Debug', "-property:ArtifactsPath=$artifacts", '-property:ArtifactsPivots=run',
-        '-property:UseAppHost=true', '-property:OpenApiGenerateDocuments=false', "-property:OpenCodeBuildStampFile=$stamp") + $assetProperties
+        '-property:UseAppHost=true', '-property:OpenApiGenerateDocuments=false', '-property:OpenCodeLocalBuild=true',
+        '-property:OpenCodeFingerprintOnly=true', "-property:OpenCodeBuildStampFile=$stamp") + $assetProperties
     $child = Start-OwnedChild $dotnet $identityArguments $PSScriptRoot
     $child.WaitForExit()
     if ($child.ExitCode -ne 0) { throw 'Could not fingerprint the application build inputs.' }
@@ -80,8 +81,18 @@ try {
     $child = $null
     $expectedBuild = ([IO.File]::ReadAllText($stamp)).Trim()
     if ($expectedBuild -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid application build fingerprint.' }
+    $identityFile = Join-Path $artifacts 'local-build.json'
+    $previousBuild = if (Test-Path -LiteralPath $identityFile -PathType Leaf) { Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json } else { $null }
+    $timestamp = if ($null -ne $previousBuild -and $previousBuild.buildID -ceq $expectedBuild) {
+        [long]$previousBuild.timestamp
+    } else {
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        if ($null -ne $previousBuild) { [Math]::Max($now, [long]$previousBuild.timestamp + 1) } else { $now }
+    }
+    if ($timestamp -le 0) { throw 'Invalid cached dotnet-local build timestamp.' }
     $child = Start-OwnedChild $dotnet (@('build', $project, '--configuration', 'Debug', '--artifacts-path', $artifacts,
-        '--nologo', '-p:ArtifactsPivots=run', '-p:UseAppHost=true', '-p:OpenApiGenerateDocuments=false', "-p:OpenCodeExpectedBuildId=$expectedBuild") + $assetProperties) $PSScriptRoot
+        '--nologo', '-p:ArtifactsPivots=run', '-p:UseAppHost=true', '-p:OpenApiGenerateDocuments=false',
+        '-p:OpenCodeLocalBuild=true', "-p:OpenCodeBuildTimestamp=$timestamp", "-p:OpenCodeExpectedBuildId=$expectedBuild") + $assetProperties) $PSScriptRoot
     $child.WaitForExit()
     $exitCode = $child.ExitCode
     if ($exitCode -eq 0) {
@@ -98,6 +109,9 @@ try {
             if (([IO.File]::ReadAllText((Join-Path $output 'opencode-build.id'))).Trim() -cne $expectedBuild) {
                 throw 'CLI and Server were not produced from the same application fingerprint.'
             }
+            if (([IO.File]::ReadAllText((Join-Path $output 'opencode-build.timestamp'))).Trim() -cne [string]$timestamp) {
+                throw 'CLI and Server were not produced with the same dotnet-local timestamp.'
+            }
         }
         foreach ($name in @('OpenCode.Server.dll', 'OpenCode.Server.deps.json', 'OpenCode.Server.runtimeconfig.json')) {
             if (!(Test-Path -LiteralPath (Join-Path $packagedServer $name) -PathType Leaf)) {
@@ -112,6 +126,7 @@ try {
         foreach ($asset in Get-ChildItem -LiteralPath $cliOutput -Force) {
             Copy-Item -LiteralPath $asset.FullName -Destination $runtimeArtifacts -Recurse -Force
         }
+        @{ buildID = $expectedBuild; timestamp = $timestamp } | ConvertTo-Json | Set-Content -LiteralPath $identityFile
         $buildLock.Dispose()
         $buildLock = $null
         $executable = Join-Path $runtimeArtifacts $(if ($IsWindows) { 'OpenCode.Cli.exe' } else { 'OpenCode.Cli' })

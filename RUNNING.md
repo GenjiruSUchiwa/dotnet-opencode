@@ -2,7 +2,9 @@
 
 Public package/repository identity: **dotnet-opencode**. Installed command:
 **`dotnet opencode`**, for both global and local .NET tool installations. Internal
-assembly/project names and the dotnet data channel are intentionally unchanged.
+assembly/project names remain unchanged. Published tools use `dotnet`; `run.ps1`
+builds the timestamped `dotnet-local` development channel. Existing `dotnet` data
+is left intact, not migrated. See [local service negotiation](docs/dotnet-local.md).
 
 ## Pack and inspect a local feed
 
@@ -114,9 +116,12 @@ receive `DOTNET_ROOT`, the architecture-specific root, `DOTNET_HOST_PATH`,
 Each invocation fingerprints the source inputs and incrementally builds only
 `OpenCode.Cli.csproj` and its project dependencies. Restore/compiler outputs persist
 under the ignored `artifacts/run/<configuration-key>/` directory in this checkout.
-The key separates the pinned SDK, architecture and optional PTY packaging choices;
+The key separates the pinned SDK, architecture, local channel and optional PTY packaging choices;
 it does not change for every source edit. Normal MSBuild up-to-date checks and
 build-server reuse remain enabled. There is no clean or forced rebuild on launch.
+Source changes receive a new local build timestamp; unchanged source reuses its
+timestamp from `local-build.json`, so version stamping does not defeat incremental
+compilation. Fingerprint-only checks do not rewrite generated version code.
 
 Builds for the same cache wait on a file lock (up to one minute), held through
 runtime copying and released before starting the TUI. The script does not build
@@ -148,7 +153,7 @@ Updated managed-service launches copy the complete runtime assets to an immutabl
 content-addressed deployment under:
 
 ```text
-<XDG_CACHE_HOME or ~/.cache>/opencode/service-dotnet/deployments/<SHA-256>/
+<XDG_CACHE_HOME or ~/.cache>/opencode/service-<channel>/deployments/<SHA-256>/
 ```
 
 The daemon runs there, not in either normal build output or the script's temporary
@@ -163,13 +168,15 @@ build fingerprint. A constant service version no longer permits stale-build
 reuse. Unchanged source/build inputs keep the same fingerprint across unique
 artifacts directories; no timestamp or output path is used as the build identity.
 
-Managed Ensure can perform one cooperative replacement after authenticating the
-exact .NET channel/instance, verifying its active-session map is empty, and
-validating the replacement package stamp. It uses the instance-bound shutdown
-endpoint and waits for registration/lease release, never a PID kill. Explicit
-servers are never replaced. Unknown/busy/unavailable activity or identity returns
-an actionable mismatch instead of stale success. Set ReplaceIncompatible=false
-to require manual transition in all cases.
+Managed Ensure verifies the exact channel/instance and replacement package before
+using the instance-bound shutdown endpoint and waiting for registration/lease release.
+For `dotnet-local`, only a strictly newer timestamp can replace an older server;
+exact build/version/timestamp matching is mandatory even for an explicit endpoint.
+Local upgrades may interrupt active work through normal host shutdown and recovery.
+Published `dotnet` builds retain the idle-only replacement policy. No channel is
+downgraded by local negotiation, no explicit server is automatically replaced, and
+failed verification/shutdown never falls back to a mismatched server. Set
+ReplaceIncompatible=false to require manual transition.
 
 To transition the daemon itself or unblock a standard mutable-output build,
 explicitly stop the verified .NET instance once through authenticated .NET

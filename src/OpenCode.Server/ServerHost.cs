@@ -59,7 +59,7 @@ public static class ServerHost
         if (new[] { state, homeState }.Any(root => path.StartsWith(
                 Path.GetFullPath(Path.Combine(root, "opencode")) + Path.DirectorySeparatorChar, comparison))
             && !string.Equals(Path.GetFileName(path), OpenCodeChannel.ServiceFileName, comparison))
-            throw new ArgumentException("Use service-dotnet.json, not another channel's registration, inside the OpenCode state directory.", nameof(customPath));
+            throw new ArgumentException($"Use {OpenCodeChannel.ServiceFileName}, not another channel's registration, inside the OpenCode state directory.", nameof(customPath));
         return path;
     }
 
@@ -124,7 +124,7 @@ public static class ServerHost
         configFile = standalonePassword is not null ? "" : Path.GetFullPath(configFile ?? Environment.GetEnvironmentVariable("OPENCODE_DOTNET_SERVICE_CONFIG")
             ?? Path.Combine(ConfigLoader.GetDefaultConfigDirectory(), OpenCodeChannel.ServiceFileName));
         if (standalonePassword is null && Path.GetFileName(configFile) != OpenCodeChannel.ServiceFileName)
-            throw new ArgumentException("The channel service config must be named service-dotnet.json.");
+            throw new ArgumentException($"The channel service config must be named {OpenCodeChannel.ServiceFileName}.");
         var config = standalonePassword is null && File.Exists(configFile)
             ? JsonNode.Parse(File.ReadAllText(configFile)) as JsonObject
                 ?? throw new InvalidDataException("The .NET service config must be a JSON object.")
@@ -544,8 +544,9 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
         await WritePrivateAsync(_file, JsonSerializer.Serialize(new
         {
             id = Id,
-            version = OpenCodeChannel.ServiceVersion,
+            version = ApplicationBuild.Version,
             buildID = ApplicationBuild.Id,
+            buildTimestamp = ApplicationBuild.Timestamp,
             url = Url,
             pid = Environment.ProcessId,
             password = _password,
@@ -624,8 +625,10 @@ internal sealed class ServiceLifetime : IHostedLifecycleService, IDisposable, IS
             var root = document.RootElement;
             return root.ValueKind == JsonValueKind.Object
                 && root.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String && id.GetString() == Id
-                && root.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String && version.GetString() == OpenCodeChannel.ServiceVersion
+                && root.TryGetProperty("version", out var version) && version.ValueKind == JsonValueKind.String && version.GetString() == ApplicationBuild.Version
                 && root.TryGetProperty("buildID", out var build) && build.ValueKind == JsonValueKind.String && build.GetString() == ApplicationBuild.Id
+                && root.TryGetProperty("buildTimestamp", out var timestamp) && timestamp.ValueKind == JsonValueKind.Number
+                && timestamp.TryGetInt64(out var buildTimestamp) && buildTimestamp == ApplicationBuild.Timestamp
                 && root.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String && url.GetString() == Url
                 && root.TryGetProperty("pid", out var pid) && pid.ValueKind == JsonValueKind.Number && pid.TryGetInt32(out var process) && process == Environment.ProcessId
                 && root.TryGetProperty("password", out var password) && password.ValueKind == JsonValueKind.String && password.GetString() == _password;

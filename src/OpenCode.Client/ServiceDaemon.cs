@@ -17,7 +17,8 @@ public sealed record ServiceInfo(
     [property: JsonPropertyName("pid")] int Pid,
     [property: JsonPropertyName("password")] string? Password = null,
     [property: JsonPropertyName("startupID")] string? StartupId = null,
-    [property: JsonPropertyName("buildID")] string? BuildId = null
+    [property: JsonPropertyName("buildID")] string? BuildId = null,
+    [property: JsonPropertyName("buildTimestamp")] long? BuildTimestamp = null
 );
 
 public sealed record ServiceEndpoint(string Url, string? Password = null)
@@ -34,7 +35,7 @@ public sealed record ServiceEndpoint(string Url, string? Password = null)
 public static class ServiceDaemon
 {
     public const int DefaultPort = OpenCodeChannel.ServicePort;
-    public const string DefaultVersion = OpenCodeChannel.ServiceVersion;
+    public const string DefaultVersion = ApplicationBuild.Version;
     public const string Application = OpenCodeChannel.Application;
 
     public static string GetDefaultRegistrationFile() => GetRegistrationFile(null);
@@ -49,7 +50,7 @@ public static class ServiceDaemon
         if (new[] { state, homeState }.Any(root => path.StartsWith(
                 Path.GetFullPath(Path.Combine(root, "opencode")) + Path.DirectorySeparatorChar, comparison))
             && !string.Equals(Path.GetFileName(path), OpenCodeChannel.ServiceFileName, comparison))
-            throw new ArgumentException("Use service-dotnet.json, not another channel's registration, inside the OpenCode state directory.", nameof(file));
+            throw new ArgumentException($"Use {OpenCodeChannel.ServiceFileName}, not another channel's registration, inside the OpenCode state directory.", nameof(file));
         return path;
     }
 
@@ -92,6 +93,9 @@ public static class ServiceDaemon
         var file = options.Server is null ? GetRegistrationFile(options.RegistrationFile) : null;
         var expectedBuild = options.ExpectedBuildId ?? ApplicationBuild.Id;
         if (!IsBuildId(expectedBuild)) throw new ArgumentException("Expected build identity must be a lowercase SHA-256 fingerprint.", nameof(options));
+        if (OpenCodeChannel.IsLocal && (expectedBuild != ApplicationBuild.Id || ApplicationBuild.Timestamp <= 0))
+            throw new ServiceLifecycleException(ServiceFailure.InvalidConfiguration, "A dotnet-local client must use its own timestamped build identity.",
+                "Use ./run.ps1; local build matching cannot be overridden.");
         var replaced = false;
         PersistentPtyHandoff? ptyHandoff = null;
         var started = options.Clock.GetTimestamp();
@@ -117,20 +121,37 @@ public static class ServiceDaemon
                 {
                     if (!service.Compatible)
                     {
+                        if (OpenCodeChannel.IsLocal && options.Server is null && service.Channel == OpenCodeChannel.Name
+                            && service.State == ServiceState.Stopping && service.BuildTimestamp is > 0
+                            && service.BuildTimestamp < ApplicationBuild.Timestamp)
+                        {
+                            await Task.Delay(ServiceTiming.PollInterval, options.Clock, ct).ConfigureAwait(false);
+                            continue;
+                        }
                         var mismatch = new ServiceLifecycleException(service.BuildId != expectedBuild && options.Server is null
                                 ? ServiceFailure.IncompatibleBuild : ServiceFailure.IncompatibleVersion,
                             "The selected server does not match this application's required version/build identity.",
                             options.Server is null
-                                ? "Do not continue with stale code. Finish active work, then use ./run.ps1 stop for the verified .NET instance and rerun ./run.ps1 if automatic idle replacement is unavailable."
+                                ? OpenCodeChannel.IsLocal
+                                    ? "Use the matching dotnet-local source build. Only strictly older verified local servers can be replaced; a mismatched server will not be used."
+                                    : "Do not continue with stale code. Finish active work, then use ./run.ps1 stop for the verified .NET instance and rerun ./run.ps1 if automatic idle replacement is unavailable."
                                 : "Choose a compatible explicit server or deliberately change its compatibility policy. Explicit servers are never replaced automatically.");
                         if (options.Server is not null || !options.ReplaceIncompatible || replaced || info is null
-                            || service.Channel != OpenCodeChannel.Name || service.State != ServiceState.Ready
+                            || service.Channel != OpenCodeChannel.Name
+                            || (OpenCodeChannel.IsLocal ? service.State is not (ServiceState.Ready or ServiceState.Failed or ServiceState.Starting) : service.State != ServiceState.Ready)
                             || !(options.VersionPredicate?.Invoke(DefaultVersion) ?? (options.Version is null || options.Version == DefaultVersion)))
                             throw mismatch;
+                        if (OpenCodeChannel.IsLocal && (service.BuildTimestamp is not > 0 || service.BuildTimestamp >= ApplicationBuild.Timestamp))
+                            throw new ServiceLifecycleException(ServiceFailure.IncompatibleBuild,
+                                "The dotnet-local server is newer than this client, or has a conflicting timestamp.",
+                                "Rebuild the local client. A newer server is never downgraded and a mismatched UI is never connected.");
                         ServiceProcess.ValidateBuild(options.Command, expectedBuild);
-                        if (!await IsIdleAsync(info, ct).ConfigureAwait(false)) throw mismatch;
-                        ptyHandoff = await PreparePtyHandoffAsync(info, ct).ConfigureAwait(false);
-                        await StopRegisteredAsync(file!, info, ct, options.Clock).ConfigureAwait(false);
+                        // Local source upgrades retire the older host even during work;
+                        // normal shutdown preserves the existing durable recovery claims.
+                        if (!OpenCodeChannel.IsLocal && !await IsIdleAsync(info, ct).ConfigureAwait(false)) throw mismatch;
+                        ptyHandoff = service.State == ServiceState.Ready ? await PreparePtyHandoffAsync(info, ct).ConfigureAwait(false) : null;
+                        await StopRegisteredAsync(file!, info, ct, options.Clock,
+                            OpenCodeChannel.IsLocal ? TimeSpan.FromSeconds(30) : null).ConfigureAwait(false);
                         replaced = true;
                         lastSpawn = null;
                         spawnDelay = ServiceTiming.SpawnDelay;
@@ -218,7 +239,7 @@ public static class ServiceDaemon
         await StopRegisteredAsync(file, info, ct, clock ?? TimeProvider.System).ConfigureAwait(false);
     }
 
-    private static async Task StopRegisteredAsync(string file, ServiceInfo info, CancellationToken ct, TimeProvider clock)
+    private static async Task StopRegisteredAsync(string file, ServiceInfo info, CancellationToken ct, TimeProvider clock, TimeSpan? stopTimeout = null)
     {
         if (await ReadAsync(file, ct).ConfigureAwait(false) != info)
             throw new ServiceLifecycleException(ServiceFailure.InvalidIdentity, "Registration changed before cooperative shutdown.", "Rediscover the service. No replacement was attempted.");
@@ -234,7 +255,7 @@ public static class ServiceDaemon
                 "The registered instance rejected cooperative shutdown.", "Recheck the instance identity and credentials. No PID was signalled or registration removed.");
 
         var started = clock.GetTimestamp();
-        while (clock.GetElapsedTime(started) < ServiceTiming.StopTimeout)
+        while (clock.GetElapsedTime(started) < (stopTimeout ?? ServiceTiming.StopTimeout))
         {
             var current = await ReadAsync(file, ct).ConfigureAwait(false);
             // A concurrent contender may already have acquired the released lease
@@ -252,7 +273,9 @@ public static class ServiceDaemon
             }
             await Task.Delay(ServiceTiming.StopPollInterval, clock, ct).ConfigureAwait(false);
         }
-        throw new ServiceLifecycleException(ServiceFailure.ShutdownTimeout, "The service did not finish cooperative shutdown within five seconds.",
+        throw new ServiceLifecycleException(ServiceFailure.ShutdownTimeout, stopTimeout is null
+                ? "The service did not finish cooperative shutdown within five seconds."
+                : "The older dotnet-local service did not finish cooperative shutdown within thirty seconds.",
             "Inspect outstanding requests and server diagnostics. Forced termination is unsupported; no process was killed.");
     }
 
@@ -341,7 +364,8 @@ public static class ServiceDaemon
                 || (health.BuildId is not null && !IsBuildId(health.BuildId))
                 || (info is not null && (health.Application != Application || health.Channel != OpenCodeChannel.Name
                     || health.Id != info.Id || health.Pid != info.Pid || health.Version != info.Version
-                    || (info.BuildId is not null && health.BuildId != info.BuildId))))
+                    || (info.BuildId is not null && health.BuildId != info.BuildId)
+                    || (info.BuildTimestamp is not null && health.BuildTimestamp != info.BuildTimestamp))))
                 return InvalidIdentity();
             var state = response.StatusCode switch
             {
@@ -351,10 +375,12 @@ public static class ServiceDaemon
                 _ => (ServiceState?)null
             };
             if (state is null) return InvalidIdentity();
-            var expectedBuild = options.ExpectedBuildId ?? (info is not null ? ApplicationBuild.Id : null);
+            var expectedBuild = OpenCodeChannel.IsLocal ? ApplicationBuild.Id : options.ExpectedBuildId ?? (info is not null ? ApplicationBuild.Id : null);
             var compatible = (options.VersionPredicate?.Invoke(health.Version) ?? (options.Version is null || options.Version == health.Version))
-                && (expectedBuild is null || expectedBuild == health.BuildId);
-            return new(new ServiceStatus(endpoint, health.Version, health.Pid.Value, health.Id, state.Value, compatible, health.BuildId, health.Channel), null);
+                && (expectedBuild is null || expectedBuild == health.BuildId)
+                && (!OpenCodeChannel.IsLocal || (health.Version == ApplicationBuild.Version && health.BuildTimestamp == ApplicationBuild.Timestamp
+                    && health.Channel == OpenCodeChannel.Name && health.Application == Application));
+            return new(new ServiceStatus(endpoint, health.Version, health.Pid.Value, health.Id, state.Value, compatible, health.BuildId, health.Channel, health.BuildTimestamp), null);
         }
         catch (HttpRequestException cause)
         {
@@ -374,5 +400,5 @@ public static class ServiceDaemon
     private static bool IsBuildId(string value) => value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
     private sealed record ServiceIdentityHealth(bool Healthy, string? Application, string? Id, string Version, int? Pid, string? State,
-        [property: JsonPropertyName("buildID")] string? BuildId, string? Channel);
+        [property: JsonPropertyName("buildID")] string? BuildId, string? Channel, long? BuildTimestamp);
 }

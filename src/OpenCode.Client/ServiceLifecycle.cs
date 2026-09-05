@@ -43,7 +43,7 @@ public record ServiceDiscoveryOptions
 
 public sealed record ServiceStatus(
     ServiceEndpoint Endpoint, string Version, int Pid, string? Id, ServiceState State, bool Compatible,
-    string? BuildId = null, string? Channel = null);
+    string? BuildId = null, string? Channel = null, long? BuildTimestamp = null);
 
 internal static class ServiceTiming
 {

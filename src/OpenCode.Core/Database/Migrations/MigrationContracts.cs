@@ -34,7 +34,7 @@ public sealed class MigrationTarget
         Path = selectedPath == ":memory:" ? selectedPath : System.IO.Path.GetFullPath(selectedPath);
         if (Path != ":memory:" && !string.Equals(System.IO.Path.GetFileName(Path), OpenCodeChannel.DatabaseFileName,
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
-            throw new MigrationRejectedException("wrong_channel", "Migration requires an explicitly selected opencode-dotnet.db. Other channel files and arbitrary legacy paths are not accepted.");
+            throw new MigrationRejectedException("wrong_channel", $"Migration requires an explicitly selected {OpenCodeChannel.DatabaseFileName}. Other channel files and arbitrary legacy paths are not accepted.");
     }
 
     internal void RequireSelectedPath(string selectedPath)

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32.SafeHandles;
 using OpenCode.Schema;
+using OpenCode.Protocol;
 
 public sealed record ServiceStartOptions : ServiceDiscoveryOptions
 {
@@ -13,7 +14,7 @@ public sealed record ServiceStartOptions : ServiceDiscoveryOptions
     public TimeSpan StartupTimeout { get; init; } = ServiceTiming.StartupTimeout;
     /// <summary>Dotnet plus a built assembly, or a built apphost, followed by service flags. Runtime assets are snapshotted before launch.</summary>
     public IReadOnlyList<string>? Command { get; init; }
-    /// <summary>Permit one authenticated, idle .NET-channel replacement. Never signals a PID or replaces an explicit server.</summary>
+    /// <summary>Permit one authenticated replacement: idle-only for published builds, strictly older timestamps for dotnet-local. Explicit servers are never replaced.</summary>
     public bool ReplaceIncompatible { get; init; } = true;
 }
 
@@ -45,8 +46,7 @@ internal static class ServiceProcess
         var hostName = Path.GetFileName(command[0]);
         var dotnet = hostName.Equals("dotnet", StringComparison.OrdinalIgnoreCase) || hostName.Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase);
         var entry = ServiceDeployment.Snapshot(dotnet ? command[1] : command[0]);
-        if (File.ReadAllText(Path.Combine(Path.GetDirectoryName(entry)!, "opencode-build.id")).Trim() != expectedBuildId)
-            throw new ServiceLifecycleException(ServiceFailure.IncompatibleBuild, "The deployed server fingerprint changed before launch.", "Rebuild the complete CLI/Server package from stable sources.");
+        ValidateBuild(dotnet ? [command[0], entry] : [entry], expectedBuildId);
         var executable = dotnet
             ? command[0].IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar]) >= 0
                 ? Path.GetFullPath(command[0]) : DotnetHost()
@@ -114,6 +114,14 @@ internal static class ServiceProcess
         if (!File.Exists(stamp) || File.ReadAllText(stamp).Trim() != expected)
             throw new ServiceLifecycleException(ServiceFailure.IncompatibleBuild, "The selected Server package does not match this application's build fingerprint.",
                 "Run ./run.ps1 to rebuild and package matching CLI/Server assets. No incumbent was stopped.");
+        if (OpenCodeChannel.IsLocal)
+        {
+            var timestamp = Path.Combine(Path.GetDirectoryName(entry)!, "opencode-build.timestamp");
+            if (!File.Exists(timestamp) || !long.TryParse(File.ReadAllText(timestamp).Trim(), System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out var value) || value != ApplicationBuild.Timestamp)
+                throw new ServiceLifecycleException(ServiceFailure.IncompatibleBuild, "The selected Server package has a different local build timestamp.",
+                    "Use the complete matching ./run.ps1 build. No incumbent was stopped.");
+        }
     }
 
     private static IReadOnlyList<string> ResolveCommand(IReadOnlyList<string>? command)

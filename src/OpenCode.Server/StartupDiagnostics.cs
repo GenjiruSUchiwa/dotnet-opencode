@@ -145,7 +145,7 @@ internal sealed class StartupDiagnostics : ILoggerProvider
                 return ("endpoint-binding", "A route inferred a body parameter on an HTTP method that forbids it.", "Check endpoint DI registration and explicit parameter binding; do not enable inferred GET bodies.");
         }
         if (stage == "configuration")
-            return ("service-configuration", "Channel service configuration or arguments are invalid.", "Check service-dotnet.json, port/hostname/password field types, and the supplied service flags. Values were not logged.");
+            return ("service-configuration", "Channel service configuration or arguments are invalid.", $"Check {OpenCodeChannel.ServiceFileName}, port/hostname/password field types, and the supplied service flags. Values were not logged.");
         if (stage == "election")
             return ("service-election", "The registration/election check could not safely proceed.", "Verify the registered .NET instance and its private state permissions. Automatic replacement is unsupported.");
         return ("host-startup", "The host failed during startup; sanitized exception types, error codes, and call sites are recorded.",

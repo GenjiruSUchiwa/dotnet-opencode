@@ -14,8 +14,11 @@
       <_OpenCodeBuildOutput>$([System.IO.Path]::GetFullPath('$(IntermediateOutputPath)', '$(MSBuildProjectDirectory)'))</_OpenCodeBuildOutput>
     </PropertyGroup>
     <ComputeApplicationBuild RepositoryRoot="$(MSBuildThisFileDirectory)"
-                             Flavor="$(Configuration)|$(TargetFramework)|$(RuntimeIdentifier)|$(NETCoreSdkVersion)|pty=$(OpenCodePackagePersistentPty)|ptyTarget=$(OpenCodePtyRuntimeIdentifier)"
+                             Flavor="$(Configuration)|$(TargetFramework)|$(RuntimeIdentifier)|$(NETCoreSdkVersion)|local=$(OpenCodeLocalBuild)|pty=$(OpenCodePackagePersistentPty)|ptyTarget=$(OpenCodePtyRuntimeIdentifier)"
                              OutputDirectory="$(_OpenCodeBuildOutput)"
+                             LocalBuild="$(OpenCodeLocalBuild)"
+                             BuildTimestamp="$(OpenCodeBuildTimestamp)"
+                             FingerprintOnly="$(OpenCodeFingerprintOnly)"
                              Expected="$(OpenCodeExpectedBuildId)"
                              StampFile="$(OpenCodeBuildStampFile)">
       <Output TaskParameter="Fingerprint" PropertyName="OpenCodeBuildId" />
@@ -23,7 +26,9 @@
     <ItemGroup>
       <Compile Include="$(_OpenCodeBuildOutput)/ApplicationBuild.g.cs" />
       <Content Include="$(_OpenCodeBuildOutput)/opencode-build.id"
-               TargetPath="opencode-build.id" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+                TargetPath="opencode-build.id" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <Content Include="$(_OpenCodeBuildOutput)/opencode-build.timestamp"
+               TargetPath="opencode-build.timestamp" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
 </Project>

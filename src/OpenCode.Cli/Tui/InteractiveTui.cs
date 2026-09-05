@@ -3,6 +3,7 @@ namespace OpenCode.Cli.Tui;
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Components;
 using OpenCode.Client;
+using OpenCode.Protocol;
 using OpenCode.Protocol.Groups;
 using OpenCode.Cli.Tui.Components;
 using OpenCode.Cli.Tui.Sessions;
@@ -398,7 +399,7 @@ public static class InteractiveTui
                 }),
                 [nameof(OpenCodeApp.CurrentDirectory)] = directory,
                 [nameof(OpenCodeApp.ExecutionError)] = "Server connection has not been established.",
-                [nameof(OpenCodeApp.Version)] = typeof(InteractiveTui).Assembly.GetName().Version?.ToString(3) ?? "unknown",
+                [nameof(OpenCodeApp.Version)] = OpenCodeChannel.IsLocal ? ApplicationBuild.Version : typeof(InteractiveTui).Assembly.GetName().Version?.ToString(3) ?? "unknown",
                 [nameof(OpenCodeApp.NewConversation)] = (Func<CancellationToken, Task>)(token =>
                 {
                     token.ThrowIfCancellationRequested();

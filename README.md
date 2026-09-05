@@ -101,9 +101,10 @@ dotnet opencode run "Explain the structure of this repository."
 ## Separate channel, shared conventions
 
 - Default server port: **5055**.
-- Database: **`opencode-dotnet.db`**.
-- Managed registration: **`service-dotnet.json`**.
-- Client-local state is isolated in the **`dotnet`** channel; upstream user configuration conventions are retained.
+- Published tools use **`dotnet`**: `opencode-dotnet.db` and `service-dotnet.json`.
+- Source `run.ps1` builds use **`dotnet-local`**: `opencode-dotnet-local.db` and `service-dotnet-local.json`, with a stable per-build UTC timestamp.
+- Local startup requires an exact build/version/timestamp match and replaces only an older verified local server. It never falls back to an incompatible server. [Negotiation policy](docs/dotnet-local.md)
+- Client-local state is isolated by channel; upstream user configuration conventions are retained. Existing `dotnet` data is not migrated by switching to `dotnet-local`.
 - No automatic copying of the production OpenCode database or credentials.
 - Provider requests identify the rewrite as **`dotnet-opencode`**, not the upstream application. [HTTP identity](docs/provider-identity.md)
 

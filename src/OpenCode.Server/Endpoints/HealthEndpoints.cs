@@ -16,8 +16,9 @@ public static class HealthEndpoints
             return Results.Json(new
             {
                 healthy = true,
-                version = OpenCodeChannel.ServiceVersion,
+                version = ApplicationBuild.Version,
                 buildID = ApplicationBuild.Id,
+                buildTimestamp = ApplicationBuild.Timestamp,
                 pid = Environment.ProcessId,
                 id = service.Id,
                 application = OpenCodeChannel.Application,

@@ -138,7 +138,7 @@ public static class OpenApiDocument
         document["paths"] = paths;
         document["info"] = new JsonObject
         {
-            ["title"] = "OpenCode .NET registered API", ["version"] = OpenCodeChannel.ServiceVersion,
+            ["title"] = "OpenCode .NET registered API", ["version"] = ApplicationBuild.Version,
             ["description"] = "Canonical source operations filtered against registered native handlers and verified CLR contracts. Coverage diagnostics are not an implementation-parity claim."
         };
         document["components"]!["securitySchemes"] = new JsonObject

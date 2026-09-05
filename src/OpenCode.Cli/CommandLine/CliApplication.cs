@@ -9,6 +9,7 @@ using OpenCode.Cli.Commands.Api;
 using OpenCode.Cli.Commands.Run;
 using OpenCode.Cli.Commands.Statistics;
 using OpenCode.Schema;
+using OpenCode.Protocol;
 
 /// <summary>The sole CLI grammar. Building/parsing this graph does not start services,
 /// resolve DI, read stdin/files, or invoke command handlers.</summary>
@@ -286,6 +287,6 @@ public static class CliApplication
     private sealed class VersionAction : SynchronousCommandLineAction
     {
         public override bool ClearsParseErrors => true;
-        public override int Invoke(ParseResult result) { result.InvocationConfiguration.Output.WriteLine(OpenCodeChannel.ServiceVersion); return 0; }
+        public override int Invoke(ParseResult result) { result.InvocationConfiguration.Output.WriteLine(ApplicationBuild.Version); return 0; }
     }
 }

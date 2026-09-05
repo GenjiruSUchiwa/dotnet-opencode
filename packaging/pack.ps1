@@ -53,7 +53,7 @@ Push-Location $root
 try {
     & $dotnet pack (Join-Path $root 'src/OpenCode.Cli/OpenCode.Cli.csproj') --configuration Release `
         --artifacts-path $build --output $packages "-p:PackageVersion=$Version" `
-        -p:OpenApiGenerateDocuments=false -p:NuGetAudit=true --verbosity minimal
+        -p:OpenApiGenerateDocuments=false -p:OpenCodeLocalBuild=false -p:NuGetAudit=true --verbosity minimal
     if ($LASTEXITCODE -ne 0) { throw "Pinned CLI pack failed (exit $LASTEXITCODE). Build evidence remains at '$build'." }
     if (!(Test-Path -LiteralPath $package -PathType Leaf)) { throw "Pack did not produce the required artifact: $package" }
     & (Join-Path $PSScriptRoot 'inspect.ps1') -PackagePath $package -Version $Version

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Globalization;
 using Microsoft.Build.Framework;
 
 // MSBuild-only source fingerprinting. Never loads the application or reads runtime state.
@@ -14,6 +15,9 @@ public sealed class ComputeApplicationBuild : Microsoft.Build.Utilities.Task
     [Required] public string OutputDirectory { get; set; }
     public string Expected { get; set; }
     public string StampFile { get; set; }
+    public bool LocalBuild { get; set; }
+    public string BuildTimestamp { get; set; }
+    public bool FingerprintOnly { get; set; }
     [Output] public string Fingerprint { get; set; }
 
     public override bool Execute()
@@ -65,9 +69,20 @@ public sealed class ComputeApplicationBuild : Microsoft.Build.Utilities.Task
             WriteIfChanged(Path.Combine(OutputDirectory, "ApplicationBuild.inputs." + Fingerprint + ".txt"), manifest.ToString());
             if (!string.IsNullOrEmpty(Expected) && Expected != Fingerprint)
                 throw new InvalidOperationException("Application inputs changed during this build. Build again from a stable source tree; no older executable should be launched.");
-            WriteIfChanged(Path.Combine(OutputDirectory, "ApplicationBuild.g.cs"),
-                "// Generated from application source and pinned build inputs. No timestamps or output paths.\n" +
-                "namespace OpenCode.Protocol;\npublic static class ApplicationBuild { public const string Id = \"" + Fingerprint + "\"; }\n");
+            if (!FingerprintOnly)
+            {
+                long timestamp = 0;
+                if (LocalBuild && (!long.TryParse(BuildTimestamp, NumberStyles.None, CultureInfo.InvariantCulture, out timestamp) || timestamp <= 0))
+                    throw new InvalidOperationException("A dotnet-local build requires its stable OpenCodeBuildTimestamp. Use run.ps1.");
+                var version = LocalBuild
+                    ? "\"0.1.0-dotnet-local." + DateTimeOffset.FromUnixTimeMilliseconds(timestamp).UtcDateTime.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture) + "\""
+                    : "OpenCode.Schema.OpenCodeChannel.ServiceVersion";
+                WriteIfChanged(Path.Combine(OutputDirectory, "ApplicationBuild.g.cs"),
+                    "// Generated source identity; local timestamp is reused for unchanged builds.\n" +
+                    "namespace OpenCode.Protocol;\npublic static class ApplicationBuild { public const string Id = \"" + Fingerprint + "\"; " +
+                    "public const long Timestamp = " + timestamp.ToString(CultureInfo.InvariantCulture) + "; public const string Version = " + version + "; }\n");
+                WriteIfChanged(Path.Combine(OutputDirectory, "opencode-build.timestamp"), timestamp.ToString(CultureInfo.InvariantCulture) + "\n");
+            }
             WriteIfChanged(Path.Combine(OutputDirectory, "opencode-build.id"), Fingerprint + "\n");
             if (!string.IsNullOrEmpty(StampFile))
             {

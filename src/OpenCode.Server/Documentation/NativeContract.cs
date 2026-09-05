@@ -11,7 +11,7 @@ internal sealed record NativeContract(Type? Request, Type? Response, int Status 
     string? Note = null, string ContentType = "application/json");
 
 internal sealed record NativeHealth(bool Healthy, string Version, double Pid, string Id, string Application, string Channel,
-    string State, [property: JsonPropertyName("buildID")] string BuildId);
+    string State, [property: JsonPropertyName("buildID")] string BuildId, long BuildTimestamp);
 internal sealed record GeneratedText(string Text);
 
 internal static class RegisteredRoutes

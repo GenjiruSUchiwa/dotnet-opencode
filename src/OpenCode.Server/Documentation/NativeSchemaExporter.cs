@@ -386,7 +386,8 @@ internal sealed class NativeSchemaExporter(JsonObject components)
             properties["healthy"] = new JsonObject { ["const"] = true };
             properties["pid"] = Number(true, 0);
             properties["state"] = Strings("starting", "ready", "failed", "stopping");
-            properties["channel"] = new JsonObject { ["const"] = "dotnet" };
+            properties["channel"] = new JsonObject { ["const"] = OpenCodeChannel.Name };
+            properties["buildTimestamp"] = Number(true, 0);
         }
     }
 

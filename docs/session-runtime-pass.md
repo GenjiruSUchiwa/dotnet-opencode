@@ -76,3 +76,91 @@ The remaining diagnostics belong to `OpenCode.Schema/Config/ConfigDuration.cs`
 (MA0009, MA0023) and `OpenCode.Schema/WorktreeJson.cs` (MA0009), outside this scope.
 Final log: `C:/tmp/opencode/session-runtime-pass-build-final.log`.
 This verifies compilation, not runtime behavior.
+
+## Pass 2: request lineage and execution boundaries
+
+The parent-reviewed `SessionToolOutput.FromConfig` exception handling is unchanged:
+the original exception message is retained through its documented method-scoped
+MA0015 exception. No provider, EF, Transfer, Statistics, project, or composition
+file was edited by this pass.
+
+### Cache and request assembly
+
+The provider owner resolved the pass-1 cache blocker while this pass was in
+progress. The current `LlmRequest.PromptCacheKey` contract is a generic lineage
+hint: Chat/Responses lower it, while Anthropic/Gemini accept it without inventing
+a wire field or a cache resource. The earlier cache-blocker note above is therefore
+superseded; there is no pending caller patch.
+
+- `SessionRequestIdentity.PromptCacheKey` implements
+  `session/model-request.ts:promptCacheKey` once for all callers. It uses
+  `session.Fork.SessionId ?? session.Id`, stripping `ses_` only for the canonical
+  64-lowercase-hex form. It does not use subagent ParentId or infer a nested fork's
+  root ancestor, matching the source's explicit lineage limitation.
+- Normal steps, standalone generation, title attempts (including fallback), and
+  manual/automatic compaction all pass that same lineage hint. Request preparation
+  does not drop cache keys or implement transport rotation. Provider lowering still
+  owns provider-specific treatment.
+- Normal request System parts now omit empty strings, matching
+  `SessionModelRequest.baseTranscript`. The instruction epoch's persisted Initial
+  remains separate from chronological instruction-update messages in history.
+
+### Complete boundary flow
+
+Reference: `session/runner/llm.ts:advanceToStep`, `session/context.ts:select/load`.
+
+Normal execution now observes tools/agent/instructions and prepares the instruction
+baseline, promotes eligible input, then resolves the model and loads the projected
+request context. It no longer resolves credentials/routes or lowers historical
+messages before promotion. Thus an unavailable initial instruction baseline still
+leaves input pending, while a model-selection failure occurs after input becomes
+visible, as in the source. Existing execution-readiness checks remain intact.
+
+At a non-continuing queued/idle boundary, the runner restores entry state and the
+step allowance. Promotion uses the general drain scope only at an entry without a
+continuation; otherwise it remains steer-only. In particular, cancellation or
+reclassification of a steering item between selection and promotion must not make
+a continuing steering boundary consume a queued prompt. Physical-attempt retries
+skip this boundary reset and all promotion, retaining their generic retry budget,
+logical step, and recovery allowances.
+
+Move and compaction continue through their existing canonical operations. The
+runner reloads destination selection after a move and persisted context after
+compaction; it does not reconstruct/reset instruction epochs or fork projections.
+The review also traced subagent foreground/recovered result selection and
+background notification admission against `tool/plugin/subagent.ts`,
+`session/execution/restart.ts`, and `session/subagent-completion.ts`. Their shared
+JobRuntime ownership, original result text, notification metadata/identity, and
+admission-before-completion-marker-removal ordering are retained.
+
+### Interrupt continuation and SDK adapter
+
+Reference: `session/execution.ts:interrupt`.
+
+`Continue = true` checks and wakes eligible steering/control work even if the
+Session has no active owner to interrupt. The returned boolean still reports
+whether an owner was interrupted; it does not report that the wake completed.
+Queued prompts stay parked, and controls behind a queued prompt do not overtake it.
+Ordinary interruption remains a no-op for known idle Sessions.
+
+`OpenCodeClient` now forwards interrupt options. Owned clients use their host's
+stopping token for continuation. Injected clients can supply an explicit lifetime
+through the four-argument overload; non-continuing interruption needs no owned host.
+
+### Verification boundary
+
+Only source inspection and pinned .NET 11 restore/build operations were used.
+No tests, application/SDK/DI construction, serializer execution, EF/SQL/database,
+provider/native/MCP/PTY execution, production data, credentials, or Git operations
+were used. Artifacts are isolated at
+`C:/tmp/opencode/session-runtime-pass2-20260905-a`; logs use
+`C:/tmp/opencode/session-runtime-pass2-build-*.log`.
+
+Configured plugin integrations, explicit workspace execution, and remote/managed
+tool-file materialization still require their actual owners' adapters. This pass
+does not replace those failures with successful no-ops.
+
+Final pass-2 full SDK dependency-graph rebuild after the exact provider-handoff
+helper-name alignment: **0 warnings, 0 errors**. Log:
+`C:/tmp/opencode/session-runtime-pass2-build-final.log`.
+Code is frozen for parent integration; runtime behavior remains unexercised.

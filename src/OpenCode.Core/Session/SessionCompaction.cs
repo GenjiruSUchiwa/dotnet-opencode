@@ -46,6 +46,7 @@ internal sealed class SessionCompaction(SessionStore store, ProviderResolver pro
         {
             var request = new LlmRequest(resolved.ModelId, [new LlmMessage(LlmRole.User, [new LlmContent.Text(plan.Prompt)])])
             {
+                PromptCacheKey = SessionRequestIdentity.PromptCacheKey(session),
                 System = [], Tools = [], ToolChoice = new LlmToolChoice.None(),
                 Http = new LlmHttpOptions
                 {

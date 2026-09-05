@@ -289,7 +289,7 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
         if (options.Continue && !lifetime.CanBeCanceled)
             throw new ArgumentException("Interrupt continuation requires a host-owned lifetime.", nameof(lifetime));
         var interrupted = await InterruptAsync(sessionId, ct).ConfigureAwait(false);
-        if (!interrupted || !options.Continue) return interrupted;
+        if (!options.Continue) return interrupted;
         var next = await sessionStore.NextPromotableInboxAsync(sessionId, InboxPromotable.Input, ct).ConfigureAwait(false);
         if (next is not null && (next.Delivery == InboxDeliveryMode.Steer || next.Payload is CompactionInboxPayload or MoveInboxPayload))
             await WakeAsync(sessionId, InboxPromotable.Steer, lifetime).ConfigureAwait(false);
@@ -336,6 +336,11 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         await SettleStaleToolsAsync(sessionId, token).ConfigureAwait(false);
                         settleTools = false;
                     }
+                    if (!retrying && !continuing && pending?.Delivery != InboxDeliveryMode.Steer)
+                    {
+                        entering = true;
+                        step = 1;
+                    }
                     if (pending?.Payload is MoveInboxPayload)
                     {
                         if (movement is null) throw new NotSupportedException("Movement requires the host's shared SessionMovement service.");
@@ -371,7 +376,6 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         force = false;
                         continue;
                     }
-                    var history = await sessionStore.LoadExecutionHistoryAsync(sessionId, token).ConfigureAwait(false);
                     var session = await sessionStore.GetSessionAsync(sessionId, token).ConfigureAwait(false) ?? throw new InvalidOperationException("Session not found.");
                     if (session.Location.WorkspaceId is not null)
                         throw new NotSupportedException("Explicit workspace execution requires Location service routing.");
@@ -385,17 +389,14 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         McpInstructionSource.Configuration(directory, document), token).ConfigureAwait(false);
                     var snapshot = lease is null ? null : (await lease.SnapshotAsync(session.Id, agent.Id, token).ConfigureAwait(false)).WithCodeMode(new JintCodeModeEvaluator(sessionStore.Clock), _codeModeLimits, sessionStore.Clock);
                     RequireSnapshot(snapshot);
-                    var model = await providerResolver.ResolveAsync(modelId, variant, token, directory, session.Model, sessionId: session.Id.Value).ConfigureAwait(false);
-                    RequireToolContract(config, model.Selection, agent);
-                    // Validate old history before delivery so unsupported context leaves
-                    // pending input intact. Then reload after durable promotion.
-                    SessionHistory.Lower(history, model.Selection, model.ProviderMetadataKey);
+                    // Source select/prepare happens before promotion: an unavailable initial
+                    // instruction baseline must leave admitted input pending.
                     var instructions = await sessionStore.SelectInstructionsAsync(session, agent.Id.Value, document, false, token, agent,
                         snapshot?.Definitions.Select(definition => definition.Name).ToArray(), lease?.Location.Project.Directory,
                         mcp: mcp is null ? null : McpInstructionSource.FromObservation(mcp, agent),
                         codeMode: CodeModeInstructionSource.Create(snapshot?.CodeModeDiscovery)).ConfigureAwait(false);
                     var promoted = retrying ? 0 : await sessionStore.PromoteInboxAsync(sessionId,
-                        continuing ? InboxPromotable.Steer : drainScope, token).ConfigureAwait(false);
+                        entering && !continuing ? drainScope : InboxPromotable.Steer, token).ConfigureAwait(false);
                     if (promoted == 0 && !force && !continuing && !retrying) return;
                     if (promoted > 0)
                     {
@@ -403,6 +404,10 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                         if (session.ParentId is null && SessionTitleService.IsUntitled(session)) titles?.Schedule(sessionId);
                     }
                     force = false;
+                    // Source context.load resolves the selected model after promotion. A routing
+                    // failure must not leave input invisibly queued after its boundary was admitted.
+                    var model = await providerResolver.ResolveAsync(modelId, variant, token, directory, session.Model, sessionId: session.Id.Value).ConfigureAwait(false);
+                    RequireToolContract(config, model.Selection, agent);
                     var context = await sessionStore.LoadExecutionContextAsync(sessionId, instructions, token).ConfigureAwait(false);
                     var settingsForStep = CompactionSettings.Read(directory, document);
                     var modelMetadata = await compaction.MetadataAsync(session, model, token).ConfigureAwait(false);
@@ -420,7 +425,9 @@ public sealed partial class SessionExecutionEngine(SessionStore sessionStore, Pr
                     if (limitReached) messages = messages.Add(new LlmMessage(LlmRole.Assistant, [new LlmContent.Text(SessionStepLimit.Prompt)]));
                     var request = new LlmRequest(model.ModelId, messages)
                     {
-                        System = [new LlmSystemPart(instructions.System), new LlmSystemPart(context.Initial)],
+                        PromptCacheKey = SessionRequestIdentity.PromptCacheKey(session),
+                        System = new[] { instructions.System, context.Initial }.Where(text => text.Length > 0)
+                            .Select(text => new LlmSystemPart(text)).ToImmutableArray(),
                         Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, directory, agent, token).ConfigureAwait(false),
                         ToolChoice = snapshot is null || limitReached ? new LlmToolChoice.None() : null,
                         Http = new LlmHttpOptions

@@ -144,6 +144,7 @@ public sealed class SessionTitleService : IAsyncDisposable
         SessionExecutionEngine.RequireToolContract(ConfigLoader.LoadConfig(directory: session.Location.Directory), model.Selection, agent);
         var request = new LlmRequest(model.ModelId, [new LlmMessage(LlmRole.User, [new LlmContent.Text(text)])])
         {
+            PromptCacheKey = SessionRequestIdentity.PromptCacheKey(session),
             System = agent.System is { Length: > 0 } system ? [new LlmSystemPart(system)] : [],
             Tools = [], ToolChoice = new LlmToolChoice.None(),
             Http = new LlmHttpOptions

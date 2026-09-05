@@ -76,6 +76,13 @@ public sealed class OpenCodeClient : IAsyncDisposable
 
     public Task<bool> InterruptAsync(SessionId sessionId, CancellationToken ct = default) => RunAsync(token => _engine.InterruptAsync(sessionId, token), ct);
 
+    public Task<bool> InterruptAsync(SessionId sessionId, SessionInterruptOptions options, CancellationToken ct = default) =>
+        InterruptAsync(sessionId, options, options.Continue ? Owned.Stopping : default, ct);
+
+    /// <summary>The caller supplies the continuation lifetime when embedding injected services.</summary>
+    public Task<bool> InterruptAsync(SessionId sessionId, SessionInterruptOptions options, CancellationToken lifetime, CancellationToken ct) =>
+        RunAsync(token => _engine.InterruptAsync(sessionId, options, lifetime, token), ct);
+
     public bool IsActive(SessionId sessionId) => _engine.IsActive(sessionId);
 
     public OpenCodeClient(string? dbPath = null) : this(new OwnedSdkHost(new SdkHostOptions { DatabasePath = dbPath })) { }

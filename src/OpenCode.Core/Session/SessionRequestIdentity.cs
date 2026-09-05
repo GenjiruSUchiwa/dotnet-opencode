@@ -1,11 +1,19 @@
 namespace OpenCode.Core.Session;
 
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using OpenCode.Schema;
 
 /// <summary>Actual embedding-host metadata, not inferred provider/model identity or a fabricated product version.</summary>
 public sealed record SessionRequestIdentity(string ClientName, string UserAgent)
 {
+    internal static string PromptCacheKey(SessionInfo session)
+    {
+        // Source uses the immediate fork lineage, not an inferred root ancestor.
+        var lineage = (session.Fork?.SessionId ?? session.Id).Value;
+        return Regex.IsMatch(lineage, "^ses_[0-9a-f]{64}$", RegexOptions.NonBacktracking) ? lineage[4..] : lineage;
+    }
+
     internal static ImmutableDictionary<string, string> Headers(SessionInfo session, IReadOnlyDictionary<string, string> configured,
         SessionRequestIdentity? identity)
     {

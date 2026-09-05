@@ -4,7 +4,6 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using OpenCode.Core.CodeMode;
 using OpenCode.Core.Config;
 using OpenCode.Core.Instructions;
@@ -49,14 +48,13 @@ public sealed partial class SessionExecutionEngine
         var messages = SessionHistory.Lower(history.Messages, model.Selection, model.ProviderMetadataKey);
         if (history.Update.Length > 0) messages = messages.Add(new LlmMessage(LlmRole.System, [new LlmContent.Text(history.Update)]));
         messages = messages.Add(new LlmMessage(LlmRole.User, [new LlmContent.Text(prompt)]));
-        var lineage = (session.Fork?.SessionId ?? session.Id).Value;
         var request = new LlmRequest(model.ModelId, SessionHistory.PrepareMedia(messages, metadata.Capabilities?.Input))
         {
             System = new[] { instructions.System, history.Initial }.Where(text => text.Length > 0).Select(text => new LlmSystemPart(text)).ToImmutableArray(),
             Tools = snapshot is null ? [] : await SubagentTool.PrepareDefinitionsAsync(snapshot.Definitions, session.Location.Directory, agent, ct).ConfigureAwait(false),
             // Source generation advertises the captured tools but never dispatches a returned call.
             ToolChoice = snapshot is null ? new LlmToolChoice.None() : null,
-            PromptCacheKey = Regex.IsMatch(lineage, "^ses_[0-9a-f]{64}$", RegexOptions.NonBacktracking) ? lineage[4..] : lineage,
+            PromptCacheKey = SessionRequestIdentity.PromptCacheKey(session),
             Http = new LlmHttpOptions
             {
                 Headers = SessionRequestIdentity.Headers(session, agent.Request.Headers, identity),
